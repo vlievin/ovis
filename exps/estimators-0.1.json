@@ -2,7 +2,9 @@
   "args": [
     "--estimator vi",
     "--estimator reinforce",
-    "--estimator reinforce --baseline"
+    "--estimator reinforce --baseline",
+    "--estimator reinforce --iw 4",
+    "--estimator reinforce --baseline --iw 4"
   ],
   "global": "--epochs 500 --lr_reduce_steps 2",
   "seed": [13]

@@ -32,8 +32,9 @@ parser.add_argument('--lr_reduce_steps', default=1, type=int, help='number of le
 
 # estimator
 parser.add_argument('--estimator', default='reinforce', help='[vi, reinforce, vimco]')
-parser.add_argument('--mc_samples', default=4, type=int, help='number of Monte-Carlo samples')
-parser.add_argument('--iw_samples', default=1, type=int, help='number of Importance-Weighted samples')
+parser.add_argument('--mc', default=4, type=int, help='number of Monte-Carlo samples')
+parser.add_argument('--iw', default=1, type=int, help='number of Importance-Weighted samples')
+parser.add_argument('--iw_valid', default=100, type=int, help='number of Importance-Weighted samples for validation')
 parser.add_argument('--baseline', action='store_true', help='use baseline')
 
 # latent space
@@ -52,7 +53,7 @@ opt = parser.parse_args()
 run_id = f"shapes-vae-{opt.estimator}"
 if len(opt.id) > 0:
     run_id += f"-{opt.id}"
-run_id += f"-lr{opt.lr:.1E}-bs{opt.bs}-mc{opt.mc_samples}-iw{opt.iw_samples}"
+run_id += f"-lr{opt.lr:.1E}-bs{opt.bs}-mc{opt.mc}-iw{opt.iw}+{opt.iw_valid}"
 if opt.baseline:
     run_id += f"-baseline{opt.b_nlayers}"
 run_id += f"-N{opt.N}-K{opt.K}"
@@ -97,12 +98,14 @@ baseline = Baseline(x.shape, opt.b_nlayers, opt.hdim) if opt.baseline else None
 
 # estimator
 Estimator = {'vi': VariationalInference, 'reinforce': Reinforce, 'vimco': Vimco}[opt.estimator]
-estimator = Estimator(baseline=baseline, mc_samples=opt.mc_samples, iw_samples=opt.iw_samples)
+estimator = Estimator(baseline=baseline, mc=opt.mc, iw=opt.iw)
+estimator_valid = VariationalInference(mc=1, iw=opt.iw_valid)
 
 # get device and move models
 device = "cuda:0" if torch.cuda.device_count() else "cpu"
 model.to(device)
 estimator.to(device)
+estimator_valid.to(device)
 if baseline is not None:
     baseline.to(device)
 
@@ -155,7 +158,7 @@ for epoch in range(1, opt.epochs + 1):
         agg_valid.initialize()
         for x in tqdm(loader_train):
             x = x.to(device)
-            _, diagnostics, _ = estimator(model, x, **config)
+            _, diagnostics, _ = estimator_valid(model, x, **config)
             agg_valid.update(diagnostics)
         summary_valid = agg_valid.data.to('cpu')
 
