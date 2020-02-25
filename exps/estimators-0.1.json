@@ -1,0 +1,9 @@
+{
+  "args": [
+    "--estimator vi",
+    "--estimator reinforce",
+    "--estimator reinforce --baseline"
+  ],
+  "global": "--epochs 500 --lr_reduce_steps 2",
+  "seed": [13]
+}
