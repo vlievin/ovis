@@ -26,7 +26,14 @@ class Estimator(nn.Module):
         x = x.view(-1, self.mc, self.iw, *dims)
         return x.mean((1, 2,))
 
-    def forward(self, model, x, **kwargs):
+    def forward(self, model, x, **kwargs) -> Tuple[Tensor, Dict, Dict]:
+        """
+        Compute the loss given the `model` and a batch of data `x`. Returns the loss per datapoint, diagnostics and the model's output
+        :param model: nn.Module
+        :param x: batch of data
+        :param kwargs:
+        :return: loss, diagnostics, model's output
+        """
         raise NotImplementedError
 
 
@@ -45,10 +52,10 @@ class VariationalInference(Estimator):
 
         L_k = E_{q(z_{1..K} | x)} [ log 1/K \sum_{i=1..K} f(x, z_i)], f(x, z) = p(x,z) / q(z|x)
 
-        :param model:
-        :param x:
-        :param kwargs:
-        :return:
+        :param model: VAE
+        :param x: data
+        :param kwargs: arguments passed to the model.forward method
+        :return: model's output, L_k, N_eff, log_f_xz, log_px_z, log_pz, log_qz, kl
         """
 
         # expand input to get MC and IW samples: [mc, iw, bs, ...]
