@@ -1,11 +1,12 @@
 {
   "args": [
-    "--estimator vi",
-    "--estimator reinforce",
-    "--estimator reinforce --baseline",
-    "--estimator reinforce --iw 4",
-    "--estimator reinforce --baseline --iw 4"
+    "--estimator reinforce --mc 16",
+    "--estimator reinforce --baseline --mc 16",
+    "--estimator reinforce --iw 4 --mc 4",
+    "--estimator reinforce --baseline --iw 4 --mc 4",
+    "--estimator vimco --iw 4 --mc 4",
+    "--estimator vimco --iw 16 --mc 1"
   ],
-  "global": "--epochs 500 --lr_reduce_steps 2",
+  "global": "--epochs 1000 --lr_reduce_steps 2",
   "seed": [13]
 }

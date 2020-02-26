@@ -11,21 +11,22 @@ def H(z, dim=-1):
 
 
 class VAE(nn.Module):
-    def __init__(self, xdim, N, K, hdim, nlayers=0, learn_prior=False, bias=True, batch_norm=True,
+    def __init__(self, xdim, N, K, hdim, nlayers=0, learn_prior=False, bias=True, normalization='layernorm',
                  likelihood=Bernoulli):
         super().__init__()
         self.xdim = xdim
         zdim = N * K
         self.N = N
         self.K = K
+        Norm = {'batchnorm': nn.BatchNorm1d, 'layernorm': nn.LayerNorm, 'none': None, None:None}[normalization]
 
         # encoder
         layers = []
         h = int(np.prod(xdim))
         for i in range(nlayers):
             layers += [nn.Linear(h, hdim, bias=bias)]
-            if batch_norm:
-                layers += [nn.BatchNorm1d(hdim)]
+            if Norm is not None:
+                layers += [Norm(hdim)]
             layers += [nn.ELU()]
             h = hdim
         layers += [nn.Linear(h, zdim, bias=bias)]
@@ -37,8 +38,8 @@ class VAE(nn.Module):
         h = zdim
         for i in range(nlayers):
             layers += [nn.Linear(h, hdim, bias=bias)]
-            if batch_norm:
-                layers += [nn.BatchNorm1d(hdim)]
+            if Norm is not None:
+                layers += [Norm(hdim)]
             layers += [nn.ELU()]
             h = hdim
         layers += [nn.Linear(h, int(np.prod(xdim)), bias=bias)]
