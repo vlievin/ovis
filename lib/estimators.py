@@ -31,6 +31,10 @@ class Estimator(nn.Module):
 
 
 class VariationalInference(Estimator):
+    """
+    Variational Inference. Using this estimator requires the model to be compatible with the reparametrization trick.
+
+    """
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

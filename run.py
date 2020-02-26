@@ -172,6 +172,8 @@ for epoch in range(1, opt.epochs + 1):
     # reduce learning rate
     lr_freq = (opt.epochs // (opt.lr_reduce_steps + 1))
     if epoch % lr_freq == 0:
-        base_logger.info("REDUCING LR")
-        for param_group in optimizer.param_groups:
-            param_group['lr'] /= 2
+        for i, param_group in enumerate(optimizer.param_groups):
+            lr = param_group['lr']
+            new_lr = lr / 2
+            param_group['lr'] = new_lr
+            base_logger.info(f"Reducing lr, group = {i} : {lr} -> {new_lr}")
