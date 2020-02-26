@@ -1,9 +1,36 @@
 import numpy as np
-from torch import nn
-from torch.distributions import Categorical, Bernoulli
-from torch.nn.functional import one_hot
+from torch import nn, Tensor
+from torch.distributions import Categorical, Bernoulli, Distribution
+from torch.nn.functional import one_hot, gumbel_softmax, log_softmax
 
 from .utils import *
+
+
+class RelaxedCategorical(Distribution):
+
+    def __init__(self, logits: Tensor, tau: float = 0, dim: int = -1):
+        self.logits = logits
+        self.dim = dim
+        self.tau = tau
+
+    def rsample(self):
+
+        if self.tau == 0:
+            hard = True
+            tau = 0.5
+        else:
+            hard = False
+            tau = self.tau
+
+        return gumbel_softmax(self.logits, tau=tau, hard=hard, dim=self.dim)
+
+    def sample(self):
+        return self.rsample().detach()
+
+    def log_prob(self, value):
+        log_pdf = log_softmax(self.logits, self.dim)
+        return (value * log_pdf).sum(self.dim)
+
 
 def H(z, dim=-1):
     index = z.max(dim, keepdim=True)[1]
@@ -18,7 +45,7 @@ class VAE(nn.Module):
         zdim = N * K
         self.N = N
         self.K = K
-        Norm = {'batchnorm': nn.BatchNorm1d, 'layernorm': nn.LayerNorm, 'none': None, None:None}[normalization]
+        Norm = {'batchnorm': nn.BatchNorm1d, 'layernorm': nn.LayerNorm, 'none': None, None: None}[normalization]
 
         # encoder
         layers = []
@@ -62,7 +89,6 @@ class VAE(nn.Module):
         return self.encoder(x).view(-1, self.N, self.K)
 
     def generate(self, z):
-        z = one_hot(z, self.K).float()
         z = flatten(z)
         px_logits = self.decoder(z).view(-1, *self.xdim)
         return self.likelihood(logits=px_logits)
@@ -73,13 +99,16 @@ class VAE(nn.Module):
             l *= w.abs().max()
         return l
 
-    def forward(self, x, tau=0):
+    def forward(self, x, tau=0, zgrads=False):
         qlogits = self.infer(x)
 
-        qz = Categorical(logits=qlogits)
-        z = qz.sample().detach()
+        qz = RelaxedCategorical(logits=qlogits, tau=tau)
+        z = qz.rsample()
 
-        pz = Categorical(logits=self.prior)
+        if not zgrads:
+            z = z.detach()
+
+        pz = RelaxedCategorical(logits=self.prior)
 
         px = self.generate(z)
 
@@ -87,6 +116,6 @@ class VAE(nn.Module):
 
     def sample_from_prior(self, N):
         prior = self.prior.expand(N, self.N, self.K)
-        z = Categorical(logits=prior).sample()
+        z = RelaxedCategorical(logits=prior).sample()
         px = self.generate(z)
         return {'x_': px, 'z': z}

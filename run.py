@@ -10,8 +10,9 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from lib import VAE, Baseline
-from lib import VariationalInference, Reinforce, Vimco
+from lib import VariationalInference
 from lib import get_shapes_datasets
+from lib.config import get_config
 from lib.gradients import get_gradients_log_total_variance
 from lib.logging import sample_model, get_loggers, log_summary, save_model
 
@@ -31,8 +32,8 @@ parser.add_argument('--bs', default=64, type=int, help='batch size')
 parser.add_argument('--lr_reduce_steps', default=1, type=int, help='number of learning rate reduce steps')
 
 # estimator
-parser.add_argument('--estimator', default='reinforce', help='[vi, reinforce, vimco]')
-parser.add_argument('--mc', default=4, type=int, help='number of Monte-Carlo samples')
+parser.add_argument('--estimator', default='reinforce', help='[vi, reinforce, vimco, gs, st-gs]')
+parser.add_argument('--mc', default=1, type=int, help='number of Monte-Carlo samples')
 parser.add_argument('--iw', default=1, type=int, help='number of Importance-Weighted samples')
 parser.add_argument('--iw_valid', default=100, type=int, help='number of Importance-Weighted samples for validation')
 parser.add_argument('--baseline', action='store_true', help='use baseline')
@@ -97,8 +98,10 @@ model = VAE(x.shape, opt.N, opt.K, opt.hdim, nlayers=opt.nlayers, learn_prior=op
 baseline = Baseline(x.shape, opt.b_nlayers, opt.hdim) if opt.baseline else None
 
 # estimator
-Estimator = {'vi': VariationalInference, 'reinforce': Reinforce, 'vimco': Vimco}[opt.estimator]
+Estimator, config = get_config(opt.estimator)
 estimator = Estimator(baseline=baseline, mc=opt.mc, iw=opt.iw)
+
+config_valid = {'tau': 0, 'zgrads': False}
 estimator_valid = VariationalInference(mc=1, iw=opt.iw_valid)
 
 # get device and move models
@@ -114,9 +117,6 @@ parameters = list(model.parameters())
 if baseline is not None:
     parameters += list(baseline.parameters())
 optimizer = torch.optim.Adam(parameters, lr=opt.lr)
-
-# parameters such as beta, freebits, etc..
-config = {}
 
 # data aggregator
 agg_train = Aggregator()
@@ -158,7 +158,7 @@ for epoch in range(1, opt.epochs + 1):
         agg_valid.initialize()
         for x in tqdm(loader_train):
             x = x.to(device)
-            _, diagnostics, _ = estimator_valid(model, x, **config)
+            _, diagnostics, _ = estimator_valid(model, x, **config_valid)
             agg_valid.update(diagnostics)
         summary_valid = agg_valid.data.to('cpu')
 
