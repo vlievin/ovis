@@ -1,4 +1,4 @@
-from .estimators import VariationalInference, Reinforce, Vimco, Relax
+from .estimators import VariationalInference, Reinforce, Vimco, Relax, OptCovReinforce
 
 
 def get_config(estimator):
@@ -25,6 +25,10 @@ def get_config(estimator):
     elif estimator == 'relax':
         Estimator = Relax
         config = {'tau': 0.5, 'zgrads': True}
+
+    elif estimator == 'covbaseline':
+        Estimator = OptCovReinforce
+        config = {'tau': 0, 'zgrads': False}
 
     else:
         raise ValueError(f"Unknown estimator {estimator}.")
