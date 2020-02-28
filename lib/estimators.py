@@ -207,13 +207,14 @@ class Vimco(VariationalInference):
         bs, *dims = x.size()
         output, L_k, N_eff, log_f_xz, log_px_z, log_pz, log_qz, kl = self.compute_elbo(model, x, **kwargs)
 
-        # log \hat{f}(x, h^{-j}) using the geometric mean
-        log_f_xz_hat = (torch.sum(log_f_xz, dim=2, keepdim=True) - log_f_xz) / (self.iw - 1)
-        log_f_xz_samples = log_f_xz.unsqueeze(-1) + torch.diag_embed(log_f_xz_hat - log_f_xz)
-        baseline = torch.logsumexp(log_f_xz_samples, dim=2) - self.log_iw
+        with torch.no_grad():
+            # log \hat{f}(x, h^{-j}) using the geometric mean
+            log_f_xz_hat = (torch.sum(log_f_xz, dim=2, keepdim=True) - log_f_xz) / (self.iw - 1)
+            log_f_xz_samples = log_f_xz.unsqueeze(-1) + torch.diag_embed(log_f_xz_hat - log_f_xz)
+            baseline = torch.logsumexp(log_f_xz_samples, dim=2) - self.log_iw
 
-        # for debugging
-        control_variate_mse = (baseline - L_k.unsqueeze(2)).pow(2).mean(2).detach()
+            # for debugging
+            control_variate_mse = (baseline - L_k.unsqueeze(2)).pow(2).mean(2)
 
         # \sum L_(h_j| -j) * log q(z_j | x)
         __log_qz = log_qz.view(bs, self.mc, self.iw, -1)
@@ -473,15 +474,16 @@ class OptCovReinforce(VariationalInference):
 
         # control variate
         with torch.no_grad():
-            h = d_qlogits
 
+            #using notation from the paper
+            h = d_qlogits
             f_mk = L_k
 
-            # print("d_logits:", d_qlogits.shape)
-
+            # compute h and h * f
             sum_h_m = h.sum(dim=2).view(bs, self.mc, -1)
             sum_hf_m = (h * f_mk[:, :, None, None, None]).sum(dim=2).view(bs, self.mc, -1)
 
+            # compute c_opt
             num = torch.sum((sum_h_m * sum_hf_m).sum(-1), dim=1)
             den = torch.sum((sum_h_m * sum_h_m).sum(-1), dim=1)
             c_opt = num / den
@@ -499,131 +501,8 @@ class OptCovReinforce(VariationalInference):
         # MC averaging
         nll, L_k, reinforce_loss = map(lambda x: x.mean(1), (nll, L_k, reinforce_loss))
 
-        # print("nll:", nll.shape, reinforce_loss.shape)
-
         # nll gives the gradients for theta
         loss = - L_k - reinforce_loss
-
-        # prepare diagnostics
-        diagnostics = Diagnostic({
-            'loss': {'loss': loss,
-                     'elbo': L_k,
-                     'nll': nll,
-                     'kl': kl,
-                     'N_eff': N_eff,
-                     'reinforce_loss': reinforce_loss,
-                     'control_variate_mse': control_variate_mse}
-        })
-
-        if backward:
-            loss.mean().backward()
-
-        return loss, diagnostics, {'x_': px, 'z': z, 'qz': qz, 'pz': pz, 'qlogits': qlogits}
-
-
-
-class OptCovReinforce_original(VariationalInference):
-    """
-    Overleaf: https://www.overleaf.com/project/5d84f62f0c4fb30001e934ac
-
-    """
-
-    def __init__(self, *args, baseline: Optional[nn.Module] = None, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.baseline = baseline is not None # small hack to allow testing the estimator without the control variate.
-
-    def f(self, model, qz, pz, x, z):
-        px = model.generate(z)
-
-        # compute log p(x|z), log p(z) and log q(z | x)
-        log_px_z = reduce(px.log_prob(x))
-        log_pz = pz.log_prob(z)
-        log_qz = qz.log_prob(z)
-        kl = reduce(log_qz - log_pz)
-        elbo = log_px_z - kl
-        return elbo, kl, -log_px_z, px
-
-    def forward(self, model: nn.Module, x: Tensor, backward: bool = False, **kwargs: Any) -> Tuple[
-        Tensor, Dict, Dict]:
-        bs, *dims = x.shape
-
-        # expand sample
-        x = self._expand_sample(x)
-
-        qlogits = model.infer(x)
-        qlogits.retain_grad()
-
-        # p(z) and q(z|x)
-        pz = PseudoCategorical(model.prior)
-        qz = PseudoCategorical(qlogits)
-
-        # z ~ q(z|x)
-        z = qz.sample()
-
-        # p(x|z)
-        px = model.generate(z)
-
-        # compute log p(x|z), log p(z) and log q(z | x)
-        log_px_z = reduce(px.log_prob(x))
-        log_pz = pz.log_prob(z)
-        log_qz = qz.log_prob(z)
-        kl = reduce(log_qz - log_pz)
-        nll = - log_px_z
-
-        # compute log f(x, z) = log p(x, z) - log q(z | x) (ELBO)
-        log_f_xz = log_px_z - kl
-
-        # view log f as shape [bs, mc, iw]
-        log_f_xz = log_f_xz.view(bs, self.mc, self.iw)
-
-        # IW-ELBO: L_k = E_q(z_{1..K} | x) [ log 1/K \sum_{i=1..K} f(x, z_i)]
-        L_k = log_sum_exp(log_f_xz, dim=2) - self.log_iw
-
-        # N_eff
-        N_eff = self.effective_sample_size(log_pz, log_qz)
-
-        # d q(z|x) / d qlogits
-        d_qlogits = torch.autograd.grad(
-            [log_qz], [qlogits], grad_outputs=torch.ones_like(log_qz), retain_graph=True, allow_unused=True)[0]
-
-        # reshaping d_qlogits and qlogits
-        d_qlogits = d_qlogits.view(bs, self.mc, self.iw, *d_qlogits.size()[1:])
-        qlogits = qlogits.view(bs, self.mc, self.iw, *qlogits.size()[1:])
-        nll = nll.view(bs, self.mc, self.iw).mean(2)
-
-        # control variate
-        with torch.no_grad():
-            h = d_qlogits
-            log_w = log_f_xz.view(bs, self.mc, self.iw)
-
-            log_v = log_w - torch.logsumexp(log_w, dim=2, keepdim=True)
-            f_mk = log_sum_exp(log_f_xz, dim=2, keepdim=True) - self.log_iw - log_v.exp()
-
-            # print("d_logits:", d_qlogits.shape)
-
-            sum_h_m = h.sum(dim=2).view(bs, self.mc, -1)
-            sum_hf_m = (h * f_mk[:, :, :, None, None]).sum(dim=2).view(bs, self.mc, -1)
-
-            num = torch.sum((sum_h_m * sum_hf_m).sum(-1), dim=1)
-            den = torch.sum((sum_h_m * sum_h_m).sum(-1), dim=1)
-            c_opt = num / den
-
-            # reinforce score
-            score = (f_mk - c_opt[:, None, None]) if self.baseline else f_mk
-
-            control_variate_mse = (c_opt[:, None, None] - f_mk).pow(2).mean((1, 2,))
-
-        # d L_k / d qlogits
-        d_loss_d_logits = score.view(bs, self.mc, self.iw, 1, 1).detach() * d_qlogits
-        reinforce_loss = (d_loss_d_logits.detach() * qlogits).sum((2, 3, 4))
-
-        # MC averaging
-        nll, L_k, reinforce_loss = map(lambda x: x.mean(1), (nll, L_k, reinforce_loss))
-
-        # print("nll:", nll.shape, reinforce_loss.shape)
-
-        # nll gives the gradients for theta
-        loss = nll - reinforce_loss
 
         # prepare diagnostics
         diagnostics = Diagnostic({
