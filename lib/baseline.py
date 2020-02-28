@@ -5,8 +5,9 @@ from .utils import *
 
 
 class Baseline(nn.Module):
-    def __init__(self, xdim, nlayers, hdim, batch_norm=True, bias=True):
+    def __init__(self, xdim, nlayers, hdim, batch_norm=True, bias=True, center_x=True):
         super().__init__()
+        self.center_x =center_x
 
         # encoder
         layers = []
@@ -22,5 +23,7 @@ class Baseline(nn.Module):
         self.layers = nn.Sequential(*layers)
 
     def forward(self, x):
+        if self.center_x:
+            x = 2. * x - 1.
         x = flatten(x)
         return self.layers(x).squeeze(1)

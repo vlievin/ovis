@@ -1,12 +1,12 @@
 import numpy as np
 from torch import nn, Tensor
-from torch.distributions import Categorical, Bernoulli, Distribution
+from torch.distributions import Categorical, RelaxedOneHotCategorical, Bernoulli, Distribution
 from torch.nn.functional import one_hot, gumbel_softmax, log_softmax
 
 from .utils import *
 
 
-class RelaxedCategorical(Distribution):
+class PseudoCategorical(Distribution):
 
     def __init__(self, logits: Tensor, tau: float = 0, dim: int = -1):
         self.logits = logits
@@ -102,13 +102,13 @@ class VAE(nn.Module):
     def forward(self, x, tau=0, zgrads=False):
         qlogits = self.infer(x)
 
-        qz = RelaxedCategorical(logits=qlogits, tau=tau)
+        qz = PseudoCategorical(logits=qlogits, tau=tau)
         z = qz.rsample()
 
         if not zgrads:
             z = z.detach()
 
-        pz = RelaxedCategorical(logits=self.prior)
+        pz = PseudoCategorical(logits=self.prior)
 
         px = self.generate(z)
 
@@ -116,6 +116,6 @@ class VAE(nn.Module):
 
     def sample_from_prior(self, N):
         prior = self.prior.expand(N, self.N, self.K)
-        z = RelaxedCategorical(logits=prior).sample()
+        z = PseudoCategorical(logits=prior).sample()
         px = self.generate(z)
         return {'x_': px, 'z': z}

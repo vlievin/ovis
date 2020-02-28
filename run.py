@@ -16,6 +16,9 @@ from lib.config import get_config
 from lib.gradients import get_gradients_log_total_variance
 from lib.logging import sample_model, get_loggers, log_summary, save_model
 
+
+_sep = 32*"-"
+
 parser = argparse.ArgumentParser()
 
 # run directory, id and seed
@@ -99,7 +102,7 @@ baseline = Baseline(x.shape, opt.b_nlayers, opt.hdim) if opt.baseline else None
 
 # estimator
 Estimator, config = get_config(opt.estimator)
-estimator = Estimator(baseline=baseline, mc=opt.mc, iw=opt.iw)
+estimator = Estimator(baseline=baseline, mc=opt.mc, iw=opt.iw, N=opt.N, K=opt.K, hdim=opt.hdim)
 
 config_valid = {'tau': 0, 'zgrads': False}
 estimator_valid = VariationalInference(mc=1, iw=opt.iw_valid)
@@ -109,14 +112,20 @@ device = "cuda:0" if torch.cuda.device_count() else "cpu"
 model.to(device)
 estimator.to(device)
 estimator_valid.to(device)
-if baseline is not None:
-    baseline.to(device)
 
 # optimizer
-parameters = list(model.parameters())
-if baseline is not None:
-    parameters += list(baseline.parameters())
-optimizer = torch.optim.Adam(parameters, lr=opt.lr)
+optimizers = []
+optimizers += [torch.optim.Adam(model.parameters(), lr=opt.lr)]
+if len(list(estimator.parameters())):
+    optimizers += [torch.optim.Adam(estimator.parameters(), lr=opt.lr)]
+
+print(f"{_sep}\nModel paramters:")
+for k, v in model.named_parameters():
+    print(f"   {k} : {v.numel()}")
+print(f"{_sep}\nEstimator paramters:")
+for k, v in estimator.named_parameters():
+    print(f"   {k} : {v.numel()}")
+print(_sep)
 
 # data aggregator
 agg_train = Aggregator()
@@ -135,15 +144,14 @@ for epoch in range(1, opt.epochs + 1):
     sample_model("prior-sample", model, logdir, global_step=global_step, writer=writer_valid, seed=opt.seed)
 
     # train epoch
-    optimizer.zero_grad()
+    [o.zero_grad() for o in optimizers]
     model.train()
     agg_train.initialize()
     for x in tqdm(loader_train):
         x = x.to(device)
-        loss, diagnostics, output = estimator(model, x, **config)
-        loss.mean().backward()
-        optimizer.step()
-        optimizer.zero_grad()
+        loss, diagnostics, output = estimator(model, x, backward=True, **config)
+        [o.step() for o in optimizers]
+        [o.zero_grad() for o in optimizers]
         agg_train.update(diagnostics)
         global_step += 1
     summary_train = agg_train.data.to('cpu')
@@ -158,7 +166,7 @@ for epoch in range(1, opt.epochs + 1):
         agg_valid.initialize()
         for x in tqdm(loader_train):
             x = x.to(device)
-            _, diagnostics, _ = estimator_valid(model, x, **config_valid)
+            _, diagnostics, _ = estimator_valid(model, x, backward=False, **config_valid)
             agg_valid.update(diagnostics)
         summary_valid = agg_valid.data.to('cpu')
 
@@ -172,8 +180,9 @@ for epoch in range(1, opt.epochs + 1):
     # reduce learning rate
     lr_freq = (opt.epochs // (opt.lr_reduce_steps + 1))
     if epoch % lr_freq == 0:
-        for i, param_group in enumerate(optimizer.param_groups):
-            lr = param_group['lr']
-            new_lr = lr / 2
-            param_group['lr'] = new_lr
-            base_logger.info(f"Reducing lr, group = {i} : {lr} -> {new_lr}")
+        for o in optimizers:
+            for i, param_group in enumerate(o.param_groups):
+                lr = param_group['lr']
+                new_lr = lr / 2
+                param_group['lr'] = new_lr
+                base_logger.info(f"Reducing lr, group = {i} : {lr:.2E} -> {new_lr:.2E}")

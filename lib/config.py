@@ -1,4 +1,4 @@
-from .estimators import VariationalInference, Reinforce, Vimco
+from .estimators import VariationalInference, Reinforce, Vimco, Relax
 
 
 def get_config(estimator):
@@ -21,6 +21,10 @@ def get_config(estimator):
     elif estimator == 'st-gs':
         Estimator = VariationalInference
         config = {'tau': 0, 'zgrads': True}
+
+    elif estimator == 'relax':
+        Estimator = Relax
+        config = {'tau': 0.5, 'zgrads': True}
 
     else:
         raise ValueError(f"Unknown estimator {estimator}.")
