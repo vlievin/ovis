@@ -6,8 +6,9 @@
 * REINFORCE with baseline
 * REINFORCE with baseline and Importance-Weighted objective)
 * VIMCO
-* [TODO] Concrete/Gumbel-Softmax
-* [TODO] Straight-Through Concrete/Gumbel-Softmax
+* Concrete/Gumbel-Softmax
+* Straight-Through Concrete/Gumbel-Softmax
+* Optimal Covariance Baseline (see overleaf doc)
 * [TODO] VQ 
 * [TODO] REBAR
 * [TODO] RELAX
