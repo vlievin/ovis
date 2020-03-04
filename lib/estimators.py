@@ -133,46 +133,6 @@ class VariationalInference(Estimator):
         output.update({'log_px_z': log_px_z, 'log_pz': log_pz, 'log_qz': log_qz})
         return output
 
-    def compute_elbo(self, model: nn.Module, x: Tensor, **kwargs: Any) -> Tuple:
-        """
-        Compute the Importance-Weighted ELBO.
-
-        L_k = E_{q(z_{1..K} | x)} [ log 1/K \sum_{i=1..K} f(x, z_i)], f(x, z) = p(x,z) / q(z|x)
-
-        :param model: VAE
-        :param x: data
-        :param kwargs: arguments passed to the model.forward method
-        :return: model's output, L_k, N_eff, log_f_xz, log_px_z, log_pz, log_qz, kl
-        """
-
-        # expand input to get MC and IW samples: [bs, mc, iw, ...]
-        bs, *dims = x.size()
-        __x = self._expand_sample(x)
-
-        # forward pass
-        output = model(__x, **kwargs)
-        px, z, qz, pz = [output[k] for k in ['px', 'z', 'qz', 'pz']]
-
-        # compute log p(x|z), log p(z) and log q(z | x)
-        log_px_z = batch_reduce(px.log_prob(__x))
-        log_pz = torch.cat([pz_l.log_prob(z_l) for pz_l, z_l in zip(pz, z)], 1)
-        log_qz = torch.cat([qz_l.log_prob(z_l) for qz_l, z_l in zip(qz, z)], 1)
-        kl = batch_reduce(self.freebits(log_qz - log_pz))
-
-        # compute log f(x, z) = log p(x, z) - log q(z | x) (ELBO)
-        log_f_xz = log_px_z - kl
-
-        # view log f as shape [bs, mc, iw]
-        log_f_xz = log_f_xz.view(bs, self.mc, self.iw)
-
-        # IW-ELBO: L_k = E_q(z_{1..K} | x) [ log 1/K \sum_{i=1..K} f(x, z_i)]
-        L_k = torch.logsumexp(log_f_xz, dim=2) - self.log_iw
-
-        # N_eff
-        N_eff = self.effective_sample_size(log_pz, log_qz)
-
-        return output, L_k, N_eff, log_f_xz, log_px_z, log_pz, log_qz, kl
-
     def forward(self, model: nn.Module, x: Tensor, backward: bool = False, **kwargs: Any) -> Tuple[Tensor, Dict, Dict]:
 
         output = self.evaluate_model(model, x, **kwargs)
@@ -228,7 +188,7 @@ class Reinforce(VariationalInference):
 
     def compute_control_variate_mse(self, L_k, control_variate):
         """mse between the score function and its estimate"""
-        return (control_variate - L_k[:,:,None,None]).pow(2).sum(3).mean(2)  # <-> sum(z).mean(iw)
+        return (control_variate - L_k[:, :, None, None]).pow(2).sum(3).mean(2)  # <-> sum(z).mean(iw)
 
     def compute_reinforce_loss(self, L_k, control_variate, log_qz):
 
