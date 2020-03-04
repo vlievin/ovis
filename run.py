@@ -31,6 +31,7 @@ parser.add_argument('--rm', action='store_true', help='delete previous run')
 # epochs, batch size, MC samples, lr
 parser.add_argument('--epochs', default=500, type=int, help='number of epochs')
 parser.add_argument('--lr', default=1e-3, type=float, help='learning rate')
+parser.add_argument('--baseline_lr', default=5e-3, type=float, help='learning rate for the weight of the baseline')
 parser.add_argument('--bs', default=64, type=int, help='batch size')
 parser.add_argument('--lr_reduce_steps', default=1, type=int, help='number of learning rate reduce steps')
 
@@ -118,7 +119,7 @@ estimator_valid.to(device)
 optimizers = []
 optimizers += [torch.optim.Adam(model.parameters(), lr=opt.lr)]
 if len(list(estimator.parameters())):
-    optimizers += [torch.optim.Adam(estimator.parameters(), lr=opt.lr)]
+    optimizers += [torch.optim.Adam(estimator.parameters(), lr=opt.baseline_lr)]
 
 print(f"{_sep}\nModel paramters:")
 for k, v in model.named_parameters():

@@ -86,7 +86,7 @@ class VariationalInference(Estimator):
         log_f_xz = log_f_xz.view(-1, self.mc, self.iw)
 
         # IW-ELBO: L_k
-        L_k = torch.logsumexp(log_f_xz, dim=2) - self.log_iw if self.iw > 1 else log_f_xz.squeeze(2)
+        L_k = torch.logsumexp(log_f_xz, dim=2) - self.log_iw #if self.iw > 1 else log_f_xz.squeeze(2)
 
         return {'L_k': L_k, 'kl': kl, 'log_f_xz': log_f_xz, 'N_eff': N_eff}
 
@@ -188,10 +188,9 @@ class Reinforce(VariationalInference):
 
     def compute_control_variate_mse(self, L_k, control_variate):
         """mse between the score function and its estimate"""
-        return (control_variate - L_k[:, :, None, None]).pow(2).sum(3).mean(2)  # <-> sum(z).mean(iw)
+        return (control_variate - L_k[:, :, None, None].detach()).pow(2).sum(3).mean(2)  # <-> sum(z).mean(iw)
 
     def compute_reinforce_loss(self, L_k, control_variate, log_qz):
-
         log_qz = log_qz.view(L_k.size(0), self.mc, self.iw, -1)
 
         # \nabla loss = [ f(x, z) - b(x) ] \nabla log q_theta(z | x)
@@ -347,27 +346,63 @@ class OptCovReinforce(VariationalInference):
         # control variate
         with torch.no_grad():
             # using notation from the paper
-            h = d_qlogits
-            f_mk = L_k
+            h = d_qlogits.view(bs, self.mc, self.iw, -1)
+            f_mk = L_k[:,:, None, None].expand_as(h)
 
-            # compute h and h * f
-            sum_h_m = h.sum(dim=2).view(bs, self.mc, -1)
-            sum_hf_m = (h * f_mk[:, :, None, None, None]).sum(dim=2).view(bs, self.mc, -1)
+            # print(f">> h = {h.shape}, f_mk = {f_mk.shape}")
 
-            # compute c_opt
-            num = torch.sum((sum_h_m * sum_hf_m).sum(-1), dim=1)
-            den = torch.sum((sum_h_m * sum_h_m).sum(-1), dim=1)
-            c_opt = num / den
+            # compute Amm and bm
+            Amn = torch.einsum("bkmh, bknh -> bkmn", [h, h])
+            bm = torch.einsum("bkmh, bkh -> bkm", [h, torch.sum(h * f_mk, dim=2)])
+
+            # compute Amn^{-1}
+            Amn = Amn.view(-1, self.iw, self.iw)
+            Amn_inv = torch.pinverse(Amn, rcond=1e-18) # use pseudo inverse for stability
+            Amn_inv = Amn_inv.view(bs, self.mc, self.iw, self.iw)
+
+            # print(f">>inv:  Amn^-1 = {Amn_inv.shape}, bm = {bm.shape}")
+
+            # baseline: C_opt = Amn^{-1} bm
+
+            c_opt = (Amn_inv @ bm.unsqueeze(-1)).squeeze(-1)
+
+            # print(f">>inv: c_opt = {c_opt.shape}")
+
 
             # reinforce score
-            score = (f_mk - c_opt[:, None]) if self.baseline else f_mk
+            score = (L_k[:,:,None] - c_opt)  #if self.baseline else f_mk
 
-            control_variate_mse = (f_mk - c_opt[:, None]).pow(2).mean((1,))
+            control_variate_mse = (L_k[:,:,None] - c_opt).pow(2).mean((1, 2))
 
         # reinforce loss
-        __log_qz = log_qz.view(bs, self.mc, self.iw, -1).sum(2)
-        reinforce_loss = score[:, :, None].detach() * __log_qz
-        reinforce_loss = reinforce_loss.sum(-1)  # sum over z
+        __log_qz = log_qz.view(bs, self.mc, self.iw, -1)
+        reinforce_loss = score[:, :, :, None].detach() * __log_qz
+        reinforce_loss = reinforce_loss.sum((2, 3))  # sum over z and iw
+
+        # control variate
+        # with torch.no_grad():
+        #     # using notation from the paper
+        #     h = d_qlogits
+        #     f_mk = L_k
+        #
+        #     # compute h and h * f
+        #     sum_h_m = h.sum(dim=2).view(bs, self.mc, -1)
+        #     sum_hf_m = (h * f_mk[:, :, None, None, None]).sum(dim=2).view(bs, self.mc, -1)
+        #
+        #     # compute c_opt
+        #     num = torch.sum((sum_h_m * sum_hf_m).sum(-1), dim=1)
+        #     den = torch.sum((sum_h_m * sum_h_m).sum(-1), dim=1)
+        #     c_opt = num / den
+        #
+        #     # reinforce score
+        #     score = (f_mk - c_opt[:, None]) if self.baseline else f_mk
+        #
+        #     control_variate_mse = (f_mk - c_opt[:, None]).pow(2).mean((1,))
+
+        # # reinforce loss
+        # __log_qz = log_qz.view(bs, self.mc, self.iw, -1).sum(2)
+        # reinforce_loss = score[:, :, None].detach() * __log_qz
+        # reinforce_loss = reinforce_loss.sum(-1)  # sum over z
 
         # MC averaging
         nll, L_k, reinforce_loss = map(lambda x: x.mean(1), (nll, L_k, reinforce_loss))
