@@ -1,4 +1,5 @@
-from .estimators import VariationalInference, Reinforce, Vimco, Relax, OptCovReinforce
+from .estimators import *
+from .structured_estimators import *
 
 
 def get_config(estimator):
@@ -28,6 +29,10 @@ def get_config(estimator):
 
     elif estimator == 'covbaseline':
         Estimator = OptCovReinforce
+        config = {'tau': 0, 'zgrads': False}
+
+    elif estimator == 'struct-reinforce':
+        Estimator = StructuredReinforce
         config = {'tau': 0, 'zgrads': False}
 
     else:

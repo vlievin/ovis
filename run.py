@@ -30,7 +30,7 @@ parser.add_argument('--rm', action='store_true', help='delete previous run')
 
 # epochs, batch size, MC samples, lr
 parser.add_argument('--epochs', default=500, type=int, help='number of epochs')
-parser.add_argument('--lr', default=3e-3, type=float, help='learning rate')
+parser.add_argument('--lr', default=1e-3, type=float, help='learning rate')
 parser.add_argument('--bs', default=64, type=int, help='batch size')
 parser.add_argument('--lr_reduce_steps', default=1, type=int, help='number of learning rate reduce steps')
 
@@ -42,8 +42,10 @@ parser.add_argument('--iw_valid', default=100, type=int, help='number of Importa
 parser.add_argument('--baseline', action='store_true', help='use baseline')
 
 # latent space
+parser.add_argument('--L', default=1, type=int, help='number of layer of latent variables')
 parser.add_argument('--N', default=8, type=int, help='number of latent variables')
 parser.add_argument('--K', default=8, type=int, help='number of categories for each latent variable')
+parser.add_argument('--kdim', default=0, type=int, help='dimension of the keys for each latent variable')
 parser.add_argument('--learn_prior', action='store_true', help='learn the prior')
 
 # model architecture
@@ -54,13 +56,13 @@ parser.add_argument('--b_nlayers', default=1, type=int, help='number of hidden l
 opt = parser.parse_args()
 
 # defining the run identifier
-run_id = f"shapes-vae-{opt.estimator}"
+run_id = f"shapes-vae-{opt.estimator}-seed{opt.seed}"
 if len(opt.id) > 0:
     run_id += f"-{opt.id}"
 run_id += f"-lr{opt.lr:.1E}-bs{opt.bs}-mc{opt.mc}-iw{opt.iw}+{opt.iw_valid}"
 if opt.baseline:
     run_id += f"-baseline{opt.b_nlayers}"
-run_id += f"-N{opt.N}-K{opt.K}"
+run_id += f"-L{opt.L}-N{opt.N}-K{opt.K}-kdim{opt.kdim}"
 if opt.learn_prior:
     run_id += "-learn-prior"
 run_id += f"-arch{opt.hdim}x{opt.nlayers}"
@@ -95,7 +97,7 @@ loader_valid = DataLoader(dset_valid, batch_size=2 * opt.bs, shuffle=True)
 
 # define model
 torch.manual_seed(opt.seed)
-model = VAE(x.shape, opt.N, opt.K, opt.hdim, nlayers=opt.nlayers, learn_prior=opt.learn_prior)
+model = VAE(x.shape, opt.N, opt.K, opt.hdim, kdim=opt.kdim, nlayers=opt.nlayers, learn_prior=opt.learn_prior)
 
 # define baseline
 baseline = Baseline(x.shape, opt.b_nlayers, opt.hdim) if opt.baseline else None

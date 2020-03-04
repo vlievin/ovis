@@ -1,24 +1,23 @@
-from typing import *
-
 import numpy as np
 from booster import Diagnostic
 from torch import nn, Tensor
 from torch.nn.functional import softmax
 
 from .baseline import Baseline
-from .model import PseudoCategorical
+from .model import PseudoCategorical, VAE
 from .utils import *
 
 _EPS = 1e-18
 
 
 class Estimator(nn.Module):
-    def __init__(self, beta: float = 1, mc: int = 1, iw: int = 1, **kwargs):
+    def __init__(self, beta: float = 1, mc: int = 1, iw: int = 1, freebits=0, **kwargs):
         super().__init__()
         self.beta = beta
         self.mc = mc
         self.iw = iw
         self.log_iw = np.log(iw)
+        self.freebits = FreeBits(freebits)
 
     def _expand_sample(self, x):
         bs, *dims = x.size()
@@ -49,6 +48,91 @@ class VariationalInference(Estimator):
 
     """
 
+    def compute_iw_bound(self, log_px_z: Tensor, log_pzs: List[Tensor], log_qzs: List[Tensor]) -> Dict[str, Tensor]:
+        """
+        Compute the importance weighted bound:
+
+         L_k = E_{q(z_{1..K} | x)} [ log 1/K \sum_{i=1..K} f(x, z_i)], f(x, z) = p(x,z) / q(z|x)
+
+         In this expression the KLs are concatenated by stochastic layer so the freebits can be applied to each of them.
+
+        :param log_px_z: log p(x | z) of shape [bs * mc * iw]
+        :param log_pzs: [log p(z_i | *) l=1..L], each of of shape [bs * mc * iw, N_i]
+        :param log_qzs: [log q(z_i | *) l=1..L], each of of shape [bs * mc * iw, N_i]
+        :return: dictionary with outputs [L_k, kl, log_f_x,z]
+        """
+
+        # compute the effective sample size
+        N_eff = self.effective_sample_size(log_pzs, log_qzs)
+
+        def cat_by_layer(log_pzs):
+            """sum over the latent dimension (N_i) and concatenate stocastic layers.
+            for L=2, a list of values [[*, N_1], [*, N_2]] becomes [*, 2]"""
+            return torch.cat([x.sum(1, keepdims=True) for x in log_pzs], 1)
+
+        # kl = E_q[ log p(z) - log q(z) ]
+        log_pz = cat_by_layer(log_pzs)
+        log_qz = cat_by_layer(log_qzs)
+        kl = log_qz - log_pz
+        # freebits is ditributed equally over the last dimension
+        # (meaning L layers result in a total of L * freebits budget)
+        kl = self.freebits(kl.unsqueeze(-1))
+        kl = batch_reduce(kl)
+
+        # compute log f(x, z) = log p(x, z) - log q(z | x) (ELBO)
+        log_f_xz = log_px_z - kl
+
+        # view log f as shape [bs, mc, iw]
+        log_f_xz = log_f_xz.view(-1, self.mc, self.iw)
+
+        # IW-ELBO: L_k
+        L_k = torch.logsumexp(log_f_xz, dim=2) - self.log_iw if self.iw > 1 else log_f_xz.squeeze(2)
+
+        return {'L_k': L_k, 'kl': kl, 'log_f_xz': log_f_xz, 'N_eff': N_eff}
+
+    def effective_sample_size(self, log_pz, log_qz):
+        """
+        Compute the effective sample size: N_eff = (\sum_i w_i)**2 / \sum_i w_i**2
+        :param log_pz: log p(z) of shape [bs * mc * iw, ...]
+        :param log_qz: loq q(z) of shape [bs * mc * iw, ...]
+        :return: effective_sample_size
+        """
+
+        if isinstance(log_pz, List):
+            log_pz = torch.cat(log_pz, 1)
+
+        if isinstance(log_qz, List):
+            log_qz = torch.cat(log_qz, 1)
+
+        # compute effective sample size
+        if self.iw > 1:
+            # compute effective sample size
+            w = batch_reduce(log_pz - log_qz).exp().view(-1, self.mc, self.iw)
+            N_eff = torch.sum(w, 2) ** 2 / torch.sum(w ** 2, 2)
+            N_eff = N_eff.mean(1)  # MC
+        else:
+            x = (log_pz).view(-1, self.mc, self.iw)
+            N_eff = torch.ones_like(x[:, 0, 0])
+
+        return N_eff
+
+    def evaluate_model(self, model: nn.Module, x: Tensor, **kwargs: Any) -> Dict[str, Tensor]:
+
+        # expand input to get MC and IW samples: [bs, mc, iw, ...]
+        __x = self._expand_sample(x)
+
+        # forward pass
+        output = model(__x, **kwargs)
+        px, z, qz, pz = [output[k] for k in ['px', 'z', 'qz', 'pz']]
+
+        # compute log p(x|z), log p(z) and log q(z | x)
+        log_px_z = batch_reduce(px.log_prob(__x))
+        log_pz = [pz_l.log_prob(z_l) for pz_l, z_l in zip(pz, z)]
+        log_qz = [qz_l.log_prob(z_l) for qz_l, z_l in zip(qz, z)]
+
+        output.update({'log_px_z': log_px_z, 'log_pz': log_pz, 'log_qz': log_qz})
+        return output
+
     def compute_elbo(self, model: nn.Module, x: Tensor, **kwargs: Any) -> Tuple:
         """
         Compute the Importance-Weighted ELBO.
@@ -61,7 +145,7 @@ class VariationalInference(Estimator):
         :return: model's output, L_k, N_eff, log_f_xz, log_px_z, log_pz, log_qz, kl
         """
 
-        # expand input to get MC and IW samples: [mc, iw, bs, ...]
+        # expand input to get MC and IW samples: [bs, mc, iw, ...]
         bs, *dims = x.size()
         __x = self._expand_sample(x)
 
@@ -70,10 +154,10 @@ class VariationalInference(Estimator):
         px, z, qz, pz = [output[k] for k in ['px', 'z', 'qz', 'pz']]
 
         # compute log p(x|z), log p(z) and log q(z | x)
-        log_px_z = reduce(px.log_prob(__x))
-        log_pz = pz.log_prob(z)
-        log_qz = qz.log_prob(z)
-        kl = reduce(log_qz - log_pz)
+        log_px_z = batch_reduce(px.log_prob(__x))
+        log_pz = torch.cat([pz_l.log_prob(z_l) for pz_l, z_l in zip(pz, z)], 1)
+        log_qz = torch.cat([qz_l.log_prob(z_l) for qz_l, z_l in zip(qz, z)], 1)
+        kl = batch_reduce(self.freebits(log_qz - log_pz))
 
         # compute log f(x, z) = log p(x, z) - log q(z | x) (ELBO)
         log_f_xz = log_px_z - kl
@@ -82,39 +166,21 @@ class VariationalInference(Estimator):
         log_f_xz = log_f_xz.view(bs, self.mc, self.iw)
 
         # IW-ELBO: L_k = E_q(z_{1..K} | x) [ log 1/K \sum_{i=1..K} f(x, z_i)]
-        L_k = log_sum_exp(log_f_xz, dim=2) - self.log_iw
+        L_k = torch.logsumexp(log_f_xz, dim=2) - self.log_iw
 
         # N_eff
         N_eff = self.effective_sample_size(log_pz, log_qz)
 
         return output, L_k, N_eff, log_f_xz, log_px_z, log_pz, log_qz, kl
 
-    def effective_sample_size(self, log_pz, log_qz):
-        """
-        Compute the effective sample size: N_eff = (\sum_i w_i)**2 / \sum_i w_i**2
-        :param log_pz: log p(z) of shape [bs * mc * iw, ...]
-        :param log_qz: loq q(z) of shape [bs * mc * iw, ...]
-        :return: effective_sample_size
-        """
-
-        # compute effective sample size
-        if self.iw > 1:
-            # compute effective sample size
-            w = reduce(log_pz - log_qz).exp().view(-1, self.mc, self.iw)
-            N_eff = torch.sum(w, 2) ** 2 / torch.sum(w ** 2, 2)
-            N_eff = N_eff.mean(1)  # MC
-        else:
-            x = (log_pz).view(-1, self.mc, self.iw)
-            N_eff = torch.ones_like(x[:, 0, 0])
-
-        return N_eff
-
     def forward(self, model: nn.Module, x: Tensor, backward: bool = False, **kwargs: Any) -> Tuple[Tensor, Dict, Dict]:
 
-        output, L_k, N_eff, log_f_xz, log_px_z, log_pz, log_qz, kl = self.compute_elbo(model, x, **kwargs)
+        output = self.evaluate_model(model, x, **kwargs)
+        log_px_z, log_pz, log_qz = [output[k] for k in ('log_px_z', 'log_pz', 'log_qz')]
+        iw_data = self.compute_iw_bound(log_px_z, log_pz, log_qz)
 
         # loss
-        L_k = L_k.mean(1)  # MC averaging
+        L_k = iw_data.get('L_k').mean(1)  # MC averaging
         loss = - L_k
 
         # prepare diagnostics
@@ -122,8 +188,8 @@ class VariationalInference(Estimator):
             'loss': {'loss': loss,
                      'elbo': L_k,
                      'nll': - self._reduce_sample(log_px_z),
-                     'kl': self._reduce_sample(kl),
-                     'N_eff': N_eff},
+                     'kl': self._reduce_sample(iw_data.get('kl')),
+                     'N_eff': iw_data.get('N_eff')},
         })
 
         if backward:
@@ -147,34 +213,54 @@ class Reinforce(VariationalInference):
     def __init__(self, baseline: Optional[nn.Module] = None, **kwargs: Any):
         super().__init__(**kwargs)
         self.baseline = baseline
+        self.control_variate_loss_weight = 0 if baseline is None else 1.
+
+    def compute_control_variate(self, x: Tensor, **data: Dict[str, Tensor]) -> Tensor:
+        """Compute the baseline that will be substracted to the score L_k,
+        `data` contains the output of the method `compute_iw_bound` and `evaluate_model`.
+        The output shape should be of size 4 and matching the shape [bs, mc, iw, nz]"""
+
+        if self.baseline is None:
+            return torch.zeros((x.size(0), 1, 1, 1), device=x.device, dtype=x.dtype)
+
+        baseline = self.baseline(x)
+        return baseline.view((x.size(0), 1, 1, 1))  # output of shape [bs, 1, 1, 1]
+
+    def compute_control_variate_mse(self, L_k, control_variate):
+        """mse between the score function and its estimate"""
+        return (control_variate - L_k[:,:,None,None]).pow(2).sum(3).mean(2)  # <-> sum(z).mean(iw)
+
+    def compute_reinforce_loss(self, L_k, control_variate, log_qz):
+
+        log_qz = log_qz.view(L_k.size(0), self.mc, self.iw, -1)
+
+        # \nabla loss = [ f(x, z) - b(x) ] \nabla log q_theta(z | x)
+        reinforce_loss = (L_k[:, :, None, None] - control_variate).detach() * log_qz
+        # sum over iw: log Q(z_{1..K} | x) = \sum_{i=1..K} log q(z_i | x)
+        return reinforce_loss.sum((2, 3))  # sum over z and iw
 
     def forward(self, model: nn.Module, x: Tensor, backward: bool = False, **kwargs: Any) -> Tuple[Tensor, Dict, Dict]:
 
-        bs, *dims = x.size()
-        output, L_k, N_eff, log_f_xz, log_px_z, log_pz, log_qz, kl = self.compute_elbo(model, x, **kwargs)
+        output = self.evaluate_model(model, x, **kwargs)
+        log_px_z, log_pz, log_qz = [output[k] for k in ('log_px_z', 'log_pz', 'log_qz')]
+        iw_data = self.compute_iw_bound(log_px_z, log_pz, log_qz)
+        L_k, kl, log_f_xz, N_eff = [iw_data[k] for k in ('L_k', 'kl', 'log_f_xz', 'N_eff')]
 
         # baseline: b(x) + c
-        if self.baseline is not None:
-            control_variate = self.baseline(x)
-            # expand to match format [mc, bs]
-            control_variate = control_variate[:, None].repeat(1, self.mc)
-            # MSE between baseline and f(x,z)
-            control_variate_mse = (control_variate - L_k.detach()).pow(2)
-        else:
-            control_variate = torch.zeros_like(L_k)
-            control_variate_mse = torch.zeros_like(L_k)
+        control_variate = self.compute_control_variate(x, **iw_data)
+        control_variate_mse = self.compute_control_variate_mse(L_k, control_variate)
 
-        # \nabla loss = [ f(x, z) - b(x) ] \nabla log q_theta(z | x)
-        # log Q(z_{1..K} | x) = \sum_{i=1..K} log q(z_i | x)
-        __log_qz = log_qz.view(bs, self.mc, self.iw, -1).sum(2)
-        reinforce_loss = (L_k - control_variate)[:, :, None].detach() * __log_qz
-        reinforce_loss = reinforce_loss.sum(-1)  # sum over z
+        # concatenate all q(z_l| *, x)
+        log_qz = torch.cat(log_qz, 1)
+
+        # reinforce loss
+        reinforce_loss = self.compute_reinforce_loss(L_k, control_variate, log_qz)
 
         # MC averaging
         L_k, reinforce_loss, control_variate_mse = map(lambda x: x.mean(1), (L_k, reinforce_loss, control_variate_mse))
 
         # final loss
-        loss = - L_k - reinforce_loss + control_variate_mse
+        loss = - L_k - reinforce_loss + self.control_variate_loss_weight * control_variate_mse
 
         # prepare diagnostics
         diagnostics = Diagnostic({
@@ -193,46 +279,148 @@ class Reinforce(VariationalInference):
         return loss, diagnostics, output
 
 
-class Vimco(VariationalInference):
+class Vimco(Reinforce):
     """
     VIMCO: https://arxiv.org/abs/1602.06725
     Inspired by https://github.com/vmasrani/tvo/blob/master/discrete_vae/losses.py
     """
 
-    def __init__(self, baseline: Optional[nn.Module] = None, **kwargs: Any):
-        super().__init__(**kwargs)
-        self.baseline = baseline
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.control_variate_loss_weight = 0  # the control variate doesn't have any parameter
 
-    def forward(self, model: nn.Module, x: Tensor, backward: bool = False, **kwargs: Any) -> Tuple[Tensor, Dict, Dict]:
-        bs, *dims = x.size()
-        output, L_k, N_eff, log_f_xz, log_px_z, log_pz, log_qz, kl = self.compute_elbo(model, x, **kwargs)
+    @torch.no_grad()
+    def compute_control_variate(self, x: Tensor, **data: Dict[str, Tensor]) -> Tensor:
+        """Compute the baseline that will be substracted to the score L_k,
+        `data` contains the output of the method `compute_iw_bound`.
+        The output shape should be of size 4 and matching the shape [bs, mc, iw, nz]"""
 
+        log_f_xz = data['log_f_xz']
+        log_f_xz = log_f_xz.view(-1, self.mc, self.iw)
+
+        # log \hat{f}(x, h^{-j}) using the geometric mean
+        log_f_xz_hat = (torch.sum(log_f_xz, dim=2, keepdim=True) - log_f_xz) / (self.iw - 1)
+        log_f_xz_samples = log_f_xz.unsqueeze(-1) + torch.diag_embed(log_f_xz_hat - log_f_xz)
+        baseline = torch.logsumexp(log_f_xz_samples, dim=2) - self.log_iw
+        return baseline.unsqueeze(-1)  # output of shape [bs, mc, iw, 1]
+
+
+class OptCovReinforce(VariationalInference):
+    """
+    Overleaf: https://www.overleaf.com/project/5d84f62f0c4fb30001e934ac
+
+    c_\mathrm{opt}(x) = \frac{\sum_k \sum_m h^T_{mk} \sum_{m'} h_{m'k} f_{m'k} }{\sum_k  \sum_m h^T_{mk} \sum_{m'} h_{m'k} }
+
+    However here I am using :
+
+    \nabla E_q[L_k] = E_q[ (f(x,z) - copt) h + \nabla f(x,z) ]
+
+    where:
+    * f(x,z) = log 1/k \sum_{i=1..K} p(x,z_i) / q(z_i | x)
+    * h = \nabla q(z|x)
+
+    """
+
+    def __init__(self, *args, baseline: Optional[nn.Module] = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.baseline = baseline is not None  # small hack to allow testing the estimator without the control variate.
+
+    def f(self, model, qz, pz, x, z):
+        px = model.generate(z)
+
+        # compute log p(x|z), log p(z) and log q(z | x)
+        log_px_z = batch_reduce(px.log_prob(x))
+        log_pz = pz.log_prob(z)
+        log_qz = qz.log_prob(z)
+        kl = batch_reduce(log_qz - log_pz)
+        elbo = log_px_z - kl
+        return elbo, kl, -log_px_z, px
+
+    def forward(self, model: nn.Module, x: Tensor, backward: bool = False, **kwargs: Any) -> Tuple[
+        Tensor, Dict, Dict]:
+        bs, *dims = x.shape
+
+        # expand sample
+        x = self._expand_sample(x)
+
+        qlogits = model.infer(x)
+        qlogits.retain_grad()
+
+        # p(z) and q(z|x)
+        pz = PseudoCategorical(model.prior)
+        qz = PseudoCategorical(qlogits)
+
+        # z ~ q(z|x)
+        z = qz.sample()
+
+        # p(x|z)
+        px = model.generate(z)
+
+        # compute log p(x|z), log p(z) and log q(z | x)
+        log_px_z = batch_reduce(px.log_prob(x))
+        log_pz = pz.log_prob(z)
+        log_qz = qz.log_prob(z)
+        kl = batch_reduce(log_qz - log_pz)
+        nll = - log_px_z
+
+        # compute log f(x, z) = log p(x, z) - log q(z | x) (ELBO)
+        log_f_xz = log_px_z - kl
+
+        # view log f as shape [bs, mc, iw]
+        log_f_xz = log_f_xz.view(bs, self.mc, self.iw)
+
+        # IW-ELBO: L_k = E_q(z_{1..K} | x) [ log 1/K \sum_{i=1..K} f(x, z_i)]
+        L_k = torch.logsumexp(log_f_xz, dim=2) - self.log_iw
+
+        # N_eff
+        N_eff = self.effective_sample_size(log_pz, log_qz)
+
+        # d q(z|x) / d qlogits
+        d_qlogits = torch.autograd.grad(
+            [log_qz], [qlogits], grad_outputs=torch.ones_like(log_qz), retain_graph=True, allow_unused=True)[0]
+
+        # reshaping d_qlogits and qlogits
+        d_qlogits = d_qlogits.view(bs, self.mc, self.iw, *d_qlogits.size()[1:])
+        qlogits = qlogits.view(bs, self.mc, self.iw, *qlogits.size()[1:])
+        nll = nll.view(bs, self.mc, self.iw).mean(2)
+
+        # control variate
         with torch.no_grad():
-            # log \hat{f}(x, h^{-j}) using the geometric mean
-            log_f_xz_hat = (torch.sum(log_f_xz, dim=2, keepdim=True) - log_f_xz) / (self.iw - 1)
-            log_f_xz_samples = log_f_xz.unsqueeze(-1) + torch.diag_embed(log_f_xz_hat - log_f_xz)
-            baseline = torch.logsumexp(log_f_xz_samples, dim=2) - self.log_iw
+            # using notation from the paper
+            h = d_qlogits
+            f_mk = L_k
 
-            # for debugging
-            control_variate_mse = (baseline - L_k.unsqueeze(2)).pow(2).mean(2)
+            # compute h and h * f
+            sum_h_m = h.sum(dim=2).view(bs, self.mc, -1)
+            sum_hf_m = (h * f_mk[:, :, None, None, None]).sum(dim=2).view(bs, self.mc, -1)
 
-        # \sum L_(h_j| -j) * log q(z_j | x)
-        __log_qz = log_qz.view(bs, self.mc, self.iw, -1)
-        reinforce_loss = (L_k.unsqueeze(2) - baseline).unsqueeze(-1).detach() * __log_qz
-        reinforce_loss = reinforce_loss.sum((2, 3))  # sum over iw samples and z
+            # compute c_opt
+            num = torch.sum((sum_h_m * sum_hf_m).sum(-1), dim=1)
+            den = torch.sum((sum_h_m * sum_h_m).sum(-1), dim=1)
+            c_opt = num / den
+
+            # reinforce score
+            score = (f_mk - c_opt[:, None]) if self.baseline else f_mk
+
+            control_variate_mse = (f_mk - c_opt[:, None]).pow(2).mean((1,))
+
+        # reinforce loss
+        __log_qz = log_qz.view(bs, self.mc, self.iw, -1).sum(2)
+        reinforce_loss = score[:, :, None].detach() * __log_qz
+        reinforce_loss = reinforce_loss.sum(-1)  # sum over z
 
         # MC averaging
-        L_k, reinforce_loss, control_variate_mse = map(lambda x: x.mean(1), (L_k, reinforce_loss, control_variate_mse))
+        nll, L_k, reinforce_loss = map(lambda x: x.mean(1), (nll, L_k, reinforce_loss))
 
-        # final loss
+        # nll gives the gradients for theta
         loss = - L_k - reinforce_loss
 
         # prepare diagnostics
         diagnostics = Diagnostic({
             'loss': {'loss': loss,
                      'elbo': L_k,
-                     'nll': - self._reduce_sample(log_px_z),
-                     'kl': self._reduce_sample(kl),
+                     'nll': nll,
+                     'kl': kl,
                      'N_eff': N_eff,
                      'reinforce_loss': reinforce_loss,
                      'control_variate_mse': control_variate_mse}
@@ -241,7 +429,7 @@ class Vimco(VariationalInference):
         if backward:
             loss.mean().backward()
 
-        return loss, diagnostics, output
+        return loss, diagnostics, {'x_': px, 'z': z, 'qz': qz, 'pz': pz, 'qlogits': qlogits}
 
 
 class Lax(VariationalInference):
@@ -309,15 +497,18 @@ class Relax(VariationalInference):
         px = model.generate(z)
 
         # compute log p(x|z), log p(z) and log q(z | x)
-        log_px_z = reduce(px.log_prob(x))
+        log_px_z = batch_reduce(px.log_prob(x))
         log_pz = pz.log_prob(z)
         log_qz = qz.log_prob(z)
-        kl = reduce(log_qz - log_pz)
+        kl = batch_reduce(log_qz - log_pz)
         elbo = log_px_z - kl
         return elbo, kl, -log_px_z, px
 
     def forward(self, model: nn.Module, x: Tensor, backward: bool = False, **kwargs: Any) -> Tuple[
         Tensor, Dict, Dict]:
+
+        assert isinstance(model, VAE), "Not implemented for hierarchical models."
+
         # expand sample
         bs, *dims = x.size()
         x = x[:, None].repeat(1, self.mc, *(1 for __ in dims)).contiguous().view(-1, *dims)
@@ -390,132 +581,3 @@ class Relax(VariationalInference):
                     v.grad = grads_v.data
 
         return loss, diagnostics, {'x_': px, 'z': b, 'qz': qz, 'pz': pz, 'qlogits': qlogits}
-
-
-
-class OptCovReinforce(VariationalInference):
-    """
-    Overleaf: https://www.overleaf.com/project/5d84f62f0c4fb30001e934ac
-
-    c_\mathrm{opt}(x) = \frac{\sum_k \sum_m h^T_{mk} \sum_{m'} h_{m'k} f_{m'k} }{\sum_k  \sum_m h^T_{mk} \sum_{m'} h_{m'k} }
-
-    However here I am using :
-
-    \nabla E_q[L_k] = E_q[ (f(x,z) - copt) h + \nabla f(x,z) ]
-
-    where:
-    * f(x,z) = log 1/k \sum_{i=1..K} p(x,z_i) / q(z_i | x)
-    * h = \nabla q(z|x)
-
-    """
-
-    def __init__(self, *args, baseline: Optional[nn.Module] = None, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.baseline = baseline is not None # small hack to allow testing the estimator without the control variate.
-
-    def f(self, model, qz, pz, x, z):
-        px = model.generate(z)
-
-        # compute log p(x|z), log p(z) and log q(z | x)
-        log_px_z = reduce(px.log_prob(x))
-        log_pz = pz.log_prob(z)
-        log_qz = qz.log_prob(z)
-        kl = reduce(log_qz - log_pz)
-        elbo = log_px_z - kl
-        return elbo, kl, -log_px_z, px
-
-    def forward(self, model: nn.Module, x: Tensor, backward: bool = False, **kwargs: Any) -> Tuple[
-        Tensor, Dict, Dict]:
-        bs, *dims = x.shape
-
-        # expand sample
-        x = self._expand_sample(x)
-
-        qlogits = model.infer(x)
-        qlogits.retain_grad()
-
-        # p(z) and q(z|x)
-        pz = PseudoCategorical(model.prior)
-        qz = PseudoCategorical(qlogits)
-
-        # z ~ q(z|x)
-        z = qz.sample()
-
-        # p(x|z)
-        px = model.generate(z)
-
-        # compute log p(x|z), log p(z) and log q(z | x)
-        log_px_z = reduce(px.log_prob(x))
-        log_pz = pz.log_prob(z)
-        log_qz = qz.log_prob(z)
-        kl = reduce(log_qz - log_pz)
-        nll = - log_px_z
-
-        # compute log f(x, z) = log p(x, z) - log q(z | x) (ELBO)
-        log_f_xz = log_px_z - kl
-
-        # view log f as shape [bs, mc, iw]
-        log_f_xz = log_f_xz.view(bs, self.mc, self.iw)
-
-        # IW-ELBO: L_k = E_q(z_{1..K} | x) [ log 1/K \sum_{i=1..K} f(x, z_i)]
-        L_k = log_sum_exp(log_f_xz, dim=2) - self.log_iw
-
-        # N_eff
-        N_eff = self.effective_sample_size(log_pz, log_qz)
-
-        # d q(z|x) / d qlogits
-        d_qlogits = torch.autograd.grad(
-            [log_qz], [qlogits], grad_outputs=torch.ones_like(log_qz), retain_graph=True, allow_unused=True)[0]
-
-        # reshaping d_qlogits and qlogits
-        d_qlogits = d_qlogits.view(bs, self.mc, self.iw, *d_qlogits.size()[1:])
-        qlogits = qlogits.view(bs, self.mc, self.iw, *qlogits.size()[1:])
-        nll = nll.view(bs, self.mc, self.iw).mean(2)
-
-        # control variate
-        with torch.no_grad():
-
-            #using notation from the paper
-            h = d_qlogits
-            f_mk = L_k
-
-            # compute h and h * f
-            sum_h_m = h.sum(dim=2).view(bs, self.mc, -1)
-            sum_hf_m = (h * f_mk[:, :, None, None, None]).sum(dim=2).view(bs, self.mc, -1)
-
-            # compute c_opt
-            num = torch.sum((sum_h_m * sum_hf_m).sum(-1), dim=1)
-            den = torch.sum((sum_h_m * sum_h_m).sum(-1), dim=1)
-            c_opt = num / den
-
-            # reinforce score
-            score = (f_mk - c_opt[:, None]) if self.baseline else f_mk
-
-            control_variate_mse = (f_mk - c_opt[:, None]).pow(2).mean((1,))
-
-        # reinforce loss
-        __log_qz = log_qz.view(bs, self.mc, self.iw, -1).sum(2)
-        reinforce_loss = score[:,:,None].detach() * __log_qz
-        reinforce_loss = reinforce_loss.sum(-1)  # sum over z
-
-        # MC averaging
-        nll, L_k, reinforce_loss = map(lambda x: x.mean(1), (nll, L_k, reinforce_loss))
-
-        # nll gives the gradients for theta
-        loss = - L_k - reinforce_loss
-
-        # prepare diagnostics
-        diagnostics = Diagnostic({
-            'loss': {'loss': loss,
-                     'elbo': L_k,
-                     'nll': nll,
-                     'kl': kl,
-                     'N_eff': N_eff,
-                     'reinforce_loss': reinforce_loss,
-                     'control_variate_mse': control_variate_mse}
-        })
-
-        if backward:
-            loss.mean().backward()
-
-        return loss, diagnostics, {'x_': px, 'z': z, 'qz': qz, 'pz': pz, 'qlogits': qlogits}

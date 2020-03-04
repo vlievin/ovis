@@ -15,7 +15,7 @@ def sample_model(key, model, logdir, global_step=0, writer=None, N=100, seed=Non
         torch.manual_seed(seed)
 
     # sample model
-    x_ = model.sample_from_prior(N, **kwargs).get('x_')
+    x_ = model.sample_from_prior(N, **kwargs).get('px')
     sample = x_.sample()
 
     # make grid
