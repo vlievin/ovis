@@ -285,10 +285,15 @@ class Relax(VariationalInference):
     NB: in the RELAX paper, f(x, z) = log p(x,z) - log q(z|x)
 
     NB: this implementation is probably only 90% correct.
+
+    todo: learn tau (setting tau as a parameter causes malloc error)
     """
 
     def __init__(self, *args, N=8, K=8, hdim=32, **kwargs):
         super().__init__(*args, **kwargs)
+
+        if self.iw > 1:
+            raise NotImplementedError
 
         # control variate model
         self.r_rho = Baseline(xdim=(N, K), nlayers=1, hdim=hdim)
@@ -339,7 +344,7 @@ class Relax(VariationalInference):
     def forward(self, model: nn.Module, x: Tensor, backward: bool = False, **kwargs: Any) -> Tuple[
         Tensor, Dict, Dict]:
 
-        assert isinstance(model, VAE), "Not implemented for hierarchical models."
+        assert isinstance(model, VAE), "only implemented for basic VAE"
 
         # expand sample
         bs, *dims = x.size()
@@ -395,21 +400,27 @@ class Relax(VariationalInference):
         })
 
         if backward:
+
             # compute grads for theta
             loss.mean().backward(create_graph=True, retain_graph=True)
 
             # compute the variance of the gradients with regards to the logits
             grads_var = (qlogits.grad.mean(0) ** 2).mean()
 
+            # set grads of tau and rho to zero (they were modified by the backward pass)
+            self.zero_grad()
+
             # looping over rho params: super slow..
-            for k, v in list(self.r_rho.named_parameters())[::-1]:
+            for k, v in list(self.named_parameters())[::-1]:
 
                 # compute d grads_var / dv
-                grads_v = torch.autograd.grad(
-                    [grads_var], [v], grad_outputs=torch.ones_like(grads_var), retain_graph=True, allow_unused=True)[0]
+                grads_v, = torch.autograd.grad(
+                    [grads_var], [v], retain_graph=True, allow_unused=True)
 
                 # assign gradients manually
                 if grads_v is not None:
                     v.grad = grads_v.data
+
+
 
         return loss, diagnostics, {'x_': px, 'z': b, 'qz': qz, 'pz': pz, 'qlogits': qlogits}
