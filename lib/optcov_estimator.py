@@ -118,7 +118,7 @@ class OptCovReinforce(VariationalInference):
             c_opt = (Amn_inv @ bm.unsqueeze(-1)).squeeze(-1)
 
             # reinforce score
-            score = (f_mk[:, :, :] - c_opt) if self.baseline else f_mk
+            score = (f_mk[:, :, :] - c_opt) #if self.baseline else f_mk
 
             control_variate_mse = (f_mk[:, :, :] - c_opt).pow(2).mean((1, 2))
 

@@ -8,7 +8,7 @@ def get_config(estimator):
         Estimator = VariationalInference
         config = {'tau': 0, 'zgrads': False}
 
-    elif estimator == 'reinforce':
+    elif 'reinforce' in estimator:
         Estimator = Reinforce
         config = {'tau': 0, 'zgrads': False}
 

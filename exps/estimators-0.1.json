@@ -1,6 +1,6 @@
 {
   "args": [
-    "--estimator reinforce --baseline",
+    "--estimator reinforce-baseline",
     "--estimator vimco",
     "--estimator relax",
     "--estimator gs",
