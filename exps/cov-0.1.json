@@ -1,11 +1,9 @@
 {
   "args": [
-    "--estimator covbaseline --mc 4 --iw 4",
-    "--estimator covbaseline --mc 4 --iw 4 --baseline",
-    "--estimator reinforce --mc 4 --iw 4",
-    "--estimator reinforce --baseline --mc 4 --iw 4",
-    "--estimator vimco --mc 4 --iw 4"
+    "--estimator covbaseline --iw 4 --mc 4 --baseline",
+    "--estimator vimco --iw 4 --mc 4",
+    "--estimator reinforce --iw 4 --mc 4 --baseline"
   ],
   "global": "--epochs 1000 --lr_reduce_steps 2 --bs 32",
-  "seed": [13, 64, 37, 88, 120]
+  "seed": [13, 64]
 }
