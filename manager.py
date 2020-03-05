@@ -36,7 +36,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--script', default='run.py', help='script name')
     parser.add_argument('--root', default='runs/', help='experiment directory')
-    parser.add_argument('--id', default='estimators-0.1', type=str, help='experiment id')
+    parser.add_argument('--exp', default='estimators-0.1', type=str, help='experiment id')
     parser.add_argument('--max_gpus', default=8, type=int, help='maximum number of gpus')
     parser.add_argument('--max_load', default=0.5, type=float, help='maximum GPU load')
     parser.add_argument('--max_memory', default=0.01, type=float, help='maximum GPU memory')
@@ -57,7 +57,7 @@ if __name__ == '__main__':
     processes = opt.processes * len(deviceIDs)
 
     # log directory
-    logdir = os.path.join(opt.root, opt.id)
+    logdir = os.path.join(opt.root, opt.exp)
     if os.path.exists(logdir):
         warnings.warn(f"logging directory `{logdir}` already exists.")
 
@@ -76,9 +76,9 @@ if __name__ == '__main__':
     logger.info(
         f"Available devices: {deviceIDs}")
     logger.info(
-        f"Experiment id = {opt.id}, running {opt.processes} processes/device, logdir = {logdir}")
+        f"Experiment id = {opt.exp}, running {opt.processes} processes/device, logdir = {logdir}")
 
-    with open(f'exps/{opt.id}.json') as json_file:
+    with open(f'exps/{opt.exp}.json') as json_file:
         data = json.load(json_file)
 
     # define the args for each run
@@ -88,7 +88,7 @@ if __name__ == '__main__':
     args = [data['global'] + " " + a for a in args]
 
     # append logdir to args
-    args = [f"--root {logdir} " + a for a in args]
+    args = [f"--exp {opt.exp} --root {opt.root} " + a for a in args]
 
     # seeds
     if "seed" in data.keys():
