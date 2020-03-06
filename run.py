@@ -17,6 +17,7 @@ from lib import get_shapes_datasets
 from lib.config import get_config
 from lib.gradients import get_gradients_log_total_variance
 from lib.logging import sample_model, get_loggers, log_summary, save_model
+from lib.utils import notqdm
 
 
 _sep = 32*"-"
@@ -29,6 +30,7 @@ parser.add_argument('--exp', default='sandbox', help='experiment directory')
 parser.add_argument('--id', default='', type=str, help='run id suffix')
 parser.add_argument('--seed', default=13, type=int, help='random seed')
 parser.add_argument('--rm', action='store_true', help='delete previous run')
+parser.add_argument('--silent', action='store_true', help='silence tqdm')
 
 # epochs, batch size, MC samples, lr
 parser.add_argument('--epochs', default=500, type=int, help='number of epochs')
@@ -55,6 +57,9 @@ parser.add_argument('--nlayers', default=3, type=int, help='number of hidden lay
 parser.add_argument('--b_nlayers', default=1, type=int, help='number of hidden layers for the baseline')
 
 opt = parser.parse_args()
+
+if opt.silent:
+    tqdm = notqdm
 
 # defining the run identifier
 use_baseline = 'baseline' in opt.estimator

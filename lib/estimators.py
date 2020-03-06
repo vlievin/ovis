@@ -177,7 +177,7 @@ class Reinforce(VariationalInference):
 
     def compute_control_variate(self, x: Tensor, **data: Dict[str, Tensor]) -> Tensor:
         """Compute the baseline that will be substracted to the score L_k,
-        `data` contains the output of the method `compute_iw_bound` and `evaluate_model`.
+        `data` contains `kwargs` and the outputs of the methods `compute_iw_bound` and `evaluate_model`.
         The output shape should be of size 4 and matching the shape [bs, mc, iw, nz]"""
 
         if self.baseline is None:
@@ -206,7 +206,7 @@ class Reinforce(VariationalInference):
         L_k, kl, log_f_xz, N_eff = [iw_data[k] for k in ('L_k', 'kl', 'log_f_xz', 'N_eff')]
 
         # baseline: b(x) + c
-        control_variate = self.compute_control_variate(x, **iw_data)
+        control_variate = self.compute_control_variate(x, **iw_data, **output, **kwargs)
         control_variate_mse = self.compute_control_variate_mse(L_k, control_variate)
 
         # concatenate all q(z_l| *, x)

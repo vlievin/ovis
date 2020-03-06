@@ -193,7 +193,7 @@ class VAE(Template):
 
         px = self.generate(z)
 
-        return {'px': px, 'z': [z], 'qz': [qz], 'pz': [pz], 'qlogits': qlogits}
+        return {'px': px, 'z': [z], 'qz': [qz], 'pz': [pz]}
 
     def sample_from_prior(self, N):
         prior = self.prior.expand(N, *self.zdim)

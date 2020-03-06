@@ -1,6 +1,5 @@
-from .estimators import *
-from .structured_estimators import *
 from .optcov_estimator import *
+from .structured_estimators import *
 
 
 def get_config(estimator):
@@ -28,21 +27,13 @@ def get_config(estimator):
         Estimator = Relax
         config = {'tau': 0.5, 'zgrads': True}
 
-    elif estimator == 'covbaseline-avg':
-        Estimator = OptCovReinforce
-        config = {'tau': 0, 'zgrads': False, 'exclude_sample': False}
-
     elif estimator == 'covbaseline':
         Estimator = OptCovReinforce
-        config = {'tau': 0, 'zgrads': False, 'exclude_sample': True}
+        config = {'tau': 0, 'zgrads': False}
 
-    elif estimator == 'scalar-covbaseline':
+    elif estimator == 'covbaseline-mc':
         Estimator = OptCovReinforce
-        config = {'tau': 0, 'zgrads': False, 'exclude_sample': True, 'scalar_baseline':True}
-
-    elif estimator == 'scalar-covbaseline-avg':
-        Estimator = OptCovReinforce
-        config = {'tau': 0, 'zgrads': False, 'exclude_sample': False, 'scalar_baseline':True}
+        config = {'tau': 0, 'zgrads': False, 'mc_baseline': False}
 
     elif estimator == 'struct-reinforce':
         Estimator = StructuredReinforce
