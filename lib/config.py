@@ -11,9 +11,16 @@ def get_config(estimator):
         Estimator = Reinforce
         config = {'tau': 0, 'zgrads': False}
 
-    elif estimator == 'vimco':
+    elif 'vimco' in estimator:
         Estimator = Vimco
-        config = {'tau': 0, 'zgrads': False}
+        mc_estimates = '-mc' in estimator
+        config = {'tau': 0, 'zgrads': False, 'mc_estimates': mc_estimates}
+
+    elif 'covbaseline' in estimator:
+        Estimator = OptCovReinforce
+        mc_estimates = '-mc' in estimator
+        nz_estimates = '-nz' in estimator
+        config = {'tau': 0, 'zgrads': False, 'mc_estimates': mc_estimates, 'nz_estimates': nz_estimates}
 
     elif estimator == 'gs':
         Estimator = VariationalInference
@@ -26,12 +33,6 @@ def get_config(estimator):
     elif estimator == 'relax':
         Estimator = Relax
         config = {'tau': 0.5, 'zgrads': True}
-
-    elif 'covbaseline' in estimator:
-        Estimator = OptCovReinforce
-        mc_estimates = '-mc' in estimator
-        nz_estimates = '-nz' in estimator
-        config = {'tau': 0, 'zgrads': False, 'mc_estimates': mc_estimates, 'nz_estimates': nz_estimates}
 
     elif estimator == 'struct-reinforce':
         Estimator = StructuredReinforce

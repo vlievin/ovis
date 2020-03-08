@@ -89,7 +89,7 @@ class VariationalInference(Estimator):
         log_f_xz = log_f_xz.view(-1, self.mc, self.iw)
 
         # IW-ELBO: L_k
-        L_k = torch.logsumexp(log_f_xz, dim=2) - self.log_iw #if self.iw > 1 else log_f_xz.squeeze(2)
+        L_k = torch.logsumexp(log_f_xz, dim=2) - self.log_iw  # if self.iw > 1 else log_f_xz.squeeze(2)
 
         return {'L_k': L_k, 'kl': kl, 'log_f_xz': log_f_xz, 'N_eff': N_eff}
 
@@ -252,7 +252,7 @@ class Vimco(Reinforce):
         self.control_variate_loss_weight = 0  # the control variate doesn't have any parameter
 
     @torch.no_grad()
-    def compute_control_variate(self, x: Tensor, **data: Dict[str, Tensor]) -> Tensor:
+    def compute_control_variate(self, x: Tensor, mc_estimates: bool = True, **data: Dict[str, Tensor]) -> Tensor:
         """Compute the baseline that will be substracted to the score L_k,
         `data` contains the output of the method `compute_iw_bound`.
         The output shape should be of size 4 and matching the shape [bs, mc, iw, nz]"""
@@ -264,6 +264,10 @@ class Vimco(Reinforce):
         log_f_xz_hat = (torch.sum(log_f_xz, dim=2, keepdim=True) - log_f_xz) / (self.iw - 1)
         log_f_xz_samples = log_f_xz.unsqueeze(-1) + torch.diag_embed(log_f_xz_hat - log_f_xz)
         baseline = torch.logsumexp(log_f_xz_samples, dim=2) - self.log_iw
+
+        if not mc_estimates:
+            baseline = baseline.mean(1, keepdim=True)
+
         return baseline.unsqueeze(-1)  # output of shape [bs, mc, iw, 1]
 
 
@@ -423,7 +427,5 @@ class Relax(VariationalInference):
                 # assign gradients manually
                 if grads_v is not None:
                     v.grad = grads_v.data
-
-
 
         return loss, diagnostics, {'x_': px, 'z': b, 'qz': qz, 'pz': pz, 'qlogits': qlogits}
