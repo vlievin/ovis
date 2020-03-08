@@ -18,6 +18,7 @@ class Estimator(nn.Module):
         self.iw = iw
         self.log_iw = np.log(iw)
         self.freebits = FreeBits(freebits)
+        self.detach_qlogits = False
 
     def _expand_sample(self, x):
         bs, *dims = x.size()
@@ -73,6 +74,8 @@ class VariationalInference(Estimator):
         # kl = E_q[ log p(z) - log q(z) ]
         log_pz = cat_by_layer(log_pzs)
         log_qz = cat_by_layer(log_qzs)
+        if self.detach_qlogits:
+            log_qz = log_qz.detach()
         kl = log_qz - log_pz
         # freebits is ditributed equally over the last dimension
         # (meaning L layers result in a total of L * freebits budget)

@@ -27,13 +27,11 @@ def get_config(estimator):
         Estimator = Relax
         config = {'tau': 0.5, 'zgrads': True}
 
-    elif estimator == 'covbaseline':
+    elif 'covbaseline' in estimator:
         Estimator = OptCovReinforce
-        config = {'tau': 0, 'zgrads': False}
-
-    elif estimator == 'covbaseline-mc':
-        Estimator = OptCovReinforce
-        config = {'tau': 0, 'zgrads': False, 'mc_baseline': False}
+        mc_estimates = '-mc' in estimator
+        nz_estimates = '-nz' in estimator
+        config = {'tau': 0, 'zgrads': False, 'mc_estimates': mc_estimates, 'nz_estimates': nz_estimates}
 
     elif estimator == 'struct-reinforce':
         Estimator = StructuredReinforce

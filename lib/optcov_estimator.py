@@ -1,6 +1,3 @@
-from booster import Diagnostic
-from torch import nn, Tensor
-
 from .estimators import *
 from .model import PseudoCategorical
 from .utils import *
@@ -14,22 +11,38 @@ class OptCovReinforce(Reinforce):
 
     c_\mathrm{opt}(x) = \frac{\sum_k \sum_m h^T_{mk} \sum_{m'} h_{m'k} f_{m'k} }{\sum_k  \sum_m h^T_{mk} \sum_{m'} h_{m'k} }
 
+    # todo: one baseline for each N
+    # todo: only leave sample km out
     """
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.control_variate_loss_weight = 0  # the control variate doesn't have any parameter
+        self.log_iw_m1 = np.log(self.iw - 1)
+        self.detach_qlogits = True  # detach q since the reinforce loss only accounts for the parameters of phi, so the backward pass of L_k only deals with theta
 
-    def compute_control_variate(self, x: Tensor, mc_baseline=True, **data: Dict[str, Tensor]) -> Tensor:
-        """Compute the baseline that will be substracted to the score L_k,
-        `data` contains the output of the method `compute_iw_bound`.
-        The output shape should be of size 4 and matching the shape [bs, mc, iw, nz]"""
+    def compute_control_variate(self, x: Tensor, mc_estimates:bool=True, nz_estimates:bool=False, **data: Dict[str, Tensor]) -> Tensor:
+        """
+        Compute the baseline that will be substracted to the score L_k,
+        The output shape should be of size 4 and matching the shape [bs, mc, iw, nz]
+        :param x: input tensor
+        :param mc_estimates: compute independent estimates for each MC sample
+        :param nz_estimates: compute independent estimates for each latent variable
+        :param data: additional data
+        """
         bs, *dims = x.size()
-        L_k, z, qz = [data[k] for k in ["L_k", "z", "qz"]]
 
-        # compute log probs
+        log_f_xz, z, qz = [data[k] for k in ["log_f_xz", "z", "qz"]]
+
         assert len(qz) == 1
         z, qz = z[0], qz[0]
+
+        # convert to double
+        qz.logits = qz.logits.double()
+        z = z.double()
+        log_f_xz = log_f_xz.double()
+
+        # compute log probs
         qlogits = qz.logits
         log_qz = qz.log_prob(z)
 
@@ -38,52 +51,90 @@ class OptCovReinforce(Reinforce):
             [log_qz], [qlogits], grad_outputs=torch.ones_like(log_qz), retain_graph=True, allow_unused=True)
 
         # reshaping d_qlogits and qlogits
-        d_qlogits = d_qlogits.view(bs, self.mc, self.iw, *d_qlogits.size()[1:])
+        N, K = d_qlogits.size()[1:]
+        d_qlogits = d_qlogits.view(bs, self.mc, self.iw, N, K)
 
-        # vector control variate
         with torch.no_grad():
 
-            # using notation from the overleaf doc
-            h = d_qlogits.view(bs, self.mc, self.iw, -1)
-            f_km = L_k[:, :, None].expand(bs, self.mc, self.iw).contiguous()
+
+            if nz_estimates:
+                _n, _k = N, K
+            else:
+                _n, _k = 1, K * K
+
+
+            # using notation from the overleaf doc with:
+            # m = m
+            # n = n
+            h_kn = d_qlogits.view(bs, self.mc, self.iw, _n, _k)
 
             # define the operator \sum_{i != j}
-            sum_except = lambda x, dim: torch.sum(x, dim=dim, keepdim=True) - x
+            def sum_except(x, dim):
+                # don't know why but this doesn't work
+                return torch.sum(x, dim=dim, keepdim=True) - x
 
-            if mc_baseline:
-                # flatten data so we can compute the sum_{m'k' != mk}
-                h = h.view(bs, self.mc * self.iw, -1)
-                f_km = f_km.view(bs, self.mc * self.iw)
+            def log_sum_exp_except(tensor, dim=-1, eps: float = 1e-20):
+                max, _ = torch.max(tensor, dim=dim, keepdim=True)
+                sum_exp = sum_except(torch.exp(tensor - max), dim)
+                return torch.log(sum_exp + eps) + max
 
-                # compute the optimal baseline
-                s_h = sum_except(h, 1)
-                s_hf = sum_except(h * f_km[:, :, None], 1)
-                num = torch.sum(s_h * s_hf, -1)
-                den = torch.sum(s_h * s_h, -1)
+            def softmax_except(x, dim=-1, eps=1e-20):
+                max, _ = torch.max(x, dim=dim, keepdim=True)
+                x = (x - max).exp()
+                _sum = sum_except(x, dim)
+                return x.unsqueeze(dim) / (eps + _sum.unsqueeze(dim + 1))
 
-                c_opt = num / den
-                c_opt = c_opt.view(bs, self.mc, self.iw)
+            log_w = log_f_xz.view(-1, self.mc, self.iw)
 
-            else:
-                # compute the estimate independently for ech mc sample
-                s_h = sum_except(h, 2)
-                s_hf = sum_except(h * f_km[:, :, :, None], 2)
-                num = torch.sum(s_h * s_hf, -1)
-                den = torch.sum(s_h * s_h, -1)
+            debug = False
+            if debug:
+                log_w = log_w.detach()
+                log_w.requires_grad = True
 
-                c_opt = num / den
+            # f_km = log_f_xz
+            log_sum_exp_w = log_sum_exp_except(log_w, dim=2)
+            f_km_no_m = log_sum_exp_w - self.log_iw_m1
+            v_kmn = (log_w[:, :, :, None] - log_sum_exp_w[:, :, None, :]).exp()
+            v_kmn = v_kmn.clamp(0, 1) # there may be a better way to solve numerical stability issues
+            f_kmn_no_m = f_km_no_m[:, :, :, None] - v_kmn
 
-        return c_opt.unsqueeze(-1)
+            # flatten data so we can compute the sum_{m'k' != mk}
+            h_kn = h_kn.view(bs, self.mc, self.iw, _n, -1)
+            f_kmn_no_m = f_kmn_no_m[:,:,:,:,None,None].view(bs, self.mc, self.iw, self.iw, 1, 1)
+            mask = 1 - torch.eye(self.iw, device=x.device, dtype=x.dtype)[None, None, :, :, None, None]
 
-        # print(data.keys())
-        # log_f_xz = data['log_f_xz']
-        # log_f_xz = log_f_xz.view(-1, self.mc, self.iw)
+            # compute sums
+            _h_kmn = h_kn[:, :, None, :, :, :].expand(bs, self.mc, self.iw, self.iw, _n, -1)
+            s_hf = torch.sum(mask * _h_kmn * f_kmn_no_m, 3)
+            s_h = sum_except(h_kn, 2)
 
-        # log \hat{f}(x, h^{-j}) using the geometric mean
-        #log_f_xz_hat = (torch.sum(log_f_xz, dim=2, keepdim=True) - log_f_xz) / (self.iw - 1)
-        #log_f_xz_samples = log_f_xz.unsqueeze(-1) + torch.diag_embed(log_f_xz_hat - log_f_xz)
-        #baseline = torch.logsumexp(log_f_xz_samples, dim=2) - self.log_iw
-        #return baseline.unsqueeze(-1)  # output of shape [bs, mc, iw, 1]
+            # dot product (over z_k dim)
+            num = torch.sum(s_h * s_hf, -1)
+            den = torch.sum(s_h * s_h, -1)
+
+            if not mc_estimates:
+                # sum over mc samples
+                num = num.sum(1, keepdim=True)
+                den = den.sum(1, keepdim=True)
+
+            # c_opt baseline
+            c_opt = num / den
+
+            # debugging : check for `nan` and unreasonable values for `v`
+            if torch.sum(torch.isnan(c_opt)) or c_opt.mean().abs() > 1e3:
+                print(
+                    f" >> num = {num.mean().item():.3f}, den = {den.mean().item():.3f}, c_opt = {c_opt.mean().item():.3f}, v = {v_kmn.mean().item():.3E}")
+
+                if debug:
+                    (10 * c_opt[0, 0, 0] ** 2).mean().backward()
+                    print(">>> grads: log_w:", log_w.grad[0])
+
+            # if any nan, just replace with `0`
+            c_opt[c_opt != c_opt] = 0
+
+        return c_opt.detach().type(x.dtype)
+
+
 
 
 class OptCovReinforce__(VariationalInference):
@@ -109,7 +160,7 @@ class OptCovReinforce__(VariationalInference):
         elbo = log_px_z - kl
         return elbo, kl, -log_px_z, px
 
-    def forward(self, model: nn.Module, x: Tensor, backward: bool = False, mc_baseline=True, **kwargs: Any) -> Tuple[
+    def forward(self, model: nn.Module, x: Tensor, backward: bool = False, mc_baseline=True, id_estimates=False, **kwargs: Any) -> Tuple[
         Tensor, Dict, Dict]:
         bs, *dims = x.shape
 
@@ -166,11 +217,10 @@ class OptCovReinforce__(VariationalInference):
 
             # using notation from the overleaf doc
             h = d_qlogits.view(bs, self.mc, self.iw, -1)
-            f_km = (L_k[:,:,None] - v_mk)
+            f_km = (L_k[:, :, None] - v_mk)
 
             # define the operator \sum_{i != j}
             sum_except = lambda x, dim: torch.sum(x, dim=dim, keepdim=True) - x
-
 
             if mc_baseline:
                 # flatten data so we can compute the sum_{m'k' != mk}
@@ -179,8 +229,8 @@ class OptCovReinforce__(VariationalInference):
 
                 # compute the optimal baseline
                 s_h = sum_except(h, 1)
-                s_hf = sum_except(h * f_km[:,:,None], 1)
-                num =  torch.sum(s_h * s_hf, -1)
+                s_hf = sum_except(h * f_km[:, :, None], 1)
+                num = torch.sum(s_h * s_hf, -1)
                 den = torch.sum(s_h * s_h, -1)
 
                 c_opt = num / den
@@ -196,9 +246,7 @@ class OptCovReinforce__(VariationalInference):
 
                 c_opt = num / den
 
-
             # print(f">>> c_opt = {c_opt.shape}, ")
-
 
             # # compute Amm and bm
             # Amn = torch.einsum("bkmh, bknh -> bkmn", [h, h])
@@ -229,7 +277,7 @@ class OptCovReinforce__(VariationalInference):
             #     c_opt = (Amn_inv @ bm.unsqueeze(-1)).squeeze(-1)
 
             # reinforce score
-            score = (f_km - c_opt) #if self.baseline else f_mk
+            score = (f_km - c_opt)  # if self.baseline else f_mk
 
             control_variate_mse = (f_km - c_opt).pow(2).mean((1, 2))
 

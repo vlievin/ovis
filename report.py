@@ -8,13 +8,16 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 from dotmap import DotMap
+
+sns.set()
 
 try:
     from tbparser.summary_reader import SummaryReader
     from tbparser import EventsFileReader
 except:
-    print("You must probably install tbparser:\n   pip install git+https://github.com/velikodniy/tbparser.git")
+    print("You probably need to install tbparser:\n   pip install git+https://github.com/velikodniy/tbparser.git")
     exit()
 
 parser = argparse.ArgumentParser()
@@ -24,7 +27,7 @@ parser.add_argument('--exp', default='exclude-sample-0.1', type=str, help='exper
 parser.add_argument('--metric', default='loss/elbo', type=str, help='metric to track')
 parser.add_argument('--latex', action='store_true', help='print as latex table')
 parser.add_argument('--float_format', default=".3f", help='float format')
-parser.add_argument('--nsamples', default=50, type=int, help='number of points in the line plot')
+parser.add_argument('--nsamples', default=64, type=int, help='number of points in the line plot')
 opt = parser.parse_args()
 
 _sep = 64 * "-"
@@ -135,11 +138,16 @@ for e in experiments:
 # compile data into a dataframe
 df = pd.DataFrame(data)
 
+
+print(df)
+
 # drop columns that contain the same attributes (except for `seed`)
 nunique = df.apply(pd.Series.nunique)
 global_attributes = list(nunique[nunique == 1].index)
 if 'seed' in global_attributes:
     global_attributes.remove('seed')
+if _readable(opt.metric) in global_attributes:
+    global_attributes.remove(_readable(opt.metric))
 df = df.drop(global_attributes, axis=1)
 
 # compile log data and merge with the attributes
@@ -203,6 +211,8 @@ print(_sep)
 plot curves with uncertainty intervals
 """
 
+# todo: allow selecting two keys for the anaylsis (e.g. estimator:nrow vs kdim:ncol)
+
 _last_indexes = ['seed', '_key', 'step']
 _index = [k for k in logs.keys() if k != '_value' and k not in _last_indexes]
 _index += _last_indexes
@@ -227,6 +237,8 @@ logs = logs.groupby(_index + [ pd.cut(logs.step, bins) ]).mean()
 logs.index.rename(level=[-1], names=['step_bucket'], inplace=True)
 logs.reset_index(inplace=True)
 
+# drop nan
+logs.dropna(inplace=True)
 
 print("Generating plots")
 N = len(_keys)
@@ -236,16 +248,33 @@ nrows = N // ncols
 if N > ncols * nrows:
     nrows += 1
 
-#
+
+hue_order = list(logs["estimator"].unique())
+step_min = np.percentile(logs['step'].values.tolist(), 5)
 fig, axes = plt.subplots(nrows, ncols, figsize=(6 * ncols, 4 * nrows))
 for i, k in tqdm(list(enumerate(_keys))):
     u = i // ncols
     v = i % ncols
     ax = axes[u, v]
-    ax.set_title(k)
+
     sns.lineplot(x="step", y="_value",
                  hue="estimator",
+                 hue_order=hue_order,
                  data=logs[logs['_key']==k], ax=ax)
 
+    ax.set_ylabel(k)
+    # y lims
+    ys = logs[(logs['_key'] == k) & (logs['step']>step_min)]['_value'].values.tolist()
+    a, b = np.percentile(ys, [25, 75])
+    M = b - a
+    k = 1.5
+    ax.set_ylim([a - k * M, b + k * M])
+    ax.get_legend().remove()
+
+# draw legend in the last plot
+patches = [mpatches.Patch(color=sns.color_palette()[i], label=key) for i, key in enumerate(hue_order)]
+axes[nrows-1, ncols-1].legend(handles=patches)
+
+plt.tight_layout()
 plt.savefig(os.path.join(output_path, f"curves.png"))
 plt.close()

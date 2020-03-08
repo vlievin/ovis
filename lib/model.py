@@ -180,7 +180,7 @@ class VAE(Template):
             l *= w.abs().max()
         return l
 
-    def forward(self, x, tau=0, zgrads=False):
+    def forward(self, x, tau=0, zgrads=False, **kwargs):
         qlogits = self.infer(x)
 
         qz = PseudoCategorical(logits=qlogits, tau=tau)

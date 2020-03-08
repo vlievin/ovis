@@ -6,6 +6,14 @@ from typing import *
 import torch
 
 
+def notqdm(iterable, *args, **kwargs):
+    """
+    replacement for tqdm that just passes back the iterable
+    useful to silence `tqdm` in tests
+    """
+    return iterable
+
+
 def prod(x: Iterable):
     """return the product of an Iterable"""
     if len(x):
