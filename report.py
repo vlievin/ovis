@@ -1,15 +1,18 @@
 import argparse
 import json
 import os
+import sys
 import traceback
 
-from tqdm import tqdm
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 from dotmap import DotMap
+from tqdm import tqdm
+from  lib.logging import get_loggers
+from shutil import rmtree
+from datetime import datetime
 
 sns.set()
 
@@ -31,7 +34,7 @@ parser.add_argument('--float_format', default=".3f", help='float format')
 parser.add_argument('--nsamples', default=64, type=int, help='number of points in the line plot')
 opt = parser.parse_args()
 
-_sep = 64 * "-"
+_sep = os.get_terminal_size().columns * "-"
 
 # get path to the experiment directory
 path = os.path.join(opt.root, opt.exp)
@@ -39,8 +42,14 @@ experiments = [e for e in os.listdir(path) if '.' != e[0]]
 
 # prepare output diorectory
 output_path = os.path.join(opt.output, opt.exp)
-if not os.path.exists(output_path):
-    os.makedirs(output_path)
+if os.path.exists(output_path):
+    rmtree(output_path)
+os.makedirs(output_path)
+
+
+# log console output to file
+logger, *_ = get_loggers(output_path, keys=['report'], format="%(message)s")
+logger.info(f"{datetime.now()}\n\n")
 
 
 # utilities
@@ -50,9 +59,9 @@ def _readable(key):
 
 def _print_df(df):
     if opt.latex:
-        print(df.to_latex(float_format=f"%{opt.float_format}"))
+        logger.info(df.to_latex(float_format=f"%{opt.float_format}"))
     else:
-        print(df)
+        logger.info(df)
 
 
 # define keys to read from the logs
@@ -69,78 +78,81 @@ train_keys = ["loss/" + k for k in train_keys]
 valid_keys = ["loss/" + k for k in valid_keys]
 
 # read data
-print("# reading experiments from path: ", path)
+logger.info(f"# reading experiments from path: {path}")
+logger.info(_sep)
 data = []
 logs = []
 for e in experiments:
-    print(" - exp =", e)
+    logger.info(f" - exp = {e}")
 
     exp_path = os.path.join(path, e)
 
     files = os.listdir(exp_path)
-
-    # TODO: use success flag to read or pass data
+    _success_file = 'success.txt'
     try:
-        # TODO: use success flag to read or pass data
-        # with open(os.path.join(exp_path, 'success.txt'), 'r') as fp:
-        #     success_ = fp.read()
-        #
-        # if "Success." in success_:
-        if True:
+        if not _success_file in files:
+            logger.info(f" >>>  Not yet completed.")
+        else:
+            with open(os.path.join(exp_path, _success_file), 'r') as fp:
+                success_ = fp.read()
 
-            # reading configuration files with run parameter
-            with open(os.path.join(exp_path, 'config.json'), 'r') as fp:
-                args = DotMap(json.load(fp))
+            if not "Success." in success_:
+                logger.info(f" >>> Failed.")
+            else:
+                # reading configuration files with run parameter
+                with open(os.path.join(exp_path, 'config.json'), 'r') as fp:
+                    args = DotMap(json.load(fp))
 
-            # read training logs
-            _dir = os.path.join(exp_path, 'train')
-            _tf_log = [os.path.join(_dir, o) for o in os.listdir(_dir) if 'events.out.tfevents' in o][0]
-            with open(_tf_log, 'rb') as f:
-                reader = EventsFileReader(f)
+                # read training logs
+                _dir = os.path.join(exp_path, 'train')
+                _tf_log = [os.path.join(_dir, o) for o in os.listdir(_dir) if 'events.out.tfevents' in o][0]
+                with open(_tf_log, 'rb') as f:
+                    reader = EventsFileReader(f)
 
-                for item in reader:
-                    step = item.step
-                    for v in item.summary.value:
-                        if v.tag in train_keys:
-                            logs += [{'id': e, 'step': step, '_key': _readable(v.tag), '_value': float(v.simple_value)}]
+                    for item in reader:
+                        step = item.step
+                        for v in item.summary.value:
+                            if v.tag in train_keys:
+                                logs += [{'id': e, 'step': step, '_key': _readable(v.tag),
+                                          '_value': float(v.simple_value)}]
 
-            # read valid logs
-            _dir = os.path.join(exp_path, 'valid')
-            _tf_log = [os.path.join(_dir, o) for o in os.listdir(_dir) if 'events.out.tfevents' in o][0]
-            best_metric = -1e20
-            with open(_tf_log, 'rb') as f:
-                reader = EventsFileReader(f)
+                # read valid logs
+                _dir = os.path.join(exp_path, 'valid')
+                _tf_log = [os.path.join(_dir, o) for o in os.listdir(_dir) if 'events.out.tfevents' in o][0]
+                best_metric = -1e20
+                with open(_tf_log, 'rb') as f:
+                    reader = EventsFileReader(f)
 
-                for item in reader:
-                    step = item.step
-                    for v in item.summary.value:
-                        if v.tag in valid_keys:
-                            logs += [{'id': e, 'step': step, '_key': _readable(v.tag), '_value': float(v.simple_value)}]
-                        if v.tag == opt.metric:
-                            best_metric = v.simple_value
+                    for item in reader:
+                        step = item.step
+                        for v in item.summary.value:
+                            if v.tag in valid_keys:
+                                logs += [{'id': e, 'step': step, '_key': _readable(v.tag),
+                                          '_value': float(v.simple_value)}]
+                            if v.tag == opt.metric:
+                                best_metric = v.simple_value
 
-            results = {'id': e, _readable(opt.metric): best_metric}
+                results = {'id': e, _readable(opt.metric): best_metric}
 
-            # initializing experiment data as the argparse parameters
-            d = dict(args)
-            # append results to data
-            d.update(results)
+                # initializing experiment data as the argparse parameters
+                d = dict(args)
+                # append results to data
+                d.update(results)
 
-            # append data and logs
-            data += [d]
+                # append data and logs
+                data += [d]
 
     except Exception as ex:
-        print("## FAILED. Exception:")
-        print(_sep)
+        logger.info("## FAILED. Exception:")
+        logger.info(_sep)
         traceback.print_exception(type(ex), ex, ex.__traceback__)
-        print(_sep)
-        print("\nException: ", ex, "\n")
+        logger.info(_sep)
+        logger.info("\nException: ", ex, "\n")
 
 # compile data into a dataframe
 df = pd.DataFrame(data)
 
-
-print(df)
+logger.info(df)
 
 # drop columns that contain the same attributes (except for `seed`, and `aux_key`)
 nunique = df.apply(pd.Series.nunique)
@@ -148,7 +160,7 @@ global_attributes = list(nunique[nunique == 1].index)
 if 'seed' in global_attributes:
     global_attributes.remove('seed')
 if opt.aux_key in global_attributes:
-    global_attributes.remove('seed')
+    global_attributes.remove(opt.aux_key)
 if _readable(opt.metric) in global_attributes:
     global_attributes.remove(_readable(opt.metric))
 df = df.drop(global_attributes, axis=1)
@@ -170,25 +182,25 @@ print all results
 df = df.sort_values(_readable(opt.metric), ascending=False)
 
 # print all results
-print("\n" + _sep)
+logger.info("\n" + _sep)
 for g in global_attributes:
-    print(f"{g} : {args[g]}")
-print(_sep)
-print(os.path.abspath(path))
-print(_sep)
-print("all data: varying parameters:", [k for k in df.keys() if k not in _readable(opt.metric)])
-print(_sep)
+    logger.info(f"{g} : {args[g]}")
+logger.info(_sep)
+logger.info(os.path.abspath(path))
+logger.info(_sep)
+logger.info(f"all data: varying parameters: {[k for k in df.keys() if k not in _readable(opt.metric)]}")
+logger.info(_sep)
 if "dataset" in df.keys():
     for dset in set(df["dataset"].values):
         _print_df(df[df["dataset"] == dset])
-        print(_sep)
+        logger.info(_sep)
 else:
     _print_df(df)
-    print()
 
 """
 pivot table
 """
+
 
 def aggfunc(serie):
     mean = np.mean(serie)
@@ -200,22 +212,21 @@ _columns = [opt.aux_key] if len(opt.aux_key) > 0 else []
 _keys = [k for k in df.keys() if k != _readable(opt.metric) and k != "seed" and k not in _columns]
 pivot = df.pivot_table(index=_keys, columns=_columns, values=_readable(opt.metric), aggfunc=aggfunc)
 # sort pivot according to the mean value
-# mean_pivot = df.pivot_table(index=_keys, columns=_columns, values=_readable(opt.metric), aggfunc=np.mean)
-# mean_pivot = mean_pivot.sort_values(_readable(opt.metric), ascending=False)
-# pivot = pivot.reindex(mean_pivot.index)
+mean_pivot = df.pivot_table(index=_keys, values=_readable(opt.metric), aggfunc=np.mean)
+mean_pivot = mean_pivot.sort_values(_readable(opt.metric), ascending=False)
+pivot = pivot.reindex(mean_pivot.index)
 
-print("\n" + _sep)
-print("Pivot table:\n" + _sep)
+logger.info("\n" + _sep)
+logger.info("Pivot table:\n" + _sep)
 _print_df(pivot)
-print(_sep)
+logger.info(_sep)
 
-
+# save to file
+df.to_csv(os.path.join(output_path, "pivot.csv"))
 
 """
 plot line plots with uncertainty intervals
 """
-
-# todo: allow selecting two keys for the anaylsis (e.g. estimator:nrow vs kdim:ncol)
 
 _last_indexes = ['seed', '_key', 'step']
 _index = [k for k in logs.keys() if k != '_value' and k not in _last_indexes]
@@ -224,7 +235,7 @@ _keys = logs['_key'].unique()
 
 # get max step
 M = logs['step'].max()
-bins = [int(s) for s in range(0, M, M//opt.nsamples)]
+bins = [int(s) for s in range(0, M, M // opt.nsamples)]
 
 n_full = len(logs['step'].unique())
 ratio = n_full // opt.nsamples
@@ -234,18 +245,21 @@ ratio = n_full // opt.nsamples
 # for idx in _index[::-1]:
 #     logs.sort_index(level=idx, sort_remaining=False, inplace=True)
 
-print(f"Downsampling data.. (n={opt.nsamples})")
+logger.info(f"Downsampling data.. (n={opt.nsamples})")
 logs.reset_index(level=-1, inplace=True)
 _index.remove("step")
-logs = logs.groupby(_index + [ pd.cut(logs.step, bins) ]).mean()
+logs = logs.groupby(_index + [pd.cut(logs.step, bins)]).mean()
 logs.index.rename(level=[-1], names=['step_bucket'], inplace=True)
 logs.reset_index(inplace=True)
 
 # drop nan
 logs.dropna(inplace=True)
 
+# save to file
+logs.to_csv(os.path.join(output_path, "curves.csv"))
 
-def plot_logs(logs, _keys, path):
+
+def plot_logs(logs, _keys, path, style_key=None):
     """
     Make a grid of line plots with std intervals.
     :param logs: dataframe containing all the training data per time step
@@ -260,11 +274,13 @@ def plot_logs(logs, _keys, path):
 
     if N > ncols * nrows:
         nrows += 1
+        _keys = list(_keys) + [_keys[-1] for _ in
+                               range((ncols * nrows - len(_keys)))]  # repeat the last plot for the legend
 
     hue_order = list(logs["estimator"].unique())
     step_min = np.percentile(logs['step'].values.tolist(), 10)
     fig, axes = plt.subplots(nrows, ncols, figsize=(6 * ncols, 4 * nrows))
-    for i, k in tqdm(list(enumerate(_keys)), desc="_key"):
+    for i, k in tqdm(list(enumerate(_keys))):
         u = i // ncols
         v = i % ncols
         ax = axes[u, v]
@@ -272,7 +288,7 @@ def plot_logs(logs, _keys, path):
         sns.lineplot(x="step", y="_value",
                      hue="estimator",
                      hue_order=hue_order,
-                     #style=opt.aux_key,
+                     style=style_key,
                      data=logs[logs['_key'] == k], ax=ax)
 
         ax.set_ylabel(k)
@@ -282,23 +298,26 @@ def plot_logs(logs, _keys, path):
         M = b - a
         k = 1.5
         ax.set_ylim([a - k * M, b + k * M])
-        ax.get_legend().remove()
+
+        if i < len(_keys) - 1:
+            ax.get_legend().remove()
 
     # draw legend in the last plot
-    patches = [mpatches.Patch(color=sns.color_palette()[i], label=key) for i, key in enumerate(hue_order)]
-    axes[nrows - 1, ncols - 1].legend(handles=patches)
+    # patches = [mpatches.Patch(color=sns.color_palette()[i], label=key) for i, key in enumerate(hue_order)]
+    # axes[nrows - 1, ncols - 1].legend(handles=patches)
 
     plt.tight_layout()
     plt.savefig(path)
     plt.close()
 
 
-
 # plot for all auxiliary keys
-print("Generating merged plots")
-plot_logs(logs, _keys, os.path.join(output_path, f"curves.png"))
-if len(opt.aux_key) :
+logger.info("Generating merged plots ...")
+plot_logs(logs, _keys, os.path.join(output_path, f"curves.png"), style_key=opt.aux_key if len(opt.aux_key) else None)
+if len(opt.aux_key):
     # on plot for each key
-    for v in tqdm(sorted(list(logs[opt.aux_key].unique())), desc="auxiliary key"):
-        print(f"Generating plots for {opt.aux_key} = {v}")
-        plot_logs(logs[logs[opt.aux_key]==v], _keys, os.path.join(output_path, f"curves-{opt.aux_key}={v}.png"))
+    values = list(logs[opt.aux_key].unique())
+    for i, v in enumerate(sorted(values)):
+        f"Generating plots for {opt.aux_key} = {v} [{i + 1} / {values}]"
+        plot_logs(logs[logs[opt.aux_key] == v], _keys, os.path.join(output_path, f"curves-{opt.aux_key}={v}.png"))
+
