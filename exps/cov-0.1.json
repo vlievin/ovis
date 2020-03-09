@@ -6,5 +6,7 @@
     "--estimator vimco-mc --iw 4 --mc 4"
   ],
   "global": "--silent --epochs 1000 --lr_reduce_steps 2 --bs 32",
-  "seed": [13, 64, 47, 23, 78, 202, 674, 8890, 267, 562]
+  "parameters": {
+    "seed":[13, 64, 47, 23, 78, 202, 674, 8890, 267, 562]
+  }
 }

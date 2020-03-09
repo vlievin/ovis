@@ -90,17 +90,13 @@ if __name__ == '__main__':
     # append logdir to args
     args = [f"--exp {opt.exp} --root {opt.root} " + a for a in args]
 
-    # seeds
-    if "seed" in data.keys():
-        seed = data['seed']
-        if isinstance(seed, list):
+    # parameters lists
+    if "parameters" in data.keys():
+        for _arg, values in data["parameters"].items():
             _args = []
-            for s in seed:
-                _args += [f"--seed {s} " + a for a in args]
-        else:
-            _args = [f"--seed {seed} " + a for a in args]
-        args = _args
-
+            for v in values:
+                _args += [f"--{_arg} {v} " + a for a in args]
+            args = _args
 
     for i, a in enumerate(args):
         logger.info(f"# EXPERIMENT #{i}:  {a}")

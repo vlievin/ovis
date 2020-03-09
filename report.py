@@ -25,6 +25,7 @@ parser.add_argument('--root', default='runs/', help='experiment directory')
 parser.add_argument('--output', default='reports/', help='output directory')
 parser.add_argument('--exp', default='exclude-sample-0.1', type=str, help='experiment id')
 parser.add_argument('--metric', default='loss/elbo', type=str, help='metric to track')
+parser.add_argument('--aux_key', default='iw', type=str, help='auxiliary parameter to include in the report')
 parser.add_argument('--latex', action='store_true', help='print as latex table')
 parser.add_argument('--float_format', default=".3f", help='float format')
 parser.add_argument('--nsamples', default=64, type=int, help='number of points in the line plot')
@@ -141,10 +142,12 @@ df = pd.DataFrame(data)
 
 print(df)
 
-# drop columns that contain the same attributes (except for `seed`)
+# drop columns that contain the same attributes (except for `seed`, and `aux_key`)
 nunique = df.apply(pd.Series.nunique)
 global_attributes = list(nunique[nunique == 1].index)
 if 'seed' in global_attributes:
+    global_attributes.remove('seed')
+if opt.aux_key in global_attributes:
     global_attributes.remove('seed')
 if _readable(opt.metric) in global_attributes:
     global_attributes.remove(_readable(opt.metric))
@@ -193,12 +196,13 @@ def aggfunc(serie):
     return f"{mean:{opt.float_format}} ± {std:{opt.float_format}} (n={len(serie)})"
 
 
-_keys = [k for k in df.keys() if k != _readable(opt.metric) and k != "seed"]
-pivot = df.pivot_table(index=_keys, values=_readable(opt.metric), aggfunc=aggfunc)
+_columns = [opt.aux_key] if len(opt.aux_key) > 0 else []
+_keys = [k for k in df.keys() if k != _readable(opt.metric) and k != "seed" and k not in _columns]
+pivot = df.pivot_table(index=_keys, columns=_columns, values=_readable(opt.metric), aggfunc=aggfunc)
 # sort pivot according to the mean value
-mean_pivot = df.pivot_table(index=_keys, values=_readable(opt.metric), aggfunc=np.mean)
-mean_pivot = mean_pivot.sort_values(_readable(opt.metric), ascending=False)
-pivot = pivot.reindex(mean_pivot.index)
+# mean_pivot = df.pivot_table(index=_keys, columns=_columns, values=_readable(opt.metric), aggfunc=np.mean)
+# mean_pivot = mean_pivot.sort_values(_readable(opt.metric), ascending=False)
+# pivot = pivot.reindex(mean_pivot.index)
 
 print("\n" + _sep)
 print("Pivot table:\n" + _sep)
@@ -208,7 +212,7 @@ print(_sep)
 
 
 """
-plot curves with uncertainty intervals
+plot line plots with uncertainty intervals
 """
 
 # todo: allow selecting two keys for the anaylsis (e.g. estimator:nrow vs kdim:ncol)
@@ -240,41 +244,61 @@ logs.reset_index(inplace=True)
 # drop nan
 logs.dropna(inplace=True)
 
-print("Generating plots")
-N = len(_keys)
-ncols = 2
-nrows = N // ncols
 
-if N > ncols * nrows:
-    nrows += 1
+def plot_logs(logs, _keys, path):
+    """
+    Make a grid of line plots with std intervals.
+    :param logs: dataframe containing all the training data per time step
+    :param _keys: keys to plot (elbo, nll, ...)
+    :param path: output file
+    :return: None
+    """
+
+    N = len(_keys)
+    ncols = 2
+    nrows = N // ncols
+
+    if N > ncols * nrows:
+        nrows += 1
+
+    hue_order = list(logs["estimator"].unique())
+    step_min = np.percentile(logs['step'].values.tolist(), 10)
+    fig, axes = plt.subplots(nrows, ncols, figsize=(6 * ncols, 4 * nrows))
+    for i, k in tqdm(list(enumerate(_keys)), desc="_key"):
+        u = i // ncols
+        v = i % ncols
+        ax = axes[u, v]
+
+        sns.lineplot(x="step", y="_value",
+                     hue="estimator",
+                     hue_order=hue_order,
+                     #style=opt.aux_key,
+                     data=logs[logs['_key'] == k], ax=ax)
+
+        ax.set_ylabel(k)
+        # y lims
+        ys = logs[(logs['_key'] == k) & (logs['step'] > step_min)]['_value'].values.tolist()
+        a, b = np.percentile(ys, [25, 75])
+        M = b - a
+        k = 1.5
+        ax.set_ylim([a - k * M, b + k * M])
+        ax.get_legend().remove()
+
+    # draw legend in the last plot
+    patches = [mpatches.Patch(color=sns.color_palette()[i], label=key) for i, key in enumerate(hue_order)]
+    axes[nrows - 1, ncols - 1].legend(handles=patches)
+
+    plt.tight_layout()
+    plt.savefig(path)
+    plt.close()
 
 
-hue_order = list(logs["estimator"].unique())
-step_min = np.percentile(logs['step'].values.tolist(), 5)
-fig, axes = plt.subplots(nrows, ncols, figsize=(6 * ncols, 4 * nrows))
-for i, k in tqdm(list(enumerate(_keys))):
-    u = i // ncols
-    v = i % ncols
-    ax = axes[u, v]
 
-    sns.lineplot(x="step", y="_value",
-                 hue="estimator",
-                 hue_order=hue_order,
-                 data=logs[logs['_key']==k], ax=ax)
-
-    ax.set_ylabel(k)
-    # y lims
-    ys = logs[(logs['_key'] == k) & (logs['step']>step_min)]['_value'].values.tolist()
-    a, b = np.percentile(ys, [25, 75])
-    M = b - a
-    k = 1.5
-    ax.set_ylim([a - k * M, b + k * M])
-    ax.get_legend().remove()
-
-# draw legend in the last plot
-patches = [mpatches.Patch(color=sns.color_palette()[i], label=key) for i, key in enumerate(hue_order)]
-axes[nrows-1, ncols-1].legend(handles=patches)
-
-plt.tight_layout()
-plt.savefig(os.path.join(output_path, f"curves.png"))
-plt.close()
+# plot for all auxiliary keys
+print("Generating merged plots")
+plot_logs(logs, _keys, os.path.join(output_path, f"curves.png"))
+if len(opt.aux_key) :
+    # on plot for each key
+    for v in tqdm(sorted(list(logs[opt.aux_key].unique())), desc="auxiliary key"):
+        print(f"Generating plots for {opt.aux_key} = {v}")
+        plot_logs(logs[logs[opt.aux_key]==v], _keys, os.path.join(output_path, f"curves-{opt.aux_key}={v}.png"))

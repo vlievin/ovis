@@ -10,5 +10,7 @@
     "--estimator covbaseline-avg"
   ],
   "global": "--silent --epochs 1000 --lr_reduce_steps 3 --iw 4 --mc 4",
-  "seed": [13, 65, 34, 91, 75]
+  "parameters": {
+    "seed":[13, 64, 47, 23, 78, 202, 674, 8890, 267, 562]
+  }
 }
