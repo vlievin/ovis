@@ -1,7 +1,8 @@
 {
   "args": [
     "--estimator covbaseline --prior normal",
-    "--estimator pathwise --prior normal"
+    "--estimator pathwise --prior normal",
+    "--estimator vimco --prior normal"
   ],
   "global": "--silent --epochs 1000 --lr_reduce_steps 2 --bs 32",
   "parameters": {

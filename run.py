@@ -11,9 +11,9 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-from lib import VAE, Baseline
+from lib import VAE, Baseline, ConvVAE
 from lib import VariationalInference
-from lib import get_shapes_datasets
+from lib import get_datasets
 from lib.config import get_config
 from lib.gradients import get_gradients_log_total_variance
 from lib.logging import sample_model, get_loggers, log_summary, save_model
@@ -25,7 +25,9 @@ _sep = 32*"-"
 parser = argparse.ArgumentParser()
 
 # run directory, id and seed
+parser.add_argument('--dataset', default='shapes', help='dataset [shapes | binmnist | omniglot | fashion]')
 parser.add_argument('--root', default='runs/', help='directory to store training logs')
+parser.add_argument('--data_root', default='data/', help='directory to store the data')
 parser.add_argument('--exp', default='sandbox', help='experiment directory')
 parser.add_argument('--id', default='', type=str, help='run id suffix')
 parser.add_argument('--seed', default=13, type=int, help='random seed')
@@ -53,6 +55,7 @@ parser.add_argument('--kdim', default=0, type=int, help='dimension of the keys f
 parser.add_argument('--learn_prior', action='store_true', help='learn the prior')
 
 # model architecture
+parser.add_argument('--model', default='vae', help='[vae, conv-vae]')
 parser.add_argument('--hdim', default=64, type=int, help='number of hidden units for each layer')
 parser.add_argument('--nlayers', default=3, type=int, help='number of hidden layers for the encoder and decoder')
 parser.add_argument('--b_nlayers', default=1, type=int, help='number of hidden layers for the baseline')
@@ -64,7 +67,7 @@ if opt.silent:
 
 # defining the run identifier
 use_baseline = 'baseline' in opt.estimator
-run_id = f"shapes-vae-{opt.prior}-{opt.estimator}-seed{opt.seed}"
+run_id = f"{opt.dataset}-{opt.model}-{opt.prior}-{opt.estimator}-seed{opt.seed}"
 if len(opt.id) > 0:
     run_id += f"-{opt.id}"
 run_id += f"-lr{opt.lr:.1E}-bs{opt.bs}-mc{opt.mc}-iw{opt.iw}+{opt.iw_valid}"
@@ -100,7 +103,7 @@ try:
     np.random.seed(opt.seed)
 
     # get datasets
-    dset_train, dset_valid, dset_test = get_shapes_datasets()
+    dset_train, dset_valid, dset_test = get_datasets(opt)
     x = dset_train[0]
     base_logger.info(f"Dataset size: train = {len(dset_train)}, valid = {len(dset_valid)}")
     base_logger.info(f"Sample: x.shape = {x.shape}, x.min = {x.min():.1f}, x.max = {x.max():.1f}, x.dtype = {x.dtype}")
@@ -111,7 +114,8 @@ try:
 
     # define model
     torch.manual_seed(opt.seed)
-    model = VAE(x.shape, opt.N, opt.K, opt.hdim, kdim=opt.kdim, nlayers=opt.nlayers, learn_prior=opt.learn_prior, prior=opt.prior)
+    _MODEL = {'vae': VAE, 'conv-vae': ConvVAE}[opt.model]
+    model = _MODEL(x.shape, opt.N, opt.K, opt.hdim, kdim=opt.kdim, nlayers=opt.nlayers, learn_prior=opt.learn_prior, prior=opt.prior)
 
     # define baseline
     baseline = Baseline(x.shape, opt.b_nlayers, opt.hdim) if use_baseline else None
@@ -174,7 +178,7 @@ try:
 
         # estimate the variance of the gradients
         x = next(iter(loader_train)).to(device)
-        summary_train["loss"]["log_grad_var"] = get_gradients_log_total_variance(estimator, model, x, key_filter='encoder', **config)
+        summary_train["loss"]["log_grad_var"] = get_gradients_log_total_variance(estimator, model, x, **config)
 
         # valid epoch
         with torch.no_grad():

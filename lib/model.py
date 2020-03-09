@@ -1,86 +1,10 @@
 from copy import copy
 
-from torch import nn, Tensor
-from torch.distributions import Bernoulli, Distribution, Normal
-from torch.nn.functional import gumbel_softmax, log_softmax
+from torch.distributions import Bernoulli
 
+from .distributions import *
+from .layers import *
 from .utils import *
-
-
-class PseudoCategorical(Distribution):
-
-    def __init__(self, logits: Tensor, tau: float = 0, dim: int = -1):
-        self.logits = logits
-        self.dim = dim
-        self.tau = tau
-
-    def rsample(self):
-
-        if self.tau == 0:
-            hard = True
-            tau = 0.5
-        else:
-            hard = False
-            tau = self.tau
-
-        return gumbel_softmax(self.logits, tau=tau, hard=hard, dim=self.dim)
-
-    def sample(self):
-        return self.rsample().detach()
-
-    def log_prob(self, value):
-        log_pdf = log_softmax(self.logits, self.dim)
-        return (value * log_pdf).sum(self.dim)
-
-
-class _Normal(Distribution):
-    def __init__(self, logits: Tensor, dim: int = -1, **kwargs: Any):
-        """hacking the Normal class so we can easily compute d p.log_prob(z) / d logits [gif: https://imgur.com/Hfzf14T]"""
-        super().__init__()
-        self.logits = logits
-        self.dim = dim
-
-    @property
-    def _params(self):
-        # logits are of dimension (*, N, K,) with K = 2
-        mu, log_std = self.logits.chunk(2, dim=self.dim)
-        scale = log_std.mul(0.5).exp()
-        return mu, scale
-
-    def sample(self):
-        loc, scale = self._params
-        return Normal(loc, scale).sample()
-
-    def rsample(self):
-        loc, scale = self._params
-        return Normal(loc, scale).rsample()
-
-    def log_prob(self, x):
-        loc, scale = self._params
-        return Normal(loc, scale).log_prob(x)
-
-
-class MLP(nn.Module):
-
-    def __init__(self, ninp, nhid, nout, nlayers=1, bias=True, act_in=False, normalization='layernorm'):
-        super().__init__()
-        Norm = {'batchnorm': nn.BatchNorm1d, 'layernorm': nn.LayerNorm, 'none': None, None: None}[normalization]
-        layers = []
-        if act_in:
-            layers += [Norm(ninp), nn.ELU()]
-        h = ninp
-        for i in range(nlayers):
-            layers += [nn.Linear(h, nhid, bias=bias)]
-            if Norm is not None:
-                layers += [Norm(nhid)]
-            layers += [nn.ELU()]
-            h = nhid
-        layers += [nn.Linear(h, nout, bias=bias)]
-
-        self.layers = nn.Sequential(*layers)
-
-    def forward(self, x):
-        return self.layers(x)
 
 
 def H(z, dim=-1):
@@ -144,9 +68,10 @@ class Template(nn.Module):
         return {'px': px, 'z': [z], 'qz': [qz], 'pz': [pz], 'qlogits': qlogits}
 
 
-class VAE(Template):
+class BaseVAE(Template):
     """
-    A simple VAE model with a Categorical prior.
+    A base VAE class with a Categorical or Gaussian prior.
+    The methods `encode` and `generate` have to be implemented.
     """
 
     def __init__(self, xdim, N, K, hdim, kdim=0, nlayers=0, learn_prior=False, bias=True, normalization='layernorm',
@@ -154,10 +79,14 @@ class VAE(Template):
         super().__init__()
 
         # define prior family
-        self.prior_dist = {'categorical': PseudoCategorical, 'normal': _Normal}[prior]
+        self.prior_dist = {'categorical': PseudoCategorical, 'normal': NormalFromLogits}[prior]
         if prior == 'normal':
             K = 2
 
+        # output distribution p(x|z)
+        self.likelihood = likelihood
+
+        # parameters
         self.xdim = xdim
         self.zdim = (N, 1,) if prior == 'normal' else (N, K,)
         self.prior_dim = (N, 2,) if prior == 'normal' else (N, K,)
@@ -182,20 +111,14 @@ class VAE(Template):
             self.qdim = (N, K)
             self.keys = None
 
-        # encoder
-        self.encoder = MLP(prod(xdim), hdim, prod(self.qdim), **args)
+    def encode(self, x):
+        raise NotImplementedError
 
-        # decoder
-        self.decoder = MLP(prod(self.zdim), hdim, prod(xdim), **args)
-
-        self.likelihood = likelihood
-
-        # decoder weights
-        self.decoder_weights = [v for k, v in self.decoder.named_parameters() if 'weight' in k]
+    def generate(self, z):
+        raise NotImplementedError
 
     def infer(self, x):
-        x = flatten(x)
-        logits = self.encoder(x).view(-1, *self.qdim)
+        logits = self.encode(x)
 
         if self.keys is not None:
             keys = self.keys / (1e-8 + self.keys.norm(dim=-1, p=2, keepdim=True) ** 2)
@@ -203,14 +126,9 @@ class VAE(Template):
 
         return logits
 
-    def generate(self, z):
-        z = flatten(z)
-        px_logits = self.decoder(z).view(-1, *self.xdim)
-        return self.likelihood(logits=px_logits)
-
     def lipschitz(self):
         l = 1
-        for w in self.decoder_weights:
+        for w in self.parameters():
             l *= w.abs().max()
         return l
 
@@ -234,6 +152,77 @@ class VAE(Template):
         z = self.prior_dist(logits=prior).sample()
         px = self.generate(z)
         return {'px': px, 'z': z}
+
+
+class VAE(BaseVAE):
+    """
+    A simple VAE model parametrized by MLPs
+    """
+
+    def __init__(self, xdim, N, K, hdim, nlayers=0, bias=True, normalization='batchnorm', **kwargs):
+        super().__init__(xdim, N, K, hdim, **kwargs)
+
+        args = {'nlayers': nlayers, 'bias': bias, 'normalization': normalization}
+
+        # encoder
+        self.encoder = MLP(prod(xdim), hdim, prod(self.qdim), **args)
+
+        # decoder
+        self.decoder = MLP(prod(self.zdim), hdim, prod(xdim), **args)
+
+    def encode(self, x):
+        x = flatten(x)
+        return self.encoder(x).view(-1, *self.qdim)
+
+    def generate(self, z):
+        z = flatten(z)
+        px_logits = self.decoder(z).view(-1, *self.xdim)
+        return self.likelihood(logits=px_logits)
+
+
+class ConvVAE(BaseVAE):
+    """
+    A simple VAE model parametrized by by convolutions
+    """
+
+    def __init__(self, xdim, N, K, hdim, nlayers=0, bias=True, padded_shape=(32, 32), normalization='batchnorm',
+                 **kwargs):
+        super().__init__(xdim, N, K, hdim, **kwargs)
+
+        args = {'nlayers': nlayers, 'bias': bias, 'normalization': normalization}
+
+        # pad input to this shape
+        self.padded_shape = padded_shape
+        xpad = (self.padded_shape[0] - xdim[1])
+        ypad = self.padded_shape[1] - xdim[2]
+        self.padding = (ypad // 2, ypad // 2, xpad // 2, xpad // 2)
+
+        # in shape
+        x_padded = [xdim[0], *self.padded_shape]
+
+        # encoder
+        self.conv_encoder = ConvEncoder(x_padded, hdim, hdim, **args)
+        self.mlp_encoder = MLP(prod(self.conv_encoder.output_shape), 4 * hdim, prod(self.qdim), act_in=True, **args)
+
+        # decoder
+        self.mlp_decoder = MLP(prod(self.zdim), 4 * hdim, prod(self.conv_encoder.output_shape), **args)
+        self.conv_decoder = ConvDecoder(self.conv_encoder.output_shape, hdim, xdim[0], act_in=True, **args)
+
+    def encode(self, x):
+        # pad
+        x = torch.nn.functional.pad(x, self.padding)
+
+        y = self.conv_encoder(x)
+        y = self.mlp_encoder(flatten(y))
+        return y.view(-1, *self.qdim)
+
+    def generate(self, z):
+        z = flatten(z)
+        x = self.mlp_decoder(z)
+        px_logits = self.conv_decoder(x.view(-1, *self.conv_encoder.output_shape))
+        # unpad
+        px_logits = torch.nn.functional.pad(px_logits, [-p for p in self.padding])
+        return self.likelihood(logits=px_logits)
 
 
 class Stage(nn.Module):

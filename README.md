@@ -9,17 +9,38 @@
 * Concrete/Gumbel-Softmax
 * Straight-Through Concrete/Gumbel-Softmax
 * Optimal Covariance Baseline (see overleaf doc)
+* RELAX ([TODO]: learn temperature, [TODO]: use iw samples) 
+* ! [TODO] TVO
 * [TODO] VQ 
-* [TODO] REBAR
-* [TODO] RELAX
-* [TODO] TVO
+* [TODO] REBAR (special case of RELAX)
 
 ## Datasets
 
 * Shapes Dataset
-* [TODO] Binarized MNIST
-* [TODO] Omniglot
-* [TODO] Fashion MNIST
+* Binarized MNIST
+* Omniglot
+* Fashion MNIST
+* [TODO] BookCorpus Dataset
 
 ## Experiments
-* [TODO] best estimator under a fixed sample budget [budget = bs * mc * iw]
+
+* Binary Images Modelling
+    * nsamples x CovBaseline vs. Vimco (Categorical)
+    * nsamples x CovBaseline vs. Vimco vs Pathwise (Gaussian)
+    * [TODO] nsamples x CovBaseline vs. TVO
+    * [TODO] optimal budget: iw vs. mc samples
+
+* [TODO] Bernoulli toy
+    * RELAX: L(θ) = Ep(b|θ) [(b − 0.499)**2]
+    * visualize gradients, parameter space, ... 
+    
+* [TODO] Attend, Infer and Repeat
+    * Covbaseline vs. Vimco vs. Reinforce+baseline vs. TVO
+
+* [TODO] Langugage as a Latent Variable
+    * Covbaseline vs. Vimco vs. Reinforce+baseline vs. TVO
+    
+   
+* Secondary
+    * kdim: effect of the query model 
+    * [TODO] nz, kz: best configuration

@@ -40,18 +40,14 @@ def sample_model(key, model, logdir, global_step=0, writer=None, N=100, seed=Non
         torch.manual_seed(seed)
 
 
-def get_loggers(logdir):
+def get_loggers(logdir, keys=['base', 'train', 'valid'], format='%(asctime)s %(name)-4s %(levelname)-4s %(message)s'):
     logging.basicConfig(level=logging.INFO,
-                        format='%(asctime)s %(name)-4s %(levelname)-4s %(message)s',
+                        format=format,
                         datefmt='%m-%d %H:%M',
                         handlers=[logging.FileHandler(os.path.join(logdir, 'run.log')),
                                   logging.StreamHandler()])
 
-    base_logger = logging.getLogger('base')
-    train_logger = logging.getLogger('train')
-    valid_logger = logging.getLogger('valid')
-
-    return base_logger, train_logger, valid_logger
+    return (logging.getLogger(k) for k in keys)
 
 
 def summary2logger(logger, summary, global_step, epoch, best=None, stats_key='loss'):
