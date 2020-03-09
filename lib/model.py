@@ -1,7 +1,7 @@
 from copy import copy
 
 from torch import nn, Tensor
-from torch.distributions import Bernoulli, Distribution
+from torch.distributions import Bernoulli, Distribution, Normal
 from torch.nn.functional import gumbel_softmax, log_softmax
 
 from .utils import *
@@ -31,6 +31,33 @@ class PseudoCategorical(Distribution):
     def log_prob(self, value):
         log_pdf = log_softmax(self.logits, self.dim)
         return (value * log_pdf).sum(self.dim)
+
+
+class _Normal(Distribution):
+    def __init__(self, logits: Tensor, dim: int = -1, **kwargs: Any):
+        """hacking the Normal class so we can easily compute d p.log_prob(z) / d logits [gif: https://imgur.com/Hfzf14T]"""
+        super().__init__()
+        self.logits = logits
+        self.dim = dim
+
+    @property
+    def _params(self):
+        # logits are of dimension (*, N, K,) with K = 2
+        mu, log_std = self.logits.chunk(2, dim=self.dim)
+        scale = log_std.mul(0.5).exp()
+        return mu, scale
+
+    def sample(self):
+        loc, scale = self._params
+        return Normal(loc, scale).sample()
+
+    def rsample(self):
+        loc, scale = self._params
+        return Normal(loc, scale).rsample()
+
+    def log_prob(self, x):
+        loc, scale = self._params
+        return Normal(loc, scale).log_prob(x)
 
 
 class MLP(nn.Module):
@@ -123,17 +150,24 @@ class VAE(Template):
     """
 
     def __init__(self, xdim, N, K, hdim, kdim=0, nlayers=0, learn_prior=False, bias=True, normalization='layernorm',
-                 likelihood=Bernoulli):
+                 likelihood=Bernoulli, prior='categorical'):
         super().__init__()
+
+        # define prior family
+        self.prior_dist = {'categorical': PseudoCategorical, 'normal': _Normal}[prior]
+        if prior == 'normal':
+            K = 2
+
         self.xdim = xdim
-        self.zdim = (N, K,)
+        self.zdim = (N, 1,) if prior == 'normal' else (N, K,)
+        self.prior_dim = (N, 2,) if prior == 'normal' else (N, K,)
         self.N = N
         self.K = K
         self.kdim = kdim
         args = {'nlayers': nlayers, 'bias': bias, 'normalization': normalization}
 
         # prior
-        prior = torch.zeros((1, *self.zdim))
+        prior = torch.zeros((1, *self.prior_dim))
         if learn_prior:
             self.prior = nn.Parameter(prior)
         else:
@@ -145,7 +179,7 @@ class VAE(Template):
             keys = torch.zeros((*self.zdim, kdim)).normal_()
             self.keys = nn.Parameter(keys)
         else:
-            self.qdim = self.zdim
+            self.qdim = (N, K)
             self.keys = None
 
         # encoder
@@ -183,21 +217,21 @@ class VAE(Template):
     def forward(self, x, tau=0, zgrads=False, **kwargs):
         qlogits = self.infer(x)
 
-        qz = PseudoCategorical(logits=qlogits, tau=tau)
+        qz = self.prior_dist(logits=qlogits, tau=tau)
         z = qz.rsample()
 
         if not zgrads:
             z = z.detach()
 
-        pz = PseudoCategorical(logits=self.prior)
+        pz = self.prior_dist(logits=self.prior)
 
         px = self.generate(z)
 
         return {'px': px, 'z': [z], 'qz': [qz], 'pz': [pz]}
 
     def sample_from_prior(self, N):
-        prior = self.prior.expand(N, *self.zdim)
-        z = PseudoCategorical(logits=prior).sample()
+        prior = self.prior.expand(N, *self.prior_dim)
+        z = self.prior_dist(logits=prior).sample()
         px = self.generate(z)
         return {'px': px, 'z': z}
 

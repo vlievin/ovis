@@ -3,9 +3,9 @@ from .structured_estimators import *
 
 
 def get_config(estimator):
-    if estimator == 'vi':
+    if estimator == 'pathwise':
         Estimator = VariationalInference
-        config = {'tau': 0, 'zgrads': False}
+        config = {'tau': 0, 'zgrads': True}
 
     elif 'reinforce' in estimator:
         Estimator = Reinforce

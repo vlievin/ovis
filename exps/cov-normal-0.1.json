@@ -1,0 +1,12 @@
+{
+  "args": [
+    "--estimator covbaseline --prior normal",
+    "--estimator pathwise --prior normal"
+  ],
+  "global": "--silent --epochs 1000 --lr_reduce_steps 2 --bs 32",
+  "parameters": {
+    "seed": [13, 64, 47, 23, 78],
+    "iw": [2, 3, 5, 10, 20]
+  }
+
+}

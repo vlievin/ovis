@@ -46,6 +46,7 @@ parser.add_argument('--iw', default=1, type=int, help='number of Importance-Weig
 parser.add_argument('--iw_valid', default=100, type=int, help='number of Importance-Weighted samples for validation')
 
 # latent space
+parser.add_argument('--prior', default='categorical', help='family of the prior distribution : [categorcial | normal]')
 parser.add_argument('--N', default=8, type=int, help='number of latent variables')
 parser.add_argument('--K', default=8, type=int, help='number of categories for each latent variable')
 parser.add_argument('--kdim', default=0, type=int, help='dimension of the keys for each latent variable')
@@ -63,7 +64,7 @@ if opt.silent:
 
 # defining the run identifier
 use_baseline = 'baseline' in opt.estimator
-run_id = f"shapes-vae-{opt.estimator}-seed{opt.seed}"
+run_id = f"shapes-vae-{opt.prior}-{opt.estimator}-seed{opt.seed}"
 if len(opt.id) > 0:
     run_id += f"-{opt.id}"
 run_id += f"-lr{opt.lr:.1E}-bs{opt.bs}-mc{opt.mc}-iw{opt.iw}+{opt.iw_valid}"
@@ -110,7 +111,7 @@ try:
 
     # define model
     torch.manual_seed(opt.seed)
-    model = VAE(x.shape, opt.N, opt.K, opt.hdim, kdim=opt.kdim, nlayers=opt.nlayers, learn_prior=opt.learn_prior)
+    model = VAE(x.shape, opt.N, opt.K, opt.hdim, kdim=opt.kdim, nlayers=opt.nlayers, learn_prior=opt.learn_prior, prior=opt.prior)
 
     # define baseline
     baseline = Baseline(x.shape, opt.b_nlayers, opt.hdim) if use_baseline else None

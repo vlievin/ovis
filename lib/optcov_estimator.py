@@ -2,7 +2,7 @@ from .estimators import *
 from .model import PseudoCategorical
 from .utils import *
 
-_EPS = 1e-18
+_EPS = 1e-20
 
 
 class OptCovReinforce(Reinforce):
@@ -21,7 +21,8 @@ class OptCovReinforce(Reinforce):
         self.log_iw_m1 = np.log(self.iw - 1)
         self.detach_qlogits = True  # detach q since the reinforce loss only accounts for the parameters of phi, so the backward pass of L_k only deals with theta
 
-    def compute_control_variate(self, x: Tensor, mc_estimate:bool=True, nz_estimate:bool=False, **data: Dict[str, Tensor]) -> Tensor:
+    def compute_control_variate(self, x: Tensor, mc_estimate: bool = True, nz_estimate: bool = False,
+                                **data: Dict[str, Tensor]) -> Tensor:
         """
         Compute the baseline that will be substracted to the score L_k,
         The output shape should be of size 4 and matching the shape [bs, mc, iw, nz]
@@ -52,16 +53,15 @@ class OptCovReinforce(Reinforce):
 
         # reshaping d_qlogits and qlogits
         N, K = d_qlogits.size()[1:]
+
         d_qlogits = d_qlogits.view(bs, self.mc, self.iw, N, K)
 
         with torch.no_grad():
 
-
             if nz_estimate:
                 _n, _k = N, K
             else:
-                _n, _k = 1, K * K
-
+                _n, _k = 1, N * K
 
             # using notation from the overleaf doc with:
             # m = m
@@ -78,12 +78,6 @@ class OptCovReinforce(Reinforce):
                 sum_exp = sum_except(torch.exp(tensor - max), dim)
                 return torch.log(sum_exp + eps) + max
 
-            def softmax_except(x, dim=-1, eps=1e-20):
-                max, _ = torch.max(x, dim=dim, keepdim=True)
-                x = (x - max).exp()
-                _sum = sum_except(x, dim)
-                return x.unsqueeze(dim) / (eps + _sum.unsqueeze(dim + 1))
-
             log_w = log_f_xz.view(-1, self.mc, self.iw)
 
             debug = False
@@ -91,16 +85,16 @@ class OptCovReinforce(Reinforce):
                 log_w = log_w.detach()
                 log_w.requires_grad = True
 
-            # f_km = log_f_xz
+            # f_km = log_f_xz - v
             log_sum_exp_w = log_sum_exp_except(log_w, dim=2)
             f_km_no_m = log_sum_exp_w - self.log_iw_m1
             v_kmn = (log_w[:, :, :, None] - log_sum_exp_w[:, :, None, :]).exp()
-            v_kmn = v_kmn.clamp(0, 1) # there may be a better way to solve numerical stability issues
+            v_kmn = v_kmn.clamp(_EPS, 1 - _EPS)  # there may be a better way to solve numerical stability issues
             f_kmn_no_m = f_km_no_m[:, :, :, None] - v_kmn
 
             # flatten data so we can compute the sum_{m'k' != mk}
             h_kn = h_kn.view(bs, self.mc, self.iw, _n, -1)
-            f_kmn_no_m = f_kmn_no_m[:,:,:,:,None,None].view(bs, self.mc, self.iw, self.iw, 1, 1)
+            f_kmn_no_m = f_kmn_no_m[:, :, :, :, None, None].view(bs, self.mc, self.iw, self.iw, 1, 1)
             mask = 1 - torch.eye(self.iw, device=x.device, dtype=x.dtype)[None, None, :, :, None, None]
 
             # compute sums
@@ -135,8 +129,6 @@ class OptCovReinforce(Reinforce):
         return c_opt.detach().type(x.dtype)
 
 
-
-
 class OptCovReinforce__(VariationalInference):
     """
     Overleaf: https://www.overleaf.com/project/5d84f62f0c4fb30001e934ac
@@ -160,7 +152,8 @@ class OptCovReinforce__(VariationalInference):
         elbo = log_px_z - kl
         return elbo, kl, -log_px_z, px
 
-    def forward(self, model: nn.Module, x: Tensor, backward: bool = False, mc_baseline=True, id_estimates=False, **kwargs: Any) -> Tuple[
+    def forward(self, model: nn.Module, x: Tensor, backward: bool = False, mc_baseline=True, id_estimates=False,
+                **kwargs: Any) -> Tuple[
         Tensor, Dict, Dict]:
         bs, *dims = x.shape
 
