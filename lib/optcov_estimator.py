@@ -21,13 +21,13 @@ class OptCovReinforce(Reinforce):
         self.log_iw_m1 = np.log(self.iw - 1)
         self.detach_qlogits = True  # detach q since the reinforce loss only accounts for the parameters of phi, so the backward pass of L_k only deals with theta
 
-    def compute_control_variate(self, x: Tensor, mc_estimates:bool=True, nz_estimates:bool=False, **data: Dict[str, Tensor]) -> Tensor:
+    def compute_control_variate(self, x: Tensor, mc_estimate:bool=True, nz_estimate:bool=False, **data: Dict[str, Tensor]) -> Tensor:
         """
         Compute the baseline that will be substracted to the score L_k,
         The output shape should be of size 4 and matching the shape [bs, mc, iw, nz]
         :param x: input tensor
-        :param mc_estimates: compute independent estimates for each MC sample
-        :param nz_estimates: compute independent estimates for each latent variable
+        :param mc_estimate: compute independent estimates for each MC sample
+        :param nz_estimate: compute independent estimates for each latent variable
         :param data: additional data
         """
         bs, *dims = x.size()
@@ -57,7 +57,7 @@ class OptCovReinforce(Reinforce):
         with torch.no_grad():
 
 
-            if nz_estimates:
+            if nz_estimate:
                 _n, _k = N, K
             else:
                 _n, _k = 1, K * K
@@ -112,7 +112,7 @@ class OptCovReinforce(Reinforce):
             num = torch.sum(s_h * s_hf, -1)
             den = torch.sum(s_h * s_h, -1)
 
-            if not mc_estimates:
+            if mc_estimate:
                 # sum over mc samples
                 num = num.sum(1, keepdim=True)
                 den = den.sum(1, keepdim=True)

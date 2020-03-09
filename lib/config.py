@@ -13,14 +13,14 @@ def get_config(estimator):
 
     elif 'vimco' in estimator:
         Estimator = Vimco
-        mc_estimates = '-mc' in estimator
-        config = {'tau': 0, 'zgrads': False, 'mc_estimates': mc_estimates}
+        mc_estimate = '-mc' in estimator
+        config = {'tau': 0, 'zgrads': False, 'mc_estimate': mc_estimate}
 
     elif 'covbaseline' in estimator:
         Estimator = OptCovReinforce
-        mc_estimates = '-mc' in estimator
-        nz_estimates = '-nz' in estimator
-        config = {'tau': 0, 'zgrads': False, 'mc_estimates': mc_estimates, 'nz_estimates': nz_estimates}
+        mc_estimate = '-mc' in estimator
+        nz_estimate = '-nz' in estimator
+        config = {'tau': 0, 'zgrads': False, 'mc_estimate': mc_estimate, 'nz_estimate': nz_estimate}
 
     elif estimator == 'gs':
         Estimator = VariationalInference

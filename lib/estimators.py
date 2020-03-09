@@ -252,7 +252,7 @@ class Vimco(Reinforce):
         self.control_variate_loss_weight = 0  # the control variate doesn't have any parameter
 
     @torch.no_grad()
-    def compute_control_variate(self, x: Tensor, mc_estimates: bool = True, **data: Dict[str, Tensor]) -> Tensor:
+    def compute_control_variate(self, x: Tensor, mc_estimate: bool = True, **data: Dict[str, Tensor]) -> Tensor:
         """Compute the baseline that will be substracted to the score L_k,
         `data` contains the output of the method `compute_iw_bound`.
         The output shape should be of size 4 and matching the shape [bs, mc, iw, nz]"""
@@ -265,7 +265,7 @@ class Vimco(Reinforce):
         log_f_xz_samples = log_f_xz.unsqueeze(-1) + torch.diag_embed(log_f_xz_hat - log_f_xz)
         baseline = torch.logsumexp(log_f_xz_samples, dim=2) - self.log_iw
 
-        if not mc_estimates:
+        if mc_estimate:
             baseline = baseline.mean(1, keepdim=True)
 
         return baseline.unsqueeze(-1)  # output of shape [bs, mc, iw, 1]
