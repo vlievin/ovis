@@ -3,9 +3,9 @@
     "--estimator vimco",
     "--estimator covbaseline"
   ],
-  "global": "--silent --epochs 500 --lr_reduce_steps 3 --model conv-vae --bs 64 --hdim 32 --iw 4 --mc 4",
+  "global": "--silent --epochs 500 --lr_reduce_steps 3 --model conv-vae --bs 128 --hdim 32 --iw_valid 10 --iw 4 --mc 1 --N 16",
   "parameters": {
-    "seed":[13, 64, 47, 23, 78],
+    "seed":[13, 64, 47],
     "dataset" : ["binmnist", "omniglot", "fashion"]
   }
 }

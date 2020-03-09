@@ -11,7 +11,7 @@ _EPS = 1e-18
 
 
 class Estimator(nn.Module):
-    def __init__(self, beta: float = 1, mc: int = 1, iw: int = 1, freebits=0, **kwargs):
+    def __init__(self, beta: float = 1, mc: int = 1, iw: int = 1, sequential_computation=False, freebits=0, **kwargs):
         super().__init__()
         self.beta = beta
         self.mc = mc
@@ -19,6 +19,7 @@ class Estimator(nn.Module):
         self.log_iw = np.log(iw)
         self.freebits = FreeBits(freebits)
         self.detach_qlogits = False
+        self.sequential_computation = sequential_computation
 
     def _expand_sample(self, x):
         bs, *dims = x.size()
@@ -121,20 +122,58 @@ class VariationalInference(Estimator):
 
     def evaluate_model(self, model: nn.Module, x: Tensor, **kwargs: Any) -> Dict[str, Tensor]:
 
-        # expand input to get MC and IW samples: [bs, mc, iw, ...]
-        __x = self._expand_sample(x)
+        if self.sequential_computation:
+            # todo: move this in the forward pass so we retain only point estimates (loop over `evaluate model` method with iw = 1)
+            bs, *dims = x.size()
+            log_px_zs = []
+            log_pzs = []
+            log_qzs = []
 
-        # forward pass
-        output = model(__x, **kwargs)
-        px, z, qz, pz = [output[k] for k in ['px', 'z', 'qz', 'pz']]
+            for i in range(self.iw):
+                __x = x[:, None].repeat(1, self.mc, *(1 for _ in dims)).view(-1, *dims)
 
-        # compute log p(x|z), log p(z) and log q(z | x)
-        log_px_z = batch_reduce(px.log_prob(__x))
-        log_pz = [pz_l.log_prob(z_l) for pz_l, z_l in zip(pz, z)]
-        log_qz = [qz_l.log_prob(z_l) for qz_l, z_l in zip(qz, z)]
+                # forward pass
+                output = model(__x, **kwargs)
+                px, z, qz, pz = [output[k] for k in ['px', 'z', 'qz', 'pz']]
 
-        output.update({'log_px_z': log_px_z, 'log_pz': log_pz, 'log_qz': log_qz})
-        return output
+                # compute log p(x|z), log p(z) and log q(z | x)
+                log_px_zs += [batch_reduce(px.log_prob(__x))]
+                log_pzs += [[pz_l.log_prob(z_l) for pz_l, z_l in zip(pz, z)]]
+                log_qzs += [[qz_l.log_prob(z_l) for qz_l, z_l in zip(qz, z)]]
+
+            # concatenate
+            log_px_z = torch.cat([x.view(bs, self.mc, 1) for x in log_px_zs], 2)
+
+            log_pzs = [list(x) for x in zip(*log_pzs)]
+            log_pz = [torch.cat([x.view(bs, self.mc, 1, *x.size()[1:]) for x in log_pzs_l], 2) for log_pzs_l in log_pzs]
+
+            log_qzs = [list(x) for x in zip(*log_qzs)]
+            log_qz = [torch.cat([x.view(bs, self.mc, 1, *x.size()[1:]) for x in log_qzs_l], 2) for log_qzs_l in log_qzs]
+
+            # re-flatten bs, mc, iw samples
+            log_px_z = log_px_z.view(-1)
+            log_pz = [x.view(-1, *x.size()[3:]) for x in log_pz]
+            log_qz = [x.view(-1, *x.size()[3:]) for x in log_qz]
+
+            # for now this does not return the model output as it is complicated to concatenate all of them (distributions)
+            # this is why this should be used only for evaluation using basic VI
+            return {'log_px_z': log_px_z, 'log_pz': log_pz, 'log_qz': log_qz}
+
+        else:
+            # expand input to get MC and IW samples: [bs, mc, iw, ...]
+            __x = self._expand_sample(x)
+
+            # forward pass
+            output = model(__x, **kwargs)
+            px, z, qz, pz = [output[k] for k in ['px', 'z', 'qz', 'pz']]
+
+            # compute log p(x|z), log p(z) and log q(z | x)
+            log_px_z = batch_reduce(px.log_prob(__x))
+            log_pz = [pz_l.log_prob(z_l) for pz_l, z_l in zip(pz, z)]
+            log_qz = [qz_l.log_prob(z_l) for qz_l, z_l in zip(qz, z)]
+
+            output.update({'log_px_z': log_px_z, 'log_pz': log_pz, 'log_qz': log_qz})
+            return output
 
     def forward(self, model: nn.Module, x: Tensor, backward: bool = False, **kwargs: Any) -> Tuple[Tensor, Dict, Dict]:
 

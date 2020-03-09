@@ -125,7 +125,7 @@ try:
     estimator = Estimator(baseline=baseline, mc=opt.mc, iw=opt.iw, N=opt.N, K=opt.K, hdim=opt.hdim)
 
     config_valid = {'tau': 0, 'zgrads': False}
-    estimator_valid = VariationalInference(mc=1, iw=opt.iw_valid)
+    estimator_valid = VariationalInference(mc=1, iw=opt.iw_valid, sequential_computation=True)
 
     # get device and move models
     device = "cuda:0" if torch.cuda.device_count() else "cpu"
