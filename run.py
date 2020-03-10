@@ -178,7 +178,8 @@ try:
 
         # estimate the variance of the gradients
         x = next(iter(loader_train)).to(device)
-        summary_train["loss"]["log_grad_var"] = get_gradients_log_total_variance(estimator, model, x, **config)
+        # warning: key_filter does not hold for other models like LVAE.
+        summary_train["loss"]["log_grad_var"] = get_gradients_log_total_variance(estimator, model, x, key_filter='encoder', **config)
 
         # valid epoch
         with torch.no_grad():
