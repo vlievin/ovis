@@ -11,7 +11,6 @@ class OptCovReinforce(Reinforce):
 
     c_\mathrm{opt}(x) = \frac{\sum_k \sum_m h^T_{mk} \sum_{m'} h_{m'k} f_{m'k} }{\sum_k  \sum_m h^T_{mk} \sum_{m'} h_{m'k} }
 
-    # todo: one baseline for each N
     # todo: only leave sample km out
     """
 
