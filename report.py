@@ -1,8 +1,9 @@
 import argparse
 import json
 import os
-import sys
 import traceback
+from datetime import datetime
+from shutil import rmtree
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -10,9 +11,8 @@ import pandas as pd
 import seaborn as sns
 from dotmap import DotMap
 from tqdm import tqdm
-from  lib.logging import get_loggers
-from shutil import rmtree
-from datetime import datetime
+
+from lib.logging import get_loggers
 
 sns.set()
 
@@ -27,7 +27,12 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--root', default='runs/', help='experiment directory')
 parser.add_argument('--output', default='reports/', help='output directory')
 parser.add_argument('--exp', default='exclude-sample-0.1', type=str, help='experiment id')
-parser.add_argument('--metric', default='loss/elbo', type=str, help='metric to track')
+parser.add_argument('--metrics', default='max:elbo,avg:log_grad_var', type=str,
+                    help='comma separated list of metrics to report in the table, the prefix defines the aggregation function (min, avg, max)')
+parser.add_argument('--train_keys', default='control_variate_mse,log_grad_var', type=str,
+                    help='comma separated list of keys to read from the training tensorboard logs')
+parser.add_argument('--valid_keys', default='elbo,kl,N_eff', type=str,
+                    help='comma separated list of keys to read from the valid tensorboard logs')
 parser.add_argument('--aux_key', default='iw', type=str, help='auxiliary parameter to include in the report')
 parser.add_argument('--latex', action='store_true', help='print as latex table')
 parser.add_argument('--float_format', default=".3f", help='float format')
@@ -46,14 +51,17 @@ if os.path.exists(output_path):
     rmtree(output_path)
 os.makedirs(output_path)
 
-
 # log console output to file
 logger, *_ = get_loggers(output_path, keys=['report'], format="%(message)s")
 logger.info(f"{datetime.now()}\n\n")
 
 
 # utilities
-def _readable(key):
+def _to_tb(key):
+    return f"loss/{key}"
+
+
+def _from_tb(key):
     return key.replace("loss/", "")
 
 
@@ -65,23 +73,23 @@ def _print_df(df):
 
 
 # define keys to read from the logs
-valid_keys = [
-    "elbo",
-    "kl",
-    "N_eff",
-]
-train_keys = [
-    "control_variate_mse",
-    "log_grad_var",
-]
-train_keys = ["loss/" + k for k in train_keys]
-valid_keys = ["loss/" + k for k in valid_keys]
+valid_keys = list(opt.valid_keys.split(','))
+train_keys = list(opt.train_keys.split(','))
+
+tf_valid_keys = list(map(_to_tb, valid_keys))
+tf_train_keys = list(map(_to_tb, train_keys))
+metrics_agg_fns, metrics = zip(*[u.split(':') for u in opt.metrics.split(",")])
+metrics_agg_fns = [{'min': np.min, 'max': np.max, 'avg': np.mean}[m] for m in metrics_agg_fns]
+metrics = list(metrics)
+
+print("# Metrics:", metrics)
+print("# Agg. Fns:", metrics_agg_fns)
 
 # read data
 logger.info(f"# reading experiments from path: {path}")
 logger.info(_sep)
-data = []
-logs = []
+data = [] # store hyperparameters and configs
+logs = [] # store training data from tensorboard logs
 for e in experiments:
     logger.info(f" - exp = {e}")
 
@@ -112,33 +120,26 @@ for e in experiments:
                     for item in reader:
                         step = item.step
                         for v in item.summary.value:
-                            if v.tag in train_keys:
-                                logs += [{'id': e, 'step': step, '_key': _readable(v.tag),
+                            if v.tag in tf_train_keys:
+                                logs += [{'id': e, 'step': step, '_key': _from_tb(v.tag),
                                           '_value': float(v.simple_value)}]
 
                 # read valid logs
                 _dir = os.path.join(exp_path, 'valid')
                 _tf_log = [os.path.join(_dir, o) for o in os.listdir(_dir) if 'events.out.tfevents' in o][0]
-                best_metric = -1e20
                 with open(_tf_log, 'rb') as f:
                     reader = EventsFileReader(f)
 
                     for item in reader:
                         step = item.step
                         for v in item.summary.value:
-                            if v.tag in valid_keys:
-                                logs += [{'id': e, 'step': step, '_key': _readable(v.tag),
+                            if v.tag in tf_valid_keys:
+                                logs += [{'id': e, 'step': step, '_key': _from_tb(v.tag),
                                           '_value': float(v.simple_value)}]
-                            if v.tag == opt.metric:
-                                best_metric = v.simple_value
 
-                results = {'id': e, _readable(opt.metric): best_metric}
-
-                # initializing experiment data as the argparse parameters
+                # gather config/hyperparameters
                 d = dict(args)
-                # append results to data
-                d.update(results)
-
+                d['id'] = e
                 # append data and logs
                 data += [d]
 
@@ -152,23 +153,28 @@ for e in experiments:
 # compile data into a dataframe
 df = pd.DataFrame(data)
 
-logger.info(df)
-
-# drop columns that contain the same attributes (except for `seed`, and `aux_key`)
+# drop columns that contain the same attributes (they will be dropped from `df`)
 nunique = df.apply(pd.Series.nunique)
 global_attributes = list(nunique[nunique == 1].index)
-if 'seed' in global_attributes:
-    global_attributes.remove('seed')
-if opt.aux_key in global_attributes:
-    global_attributes.remove(opt.aux_key)
-if _readable(opt.metric) in global_attributes:
-    global_attributes.remove(_readable(opt.metric))
+# remove some metrics from the global attributes if they have to be indexed from `df` later on.
+for k in metrics + ['seed', opt.aux_key]:
+    if k in global_attributes:
+        global_attributes.remove(k)
 df = df.drop(global_attributes, axis=1)
 
 # compile log data and merge with the attributes
 logs = pd.DataFrame(logs)
-_keys_to_merge = [k for k in df.keys() if k != _readable(opt.metric)]
+
+# join df.config into logs
+_keys_to_merge = [k for k in df.keys() if k not in metrics]
 logs = logs.merge(df[_keys_to_merge], left_on="id", right_on="id")
+
+# aggregate `metric` over logs and join into `df`
+for m, agg_fn in zip(metrics, metrics_agg_fns):
+    logs_m = logs[logs["_key"] == m]
+    agg_log_m = pd.DataFrame(logs_m[['id', "_value"]].groupby('id')["_value"].apply(agg_fn))
+    agg_log_m.rename(columns={'_value': m}, inplace=True)
+    df = df.merge(agg_log_m, left_on="id", right_on="id")
 
 # drop id (exp name)
 df = df.drop('id', 1)
@@ -178,8 +184,8 @@ logs = logs.drop('id', 1)
 print all results
 """
 
-# sort by values
-df = df.sort_values(_readable(opt.metric), ascending=False)
+# sort by the first metric
+df = df.sort_values(metrics[0], ascending=False)
 
 # print all results
 logger.info("\n" + _sep)
@@ -188,7 +194,7 @@ for g in global_attributes:
 logger.info(_sep)
 logger.info(os.path.abspath(path))
 logger.info(_sep)
-logger.info(f"all data: varying parameters: {[k for k in df.keys() if k not in _readable(opt.metric)]}")
+logger.info(f"all data: varying parameters: {[k for k in df.keys() if k not in metrics]}")
 logger.info(_sep)
 if "dataset" in df.keys():
     for dset in set(df["dataset"].values):
@@ -209,11 +215,11 @@ def aggfunc(serie):
 
 
 _columns = [opt.aux_key] if len(opt.aux_key) > 0 else []
-_keys = [k for k in df.keys() if k != _readable(opt.metric) and k != "seed" and k not in _columns]
-pivot = df.pivot_table(index=_keys, columns=_columns, values=_readable(opt.metric), aggfunc=aggfunc)
+_keys = [k for k in df.keys() if k not in metrics and k != "seed" and k not in _columns]
+pivot = df.pivot_table(index=_keys, columns=_columns, values=metrics, aggfunc=aggfunc)
 # sort pivot according to the mean value
-mean_pivot = df.pivot_table(index=_keys, values=_readable(opt.metric), aggfunc=np.mean)
-mean_pivot = mean_pivot.sort_values(_readable(opt.metric), ascending=False)
+mean_pivot = df.pivot_table(index=_keys, values=metrics[0], aggfunc=np.mean)
+mean_pivot = mean_pivot.sort_values(metrics[0], ascending=False)
 pivot = pivot.reindex(mean_pivot.index)
 
 logger.info("\n" + _sep)
@@ -294,10 +300,11 @@ def plot_logs(logs, _keys, path, style_key=None):
         ax.set_ylabel(k)
         # y lims
         ys = logs[(logs['_key'] == k) & (logs['step'] > step_min)]['_value'].values.tolist()
-        a, b = np.percentile(ys, [25, 75])
-        M = b - a
-        k = 1.5
-        ax.set_ylim([a - k * M, b + k * M])
+        if len(ys):
+            a, b = np.percentile(ys, [25, 75])
+            M = b - a
+            k = 1.5
+            ax.set_ylim([a - k * M, b + k * M])
 
         if i < len(_keys) - 1:
             ax.get_legend().remove()
@@ -320,4 +327,3 @@ if len(opt.aux_key):
     for i, v in enumerate(sorted(values)):
         f"Generating plots for {opt.aux_key} = {v} [{i + 1} / {values}]"
         plot_logs(logs[logs[opt.aux_key] == v], _keys, os.path.join(output_path, f"curves-{opt.aux_key}={v}.png"))
-
