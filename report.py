@@ -89,8 +89,8 @@ print("# Agg. Fns:", metrics_agg_fns)
 # read data
 logger.info(f"# reading experiments from path: {path}")
 logger.info(_sep)
-data = [] # store hyperparameters and configs
-logs = [] # store training data from tensorboard logs
+data = []  # store hyperparameters and configs
+logs = []  # store training data from tensorboard logs
 for e in experiments:
     logger.info(f" - exp = {e}")
 

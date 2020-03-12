@@ -159,7 +159,7 @@ class VAE(BaseVAE):
     A simple VAE model parametrized by MLPs
     """
 
-    def __init__(self, xdim, N, K, hdim, nlayers=0, bias=True, normalization='batchnorm', **kwargs):
+    def __init__(self, xdim, N, K, hdim, nlayers=0, bias=True, normalization='layernorm', **kwargs):
         super().__init__(xdim, N, K, hdim, **kwargs)
 
         args = {'nlayers': nlayers, 'bias': bias, 'normalization': normalization}

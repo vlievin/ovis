@@ -373,63 +373,60 @@ class VariationalInference(Estimator):
         return N_eff
 
     def evaluate_model(self, model: nn.Module, x: Tensor, **kwargs: Any) -> Dict[str, Tensor]:
+        # forward pass
+        output = model(x, **kwargs)
+        px, z, qz, pz = [output[k] for k in ['px', 'z', 'qz', 'pz']]
 
-        if self.sequential_computation:
-            # todo: move this in the forward pass so we retain only point estimates (loop over `evaluate model` method with iw = 1)
-            bs, *dims = x.size()
-            log_px_zs = []
-            log_pzs = []
-            log_qzs = []
+        # compute log p(x|z), log p(z) and log q(z | x)
+        log_px_z = batch_reduce(px.log_prob(x))
+        log_pz = [pz_l.log_prob(z_l) for pz_l, z_l in zip(pz, z)]
+        log_qz = [qz_l.log_prob(z_l) for qz_l, z_l in zip(qz, z)]
 
-            for i in range(self.iw):
-                __x = x[:, None].repeat(1, self.mc, *(1 for _ in dims)).view(-1, *dims)
+        output.update({'log_px_z': log_px_z, 'log_pz': log_pz, 'log_qz': log_qz})
+        return output
 
-                # forward pass
-                output = model(__x, **kwargs)
-                px, z, qz, pz = [output[k] for k in ['px', 'z', 'qz', 'pz']]
+    def _sequential_evaluation(self, model: nn.Module, x: Tensor, **kwargs: Any):
+        bs, *dims = x.size()
+        log_px_zs = []
+        log_pzs = []
+        log_qzs = []
+        x_samples = x[:, None].repeat(1, self.mc, *(1 for _ in dims)).view(-1, *dims)
+        for i in range(self.iw):
+            # evaluate batch
+            output = self.evaluate_model(model, x_samples, **kwargs)
+            log_px_z, log_pz, log_qz = [output[k] for k in ('log_px_z', 'log_pz', 'log_qz')]
 
-                # compute log p(x|z), log p(z) and log q(z | x)
-                log_px_zs += [batch_reduce(px.log_prob(__x))]
-                log_pzs += [[pz_l.log_prob(z_l) for pz_l, z_l in zip(pz, z)]]
-                log_qzs += [[qz_l.log_prob(z_l) for qz_l, z_l in zip(qz, z)]]
+            log_px_zs += [log_px_z]
+            log_pzs += [log_pz]
+            log_qzs += [log_qz]
 
             # concatenate
-            log_px_z = torch.cat([x.view(bs, self.mc, 1) for x in log_px_zs], 2)
+        log_px_z = torch.cat([x.view(bs, self.mc, 1) for x in log_px_zs], 2)
 
-            log_pzs = [list(x) for x in zip(*log_pzs)]
-            log_pz = [torch.cat([x.view(bs, self.mc, 1, *x.size()[1:]) for x in log_pzs_l], 2) for log_pzs_l in log_pzs]
+        log_pzs = [list(x) for x in zip(*log_pzs)]
+        log_pz = [torch.cat([x.view(bs, self.mc, 1, *x.size()[1:]) for x in log_pzs_l], 2) for log_pzs_l in log_pzs]
 
-            log_qzs = [list(x) for x in zip(*log_qzs)]
-            log_qz = [torch.cat([x.view(bs, self.mc, 1, *x.size()[1:]) for x in log_qzs_l], 2) for log_qzs_l in log_qzs]
+        log_qzs = [list(x) for x in zip(*log_qzs)]
+        log_qz = [torch.cat([x.view(bs, self.mc, 1, *x.size()[1:]) for x in log_qzs_l], 2) for log_qzs_l in log_qzs]
 
-            # re-flatten bs, mc, iw samples
-            log_px_z = log_px_z.view(-1)
-            log_pz = [x.view(-1, *x.size()[3:]) for x in log_pz]
-            log_qz = [x.view(-1, *x.size()[3:]) for x in log_qz]
+        # re-flatten bs, mc, iw samples
+        log_px_z = log_px_z.view(-1)
+        log_pz = [x.view(-1, *x.size()[3:]) for x in log_pz]
+        log_qz = [x.view(-1, *x.size()[3:]) for x in log_qz]
 
-            # for now this does not return the model output as it is complicated to concatenate all of them (distributions)
-            # this is why this should be used only for evaluation using basic VI
-            return {'log_px_z': log_px_z, 'log_pz': log_pz, 'log_qz': log_qz}
+        output.update({'log_px_z': log_px_z, 'log_pz': log_pz, 'log_qz': log_qz})
 
-        else:
-            # expand input to get MC and IW samples: [bs, mc, iw, ...]
-            __x = self._expand_sample(x)
-
-            # forward pass
-            output = model(__x, **kwargs)
-            px, z, qz, pz = [output[k] for k in ['px', 'z', 'qz', 'pz']]
-
-            # compute log p(x|z), log p(z) and log q(z | x)
-            log_px_z = batch_reduce(px.log_prob(__x))
-            log_pz = [pz_l.log_prob(z_l) for pz_l, z_l in zip(pz, z)]
-            log_qz = [qz_l.log_prob(z_l) for qz_l, z_l in zip(qz, z)]
-
-            output.update({'log_px_z': log_px_z, 'log_pz': log_pz, 'log_qz': log_qz})
-            return output
+        return output
 
     def forward(self, model: nn.Module, x: Tensor, backward: bool = False, **kwargs: Any) -> Tuple[Tensor, Dict, Dict]:
 
-        output = self.evaluate_model(model, x, **kwargs)
+        if self.sequential_computation:
+            # warning: here only one `output` will be returned
+            output = self._sequential_evaluation(model, x, **kwargs)
+        else:
+            x_samples = self._expand_sample(x)
+            output = self.evaluate_model(model, x_samples, **kwargs)
+
         log_px_z, log_pz, log_qz = [output[k] for k in ('log_px_z', 'log_pz', 'log_qz')]
         iw_data = self.compute_iw_bound(log_px_z, log_pz, log_qz)
 
@@ -476,6 +473,7 @@ class Reinforce(VariationalInference):
         super().__init__(**kwargs)
         self.baseline = baseline
         self.control_variate_loss_weight = 0 if baseline is None else 1.
+        assert self.sequential_computation == False
 
         # `score_from_phi` == True results in using case (b)
         self.score_from_phi = False
@@ -526,7 +524,8 @@ class Reinforce(VariationalInference):
     def forward(self, model: nn.Module, x: Tensor, backward: bool = False, mc_estimate: bool = False, **kwargs: Any) -> \
     Tuple[Tensor, Dict, Dict]:
 
-        output = self.evaluate_model(model, x, **kwargs)
+        x_samples = self._expand_sample(x)
+        output = self.evaluate_model(model, x_samples, **kwargs)
         log_px_z, log_pz, log_qz = [output[k] for k in ('log_px_z', 'log_pz', 'log_qz')]
         iw_data = self.compute_iw_bound(log_px_z, log_pz, log_qz, detach_qlogits=self.score_from_phi)
         L_k, kl, N_eff = [iw_data[k] for k in ('L_k', 'kl', 'N_eff')]

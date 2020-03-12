@@ -5,7 +5,7 @@
   ],
   "global": "--silent --deterministic --epochs 500 --lr_reduce_steps 3 --model vae --bs 64 --hdim 256 --iw_valid 10 --iw 4 --mc 1 --N 16",
   "parameters": {
-    "seed":[13, 64, 47],
-    "dataset" : ["binmnist", "omniglot", "fashion"]
+    "dataset" : ["binmnist", "omniglot", "fashion"],
+    "seed":[13, 64, 47]
   }
 }

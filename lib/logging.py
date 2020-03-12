@@ -12,6 +12,7 @@ from torchvision.utils import make_grid
 @torch.no_grad()
 def sample_model(key, model, logdir, global_step=0, writer=None, N=100, seed=None, **kwargs):
     if seed is not None:
+        _seed = int(torch.randint(1, sys.maxsize, (1,)).item())
         torch.manual_seed(seed)
 
     # sample model
@@ -36,8 +37,7 @@ def sample_model(key, model, logdir, global_step=0, writer=None, N=100, seed=Non
 
     if seed is not None:
         # set a new random seed
-        seed = random.randint(1, sys.maxsize)
-        torch.manual_seed(seed)
+        torch.manual_seed(_seed)
 
 
 def get_loggers(logdir, keys=['base', 'train', 'valid'], format='%(asctime)s %(name)-4s %(levelname)-4s %(message)s'):

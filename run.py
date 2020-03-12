@@ -32,6 +32,7 @@ parser.add_argument('--id', default='', type=str, help='run id suffix')
 parser.add_argument('--seed', default=13, type=int, help='random seed')
 parser.add_argument('--rm', action='store_true', help='delete previous run')
 parser.add_argument('--silent', action='store_true', help='silence tqdm')
+parser.add_argument('--deterministic', action='store_true', help='use deterministic backend')
 
 # epochs, batch size, MC samples, lr
 parser.add_argument('--epochs', default=500, type=int, help='number of epochs')
@@ -58,8 +59,13 @@ parser.add_argument('--model', default='vae', help='[vae, conv-vae]')
 parser.add_argument('--hdim', default=64, type=int, help='number of hidden units for each layer')
 parser.add_argument('--nlayers', default=3, type=int, help='number of hidden layers for the encoder and decoder')
 parser.add_argument('--b_nlayers', default=1, type=int, help='number of hidden layers for the baseline')
+parser.add_argument('--norm', default='layernorm', type=str, help='normalization layer [none | layernorm | batchnorm]')
 
 opt = parser.parse_args()
+
+if opt.deterministic:
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 if opt.silent:
     tqdm = notqdm
@@ -76,6 +82,8 @@ run_id += f"-N{opt.N}-K{opt.K}-kdim{opt.kdim}"
 if opt.learn_prior:
     run_id += "-learn-prior"
 run_id += f"-arch{opt.hdim}x{opt.nlayers}"
+if opt.norm is not 'none':
+    run_id += f"-{opt.norm}"
 
 # defining the run directory
 logdir = os.path.join(opt.root, opt.exp)
@@ -114,7 +122,7 @@ try:
     # define model
     torch.manual_seed(opt.seed)
     _MODEL = {'vae': VAE, 'conv-vae': ConvVAE}[opt.model]
-    model = _MODEL(x.shape, opt.N, opt.K, opt.hdim, kdim=opt.kdim, nlayers=opt.nlayers, learn_prior=opt.learn_prior, prior=opt.prior)
+    model = _MODEL(x.shape, opt.N, opt.K, opt.hdim, kdim=opt.kdim, nlayers=opt.nlayers, learn_prior=opt.learn_prior, prior=opt.prior, normalization=opt.norm)
 
     # define baseline
     baseline = Baseline(x.shape, opt.b_nlayers, opt.hdim) if use_baseline else None
@@ -177,7 +185,8 @@ try:
 
         # estimate the variance of the gradients
         x = next(iter(loader_train)).to(device)
-        summary_train["loss"]["log_grad_var"] = get_gradients_log_total_variance(estimator, model, x, **config)
+        # warning: key_filter does not hold for other models like LVAE.
+        summary_train["loss"]["log_grad_var"] = get_gradients_log_total_variance(estimator, model, x, key_filter='encoder', **config)
 
         # valid epoch
         with torch.no_grad():
