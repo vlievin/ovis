@@ -1,0 +1,12 @@
+{
+  "args": [
+    "--estimator covbaseline --iw 4 --mc 4",
+    "--estimator covbaseline-mc --iw 4 --mc 4",
+    "--estimator covbaseline-vimco --iw 4 --mc 4",
+    "--estimator scalar-covbaseline-mc-vimco --iw 4 --mc 4"
+  ],
+  "global": "--silent --epochs 1000 --lr_reduce_steps 3 --bs 32",
+  "parameters": {
+    "seed": [13, 64, 47, 23, 78]
+  }
+}

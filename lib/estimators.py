@@ -588,21 +588,21 @@ class Vimco(Reinforce):
         _dtype = log_f_xz.dtype
         log_f_xz = log_f_xz.double()
 
-        if arithmetic:
-            # log \hat{f}(x, h^{-j}) using the arithmetic mean
+        if arithmetic: # log \hat{f}(x, h^{-j}) using the arithmetic mean
+
+            # stable log sum exp
             _min = log_f_xz.min()
             mask = 1 - torch.eye(self.iw, dtype=log_f_xz.dtype, device=log_f_xz.device)[None, None, :, :]
             log_f_xz = log_f_xz[:, :, None, :].expand(-1, self.mc, self.iw, self.iw)
             max, idx = ((1 - mask) * _min + mask * log_f_xz).max(dim=3, keepdim=True)
             sum_exp = torch.sum(mask * torch.exp(log_f_xz - max), dim=3)
-
             baseline =  max.squeeze(3) + torch.log(_EPS + sum_exp) - self.log_iw_m1
 
             if torch.isnan(baseline).any():
-                print(">>> vimco: log sum exp NAN")
+                print(">>> vimco:compute_control_variate: log sum exp NAN")
 
-        else:
-            # log \hat{f}(x, h^{-j}) using the geometric mean
+        else: # log \hat{f}(x, h^{-j}) using the geometric mean
+
             log_f_xz_hat = (torch.sum(log_f_xz, dim=2, keepdim=True) - log_f_xz) / (self.iw - 1)
             log_f_xz_samples = log_f_xz.unsqueeze(-1) + torch.diag_embed(log_f_xz_hat - log_f_xz)
             baseline = torch.logsumexp(log_f_xz_samples, dim=2) - self.log_iw
@@ -611,7 +611,7 @@ class Vimco(Reinforce):
             baseline = baseline.mean(1, keepdim=True)
 
         if torch.isnan(baseline).any():
-            print(">>> vimco: baseline NAN")
+            print(">>> vimco:compute_control_variate: baseline NAN")
 
         # set to zero if nan
         baseline[baseline != baseline] = 0

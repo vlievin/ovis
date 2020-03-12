@@ -16,13 +16,23 @@ def get_config(estimator):
         Estimator = OptCovReinforce
         mc_estimate = '-mc' in estimator
         nz_estimate = '-nz' in estimator
-        vimco_estimate = '-vimco' in estimator
-        config = {'tau': 0, 'zgrads': False, 'mc_estimate': mc_estimate, 'nz_estimate': nz_estimate, 'vimco_estimate': vimco_estimate}
+        if '-arithmetic' in estimator:
+            arithmetic = True
+        elif '-geometric' in estimator:
+            arithmetic = False
+        else:
+            raise ValueError(f"Estimator arg = {estimator} must contain `-arithmetic` or `-geometric`")
+        config = {'tau': 0, 'zgrads': False, 'mc_estimate': mc_estimate, 'nz_estimate': nz_estimate, 'arithmetic': arithmetic}
 
     elif 'vimco' in estimator:
         Estimator = Vimco
         mc_estimate = '-mc' in estimator
-        arithmetic = '-arithmetic' in estimator
+        if '-arithmetic' in estimator:
+            arithmetic = True
+        elif '-geometric' in estimator:
+            arithmetic = False
+        else:
+            raise ValueError(f"Estimator arg = {estimator} must contain `-arithmetic` or `-geometric`")
         config = {'tau': 0, 'zgrads': False, 'mc_estimate': mc_estimate, 'arithmetic': arithmetic}
 
     elif estimator == 'gs':

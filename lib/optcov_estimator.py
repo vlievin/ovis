@@ -25,7 +25,7 @@ class OptCovReinforce(Reinforce):
             print(f"~~~~ warning | in:normalized_importance_weights: v> 1 {v[v > 1 + _EPS]}")
         return v
 
-    def compute_control_variate(self, x: Tensor, mc_estimate: bool = False, vimco_estimate: bool = False,
+    def compute_control_variate(self, x: Tensor, mc_estimate: bool = False, arithmetic: bool = True,
                                 nz_estimate: bool = False,
                                 **data: Dict[str, Tensor]) -> Tensor:
         """
@@ -113,12 +113,8 @@ class OptCovReinforce(Reinforce):
             if torch.isnan(log_sum_exp_w).any():
                 print(">>> c*: log sum exp NAN")
 
-
             # compute \hat{L} \approx \log 1\k \sum_m w_m
-            if vimco_estimate:
-                L_hat = Vimco.compute_control_variate(self, x, mc_estimate=mc_estimate, **data)
-            else:
-                L_hat = (log_sum_exp_w - self.log_iw_m1).unsqueeze(-1)
+            L_hat = Vimco.compute_control_variate(self, x, mc_estimate=mc_estimate, arithmetic=arithmetic, **data)
 
             v_kmn = (log_w[:, :, :, None] - log_sum_exp_w[:, :, None, :]).exp()
             # removing diagonal terms

@@ -1,0 +1,10 @@
+{
+  "args": [
+    "--estimator covbaseline",
+    "--estimator vimco-arithmetic"
+  ],
+  "global": "--silent --deterministic --epochs 1000 --lr_reduce_steps 2 --bs 32 --mc 8 --iw 4",
+  "parameters": {
+    "seed":[3472]
+  }
+}

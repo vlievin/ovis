@@ -1,7 +1,9 @@
 {
   "args": [
-    "--estimator covbaseline --iw 4 --mc 4",
-    "--estimator vimco --iw 4 --mc 4"
+    "--estimator covbaseline-arithmetic --iw 4 --mc 4",
+    "--estimator vimco-arithmetic --iw 4 --mc 4",
+    "--estimator covbaseline-geometric --iw 4 --mc 4",
+    "--estimator vimco-geometric --iw 4 --mc 4"
   ],
   "global": "--silent --deterministic --epochs 1000 --lr_reduce_steps 2 --bs 32",
   "parameters": {
