@@ -3,10 +3,10 @@
     "--estimator covbaseline",
     "--estimator vimco"
   ],
-  "global": "--silent --epochs 1000 --lr_reduce_steps 2 --bs 32",
+  "global": "--silent --deterministic --epochs 1000 --lr_reduce_steps 2 --bs 32",
   "parameters": {
-    "seed": [13, 64, 47, 23, 78],
-    "iw": [2, 3, 5, 10, 20]
+    "iw": [2, 3, 5, 10, 20],
+    "seed": [13, 64, 47, 23, 78]
   }
 
 }
