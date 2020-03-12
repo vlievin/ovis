@@ -9,10 +9,6 @@ def get_config(estimator):
 
     elif 'reinforce' in estimator:
         Estimator = Reinforce
-        config = {'tau': 0, 'zgrads': False}
-
-    elif 'vimco' in estimator:
-        Estimator = Vimco
         mc_estimate = '-mc' in estimator
         config = {'tau': 0, 'zgrads': False, 'mc_estimate': mc_estimate}
 
@@ -20,7 +16,14 @@ def get_config(estimator):
         Estimator = OptCovReinforce
         mc_estimate = '-mc' in estimator
         nz_estimate = '-nz' in estimator
-        config = {'tau': 0, 'zgrads': False, 'mc_estimate': mc_estimate, 'nz_estimate': nz_estimate}
+        vimco_estimate = '-vimco' in estimator
+        config = {'tau': 0, 'zgrads': False, 'mc_estimate': mc_estimate, 'nz_estimate': nz_estimate, 'vimco_estimate': vimco_estimate}
+
+    elif 'vimco' in estimator:
+        Estimator = Vimco
+        mc_estimate = '-mc' in estimator
+        arithmetic = '-arithmetic' in estimator
+        config = {'tau': 0, 'zgrads': False, 'mc_estimate': mc_estimate, 'arithmetic': arithmetic}
 
     elif estimator == 'gs':
         Estimator = VariationalInference

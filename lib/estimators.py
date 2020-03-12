@@ -300,7 +300,8 @@ class VariationalInference(Estimator):
 
     """
 
-    def compute_iw_bound(self, log_px_z: Tensor, log_pzs: List[Tensor], log_qzs: List[Tensor]) -> Dict[str, Tensor]:
+    def compute_iw_bound(self, log_px_z: Tensor, log_pzs: List[Tensor], log_qzs: List[Tensor],
+                         detach_qlogits: bool = False) -> Dict[str, Tensor]:
         """
         Compute the importance weighted bound:
 
@@ -311,6 +312,7 @@ class VariationalInference(Estimator):
         :param log_px_z: log p(x | z) of shape [bs * mc * iw]
         :param log_pzs: [log p(z_i | *) l=1..L], each of of shape [bs * mc * iw, N_i]
         :param log_qzs: [log q(z_i | *) l=1..L], each of of shape [bs * mc * iw, N_i]
+        :param detach_qlogits: detach the logits of q(z|x)
         :return: dictionary with outputs [L_k, kl, log_f_x,z]
         """
 
@@ -325,7 +327,7 @@ class VariationalInference(Estimator):
         # kl = E_q[ log p(z) - log q(z) ]
         log_pz = cat_by_layer(log_pzs)
         log_qz = cat_by_layer(log_qzs)
-        if self.detach_qlogits:
+        if detach_qlogits:
             log_qz = log_qz.detach()
         kl = log_qz - log_pz
         # freebits is ditributed equally over the last dimension
@@ -454,11 +456,19 @@ class Reinforce(VariationalInference):
     """
     Reinforce with optional baseline:
 
+    * (a) in the general case:
+
     L = E_q [ log f(x, z) ], f(x,z) = p(x,z)/q(z|x)
-    \nabla L = \nabla \sum_z q(z|x) log f(x,z)
-             = \sum_z log f(x,z) \nabla q(z|x) + \sum_z q(z_x) \nabla f(x,z)
-             = \sum_z q(z|x) log f(x,z) \nabla log q(z|x) + \sum_z q(z,x) \nabla f(x,z)
-             = E_q [ log f(x,z) \nabla log q(z|x) + \nabla f(x,z)]
+    d/d theta L = d/d theta \sum_z q(z|x) log f(x,z)
+             = \sum_z log f(x,z) d/d theta q(z|x) + \sum_z q(z_x) d/d theta f(x,z)
+             = \sum_z q(z|x) log f(x,z) d/d theta log q(z|x) + \sum_z q(z,x) d/d theta f(x,z)
+             = E_q [ log f(x,z) d/d theta log q(z|x) + d/d theta f(x,z)]
+
+
+    * (b) when deriving from `phi`, the parameters of the posterior, in that case L_k will be only differentiated with regards to `theta`
+    d/d_phi L_k =  E_q [ [ log( 1/K \sum_k w(x,z_k) ) - v_k ] d/d_phi log q(z|x), where v_k = w_m / \sum_m w_m
+
+    in that case we define the score as E_q[ log( 1/K \sum_k w(x,z_k) ) - v_k ]
 
     """
 
@@ -466,6 +476,9 @@ class Reinforce(VariationalInference):
         super().__init__(**kwargs)
         self.baseline = baseline
         self.control_variate_loss_weight = 0 if baseline is None else 1.
+
+        # `score_from_phi` == True results in using case (b)
+        self.score_from_phi = False
 
     def compute_control_variate(self, x: Tensor, **data: Dict[str, Tensor]) -> Tensor:
         """Compute the baseline that will be substracted to the score L_k,
@@ -478,34 +491,58 @@ class Reinforce(VariationalInference):
         baseline = self.baseline(x)
         return baseline.view((x.size(0), 1, 1, 1))  # output of shape [bs, 1, 1, 1]
 
-    def compute_control_variate_mse(self, L_k, control_variate):
+    def compute_control_variate_mse(self, score, control_variate):
         """mse between the score function and its estimate"""
-        return (control_variate - L_k[:, :, None, None].detach()).pow(2).sum(3).mean(2)  # <-> sum(z).mean(iw)
+        return (control_variate - score[:, :, :, None].detach()).pow(2).sum(3).mean(2)  # <-> sum(z).mean(iw)
 
-    def compute_reinforce_loss(self, L_k, control_variate, log_qz):
-        log_qz = log_qz.view(L_k.size(0), self.mc, self.iw, -1)
+    def compute_reinforce_loss(self, score, control_variate, log_qz):
+        log_qz = log_qz.view(score.size(0), self.mc, self.iw, -1)
 
         # \nabla loss = [ f(x, z) - b(x) ] \nabla log q_theta(z | x)
-        reinforce_loss = (L_k[:, :, None, None] - control_variate).detach() * log_qz
+        reinforce_loss = (score[:, :, :, None] - control_variate).detach() * log_qz
         # sum over iw: log Q(z_{1..K} | x) = \sum_{i=1..K} log q(z_i | x)
         return reinforce_loss.sum((2, 3))  # sum over z and iw
 
-    def forward(self, model: nn.Module, x: Tensor, backward: bool = False, **kwargs: Any) -> Tuple[Tensor, Dict, Dict]:
+    def normalized_importance_weights(self, log_f_xz):
+        v = softmax(log_f_xz, dim=2)
+        if v[v > 1 + _EPS].sum() > 0:
+            print(f"~~~~ warning | in:normalized_importance_weights: v> 1 {v[v > 1 + _EPS]}")
+        return v
+
+    def compute_score(self, iw_data, mc_estimate):
+        L_k, kl, log_f_xz = [iw_data[k] for k in ('L_k', 'kl', 'log_f_xz')]
+
+        if self.score_from_phi:
+            v = self.normalized_importance_weights(log_f_xz)
+            score = L_k[:, :, None] - v
+        else:
+            score = L_k[:, :, None]
+
+        if mc_estimate:
+            score = score.mean(1, keepdim=True)
+
+        return score
+
+    def forward(self, model: nn.Module, x: Tensor, backward: bool = False, mc_estimate: bool = False, **kwargs: Any) -> \
+    Tuple[Tensor, Dict, Dict]:
 
         output = self.evaluate_model(model, x, **kwargs)
         log_px_z, log_pz, log_qz = [output[k] for k in ('log_px_z', 'log_pz', 'log_qz')]
-        iw_data = self.compute_iw_bound(log_px_z, log_pz, log_qz)
-        L_k, kl, log_f_xz, N_eff = [iw_data[k] for k in ('L_k', 'kl', 'log_f_xz', 'N_eff')]
+        iw_data = self.compute_iw_bound(log_px_z, log_pz, log_qz, detach_qlogits=self.score_from_phi)
+        L_k, kl, N_eff = [iw_data[k] for k in ('L_k', 'kl', 'N_eff')]
+
+        # compute score l: dL(z)\dtheta = L dq(z) \ dtheta
+        score = self.compute_score(iw_data, mc_estimate)
 
         # baseline: b(x) + c
-        control_variate = self.compute_control_variate(x, **iw_data, **output, **kwargs)
-        control_variate_mse = self.compute_control_variate_mse(L_k, control_variate)
+        control_variate = self.compute_control_variate(x, mc_estimate=mc_estimate, **iw_data, **output, **kwargs)
+        control_variate_mse = self.compute_control_variate_mse(score, control_variate)
 
         # concatenate all q(z_l| *, x)
         log_qz = torch.cat(log_qz, 1)
 
         # reinforce loss
-        reinforce_loss = self.compute_reinforce_loss(L_k, control_variate, log_qz)
+        reinforce_loss = self.compute_reinforce_loss(score, control_variate, log_qz)
 
         # MC averaging
         L_k, reinforce_loss, control_variate_mse = map(lambda x: x.mean(1), (L_k, reinforce_loss, control_variate_mse))
@@ -539,25 +576,55 @@ class Vimco(Reinforce):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.control_variate_loss_weight = 0  # the control variate doesn't have any parameter
+        self.log_iw_m1 = np.log(self.iw - 1)
 
     @torch.no_grad()
-    def compute_control_variate(self, x: Tensor, mc_estimate: bool = True, **data: Dict[str, Tensor]) -> Tensor:
+    def compute_control_variate(self, x: Tensor, mc_estimate: bool = True, arithmetic=False, **data: Dict[str, Tensor]) -> Tensor:
         """Compute the baseline that will be substracted to the score L_k,
         `data` contains the output of the method `compute_iw_bound`.
         The output shape should be of size 4 and matching the shape [bs, mc, iw, nz]"""
 
         log_f_xz = data['log_f_xz']
         log_f_xz = log_f_xz.view(-1, self.mc, self.iw)
+        _dtype = log_f_xz.dtype
+        log_f_xz = log_f_xz.double()
 
-        # log \hat{f}(x, h^{-j}) using the geometric mean
-        log_f_xz_hat = (torch.sum(log_f_xz, dim=2, keepdim=True) - log_f_xz) / (self.iw - 1)
-        log_f_xz_samples = log_f_xz.unsqueeze(-1) + torch.diag_embed(log_f_xz_hat - log_f_xz)
-        baseline = torch.logsumexp(log_f_xz_samples, dim=2) - self.log_iw
+        if arithmetic:
+            # log \hat{f}(x, h^{-j}) using the arithmetic mean
+            _min = log_f_xz.min()
+            mask = 1 - torch.eye(self.iw, dtype=log_f_xz.dtype, device=log_f_xz.device)[None, None, :, :]
+            log_f_xz = log_f_xz[:, :, None, :].expand(-1, self.mc, self.iw, self.iw)
+            max, idx = ((1 - mask) * _min + mask * log_f_xz).max(dim=3, keepdim=True)
+            sum_exp = torch.sum(mask * torch.exp(log_f_xz - max), dim=3)
+
+            baseline =  max.squeeze(3) + torch.log(_EPS + sum_exp) - self.log_iw_m1
+
+            if torch.isnan(baseline).any():
+                print(">>> vimco: log sum exp NAN")
+
+        else:
+            # log \hat{f}(x, h^{-j}) using the geometric mean
+            log_f_xz_hat = (torch.sum(log_f_xz, dim=2, keepdim=True) - log_f_xz) / (self.iw - 1)
+            log_f_xz_samples = log_f_xz.unsqueeze(-1) + torch.diag_embed(log_f_xz_hat - log_f_xz)
+            baseline = torch.logsumexp(log_f_xz_samples, dim=2) - self.log_iw
 
         if mc_estimate:
             baseline = baseline.mean(1, keepdim=True)
 
-        return baseline.unsqueeze(-1)  # output of shape [bs, mc, iw, 1]
+        if torch.isnan(baseline).any():
+            print(">>> vimco: baseline NAN")
+
+        # set to zero if nan
+        baseline[baseline != baseline] = 0
+
+        return baseline.unsqueeze(-1).type(_dtype)  # output of shape [bs, mc, iw, 1]
+
+
+class ExactReinforce(Reinforce):
+    """
+    Compute the exact gradients. This only works for categorical prior and with N=1.
+    """
+    pass
 
 
 class Lax(VariationalInference):
