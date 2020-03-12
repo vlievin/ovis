@@ -33,6 +33,7 @@ parser.add_argument('--train_keys', default='control_variate_mse,log_grad_var', 
                     help='comma separated list of keys to read from the training tensorboard logs')
 parser.add_argument('--valid_keys', default='elbo,kl,N_eff', type=str,
                     help='comma separated list of keys to read from the valid tensorboard logs')
+parser.add_argument('--main_key', default='estimator', type=str, help='main parameter to include in the report')
 parser.add_argument('--aux_key', default='iw', type=str, help='auxiliary parameter to include in the report')
 parser.add_argument('--latex', action='store_true', help='print as latex table')
 parser.add_argument('--float_format', default=".3f", help='float format')
@@ -149,6 +150,12 @@ for e in experiments:
         traceback.print_exception(type(ex), ex, ex.__traceback__)
         logger.info(_sep)
         logger.info("\nException: ", ex, "\n")
+
+
+# exit if not data
+if len(data) == 0:
+    logger.info(f"{_sep}\nCouldn't read any record. Either they are errors or the experiments are not yet completed.\n{_sep}")
+    exit()
 
 # compile data into a dataframe
 df = pd.DataFrame(data)
@@ -283,7 +290,7 @@ def plot_logs(logs, _keys, path, style_key=None):
         _keys = list(_keys) + [_keys[-1] for _ in
                                range((ncols * nrows - len(_keys)))]  # repeat the last plot for the legend
 
-    hue_order = list(logs["estimator"].unique())
+    hue_order = list(logs[opt.main_key].unique())
     step_min = np.percentile(logs['step'].values.tolist(), 10)
     fig, axes = plt.subplots(nrows, ncols, figsize=(6 * ncols, 4 * nrows))
     for i, k in tqdm(list(enumerate(_keys))):
@@ -292,7 +299,7 @@ def plot_logs(logs, _keys, path, style_key=None):
         ax = axes[u, v]
 
         sns.lineplot(x="step", y="_value",
-                     hue="estimator",
+                     hue=opt.main_key,
                      hue_order=hue_order,
                      style=style_key,
                      data=logs[logs['_key'] == k], ax=ax)
