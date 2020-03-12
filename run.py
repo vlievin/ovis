@@ -19,8 +19,7 @@ from lib.gradients import get_gradients_log_total_variance
 from lib.logging import sample_model, get_loggers, log_summary, save_model
 from lib.utils import notqdm
 
-
-_sep = 32*"-"
+_sep = os.get_terminal_size().columns * "-"
 
 parser = argparse.ArgumentParser()
 
@@ -66,7 +65,7 @@ if opt.silent:
     tqdm = notqdm
 
 # defining the run identifier
-use_baseline = 'baseline' in opt.estimator
+use_baseline = '-baseline' in opt.estimator
 run_id = f"{opt.dataset}-{opt.model}-{opt.prior}-{opt.estimator}-seed{opt.seed}"
 if len(opt.id) > 0:
     run_id += f"-{opt.id}"
