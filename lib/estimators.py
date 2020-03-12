@@ -578,7 +578,7 @@ class Vimco(Reinforce):
         self.log_iw_m1 = np.log(self.iw - 1)
 
     @torch.no_grad()
-    def compute_control_variate(self, x: Tensor, mc_estimate: bool = True, arithmetic=False, **data: Dict[str, Tensor]) -> Tensor:
+    def compute_control_variate(self, x: Tensor, mc_estimate: bool = True, arithmetic=False, return_raw=False, **data: Dict[str, Tensor]) -> Tensor:
         """Compute the baseline that will be substracted to the score L_k,
         `data` contains the output of the method `compute_iw_bound`.
         The output shape should be of size 4 and matching the shape [bs, mc, iw, nz]"""
@@ -599,6 +599,10 @@ class Vimco(Reinforce):
             baseline =  max.squeeze(3) + torch.log(_EPS + sum_exp) - self.log_iw_m1
 
             if torch.isnan(baseline).any():
+                if torch.isnan(baseline).all():
+                    baseline[baseline != baseline] = 0
+                else:
+                    baseline[baseline != baseline] = baseline[baseline == baseline].mean()
                 print(">>> vimco:compute_control_variate: log sum exp NAN")
 
         else: # log \hat{f}(x, h^{-j}) using the geometric mean
@@ -616,7 +620,10 @@ class Vimco(Reinforce):
         # set to zero if nan
         baseline[baseline != baseline] = 0
 
-        return baseline.unsqueeze(-1).type(_dtype)  # output of shape [bs, mc, iw, 1]
+        if return_raw:
+            return baseline.unsqueeze(-1)
+        else:
+            return baseline.unsqueeze(-1).type(_dtype)  # output of shape [bs, mc, iw, 1]
 
 
 class ExactReinforce(Reinforce):

@@ -1,9 +1,9 @@
 {
   "args": [
-    "--estimator covbaseline",
-    "--estimator vimco-arithmetic"
+    "--estimator covbaseline-geometric",
+    "--estimator vimco-geometric"
   ],
-  "global": "--silent --deterministic --epochs 1000 --lr_reduce_steps 2 --bs 32 --mc 8 --iw 4",
+  "global": "--silent --deterministic --epochs 1000 --lr_reduce_steps 2 --bs 32 --mc 1 --iw 32",
   "parameters": {
     "seed":[3472]
   }

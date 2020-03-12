@@ -25,6 +25,24 @@ class OptCovReinforce(Reinforce):
             print(f"~~~~ warning | in:normalized_importance_weights: v> 1 {v[v > 1 + _EPS]}")
         return v
 
+    def catch_error(self, v_kmn):
+
+        # catching numerical errors
+        # todo: there must something wrong here because this works perfectly fine in the REINFORCE part
+        # in some cases the terms v are > 1, which must be due to numerical errors (or am I missing something?)
+        if v_kmn[v_kmn.abs() > 1].sum() > 0:
+            print(">>> warning: v>1:", v_kmn[v_kmn.abs() > 1])
+            # then make sure that \sum_n v_{*,n} = 1
+            v_kmn = v_kmn / v_kmn.sum(-1, keepdims=True)
+
+        # debugging
+        if v_kmn[v_kmn.abs() > 1 + _EPS].sum() > 0:
+            print(">>>> error: values of v_kmn are >1: v summary:", v_kmn.max(), v_kmn.min(), v_kmn.mean(),
+                  v_kmn.std())
+            print(">>>> v[v>1]", v_kmn[v_kmn.abs() > 1])
+
+        return v_kmn
+
     def compute_control_variate(self, x: Tensor, mc_estimate: bool = False, arithmetic: bool = True,
                                 nz_estimate: bool = False,
                                 **data: Dict[str, Tensor]) -> Tensor:
@@ -73,7 +91,7 @@ class OptCovReinforce(Reinforce):
                 _n, _k = 1, N * K
 
             # using notation from the overleaf
-            h_kn = d_qlogits.view(bs, self.mc, self.iw, _n, _k)
+            h_m = d_qlogits.view(bs, self.mc, self.iw, _n, _k)
 
             # define the operator \sum_{i != j}
             def sum_except(x, dim):
@@ -106,77 +124,65 @@ class OptCovReinforce(Reinforce):
             log_w = log_f_xz.view(-1, self.mc, self.iw)
 
             # msk
-            mask = 1 - torch.eye(self.iw, device=x.device, dtype=x.dtype)[None, None, :, :]
-
-            log_sum_exp_w = log_sum_exp_except_stable(log_w, dim=2, mask=mask)
-
-            if torch.isnan(log_sum_exp_w).any():
-                print(">>> c*: log sum exp NAN")
+            mask = 1 - torch.eye(self.iw, device=x.device, dtype=x.dtype)
 
             # compute \hat{L} \approx \log 1\k \sum_m w_m
-            L_hat = Vimco.compute_control_variate(self, x, mc_estimate=mc_estimate, arithmetic=arithmetic, **data)
+            L_hat = Vimco.compute_control_variate(self, x, mc_estimate=mc_estimate, arithmetic=arithmetic, return_raw=True, **data)
 
-            v_kmn = (log_w[:, :, :, None] - log_sum_exp_w[:, :, None, :]).exp()
+            # compute the `v` term
+            log_sum_exp_w = log_sum_exp_except_stable(log_w, dim=2, mask=mask)
+            if torch.isnan(log_sum_exp_w).any():
+                if torch.isnan(log_sum_exp_w).all():
+                    log_sum_exp_w[log_sum_exp_w != log_sum_exp_w] = 0
+                else:
+                    log_sum_exp_w[log_sum_exp_w != log_sum_exp_w] = log_sum_exp_w[log_sum_exp_w == log_sum_exp_w].mean()
+                print(">>> c*: log sum exp NAN")
+            v_mn = (log_w[:, :, :, None] - log_sum_exp_w[:, :, None, :]).exp()
             # removing diagonal terms
-            v_kmn = v_kmn * mask
+            #v_kmn = v_kmn * mask
 
-            # catching numerical errors
-            # todo: there must something wrong here because this works perfectly fine in the REINFORCE part
-            # in some cases the terms v are > 1, which must be due to numerical errors (or am I missing something?)
-            if v_kmn[v_kmn.abs() > 1].sum() > 0:
-                print(">>> warning: v>1:", v_kmn[v_kmn.abs() > 1])
-                # then make sure that \sum_n v_{*,n} = 1
-                v_kmn = v_kmn / v_kmn.sum(-1, keepdims=True)
+            # catching errors that are most likely due to numnerical stability issues
+            v_mn = self.catch_error(mask[None, None, :, :]*v_mn)
 
-            # debugging
-            if v_kmn[v_kmn.abs() > 1 + _EPS].sum() > 0:
-                print(">>>> error: values of v_kmn are >1: v summary:", v_kmn.max(), v_kmn.min(), v_kmn.mean(),
-                      v_kmn.std())
-                print(">>>> v[v>1]", v_kmn[v_kmn.abs() > 1])
+            h_m = h_m.view(bs, self.mc, self.iw, _n, -1)
+            v_mn = v_mn.view(bs, self.mc, self.iw, self.iw)
+            L_hat = L_hat[:, :, :, None].view(bs, -1, self.iw, 1)
 
-            # flatten data so we can compute the sum_{m'k' != mk}
-            h_kn = h_kn.view(bs, self.mc, self.iw, _n, -1)
-            v_kmn = v_kmn[:, :, :, :, None, None].view(bs, self.mc, self.iw, self.iw, 1, 1)
-            mask = 1 - torch.eye(self.iw, device=x.device, dtype=x.dtype)[None, None, :, :, None, None]
 
-            L_hat = L_hat[:, :, :, None, None, :].view(bs, -1, self.iw, 1, 1, 1)
-            f_kmn_no_m = L_hat - v_kmn
+            # shape = [bs, k, m, m', _n, h]
+            #       = [bs, k, m, n, u, h]
+            # with notation: m = m, m' = n, m'' = p, m''' = q, nz = u, kz = h
 
-            # compute sums
-            _h_kmn = h_kn[:, :, None, :, :, :].expand(bs, self.mc, self.iw, self.iw, _n, -1)
-            s_hf = torch.sum(mask * _h_kmn * f_kmn_no_m, 3)
-            s_h = sum_except(h_kn, 2)
+            # computing the weights: alpha_mn
+            # Denominator (k is ignored in this notation as we can simply sum over it at the end)
+            spsq_h_p_T_h_q = torch.einsum("bkpuh, bkquh -> bku", [h_m, h_m])
+            sp_h_p_T_h_m = torch.einsum("bkpuh, bkmuh -> bkmu", [h_m, h_m])
+            h_m_T_h_m = torch.einsum("bkmuh, bkmuh -> bkmu", [h_m, h_m])
+            den = spsq_h_p_T_h_q[:, :, None, :] - 2 * sp_h_p_T_h_m + h_m_T_h_m
+            if mc_estimate:
+                den = den.sum(1, keepdims=True)
 
-            # dot product (over z_k dim)
-            num = torch.sum(s_h * s_hf, -1)
-            den = torch.sum(s_h * s_h, -1)
+            # Numerator
+            sp_h_p_T_h_n = torch.einsum("bkpuh, bknuh -> bknu", [h_m, h_m])
+            h_m_T_h_n = torch.einsum("bkmuh, bknuh -> bkmnu", [h_m, h_m])
+            num = sp_h_p_T_h_n[:, :, None, :, :] - h_m_T_h_n
+
+            # weights alpha_mn: sum_{n != m} alpha_mn = 1
+            alpha_mn = num / den[:, :, :,None, :]
+
+            # f_{k,m'}^{-m}
+            f_mn = L_hat - v_mn
+
+            # control variate
+            c_opt = torch.einsum("mn, bkmnu, bkmn -> bkmu", [mask, alpha_mn, f_mn])
 
             if mc_estimate:
-                # sum over mc samples
-                num = num.sum(1, keepdim=True)
-                den = den.sum(1, keepdim=True)
-
-            # c_opt baseline
-            c_opt = num / den
-
-            # DEBUGGING:
-            # s_hff = torch.sum(mask * _h_kmn * L_hat, 3)
-            # L_hat_alpha = torch.sum(s_h * s_hff, -1)
-            # s_hff = torch.sum(mask * _h_kmn * v_kmn, 3)
-            # v_alpha = torch.sum(s_h * s_hff, -1)
-            #
-            # print(f">>>  L_hat = {L_hat[0, 0].squeeze().data}\n"
-            #       f"--- L_hat_alpha = {L_hat_alpha[0, 0].squeeze().data}\n"
-            #       f"+++ v_alpha = {v_alpha[0, 0].squeeze().data}\n"
-            #       f"~~~ L_k = {L_k[0, 0].squeeze().data}\n"
-            #       f"~~~ c_opt = {c_opt[0, 0].squeeze().data}\n"
-            #       f"~~~ score = {score[0, 0].squeeze().data}\n"
-            #       f"~~~ diff = {c_opt[0, 0].squeeze().data - score[0, 0].squeeze().data}\n")
+                c_opt = c_opt.sum(1, keepdims=True)
 
             if torch.isnan(c_opt).any():
                 print(">>> c*: c_opt NAN")
 
-            # if any nan, just replace with `0`
+            # if any NaN, just replace with `0`
             c_opt[c_opt != c_opt] = 0
 
         return c_opt.detach().type(x.dtype)
@@ -311,7 +317,7 @@ class OptCovReinforce___(Reinforce):
                 den = den.sum(1, keepdim=True)
 
             # c_opt baseline
-            c_opt = num / den
+            c_opt = num / (_EPS + den)
 
             # debugging : check for `nan` and unreasonable values for `v`
             if torch.sum(torch.isnan(c_opt)) or c_opt.mean().abs() > 1e3:

@@ -1,11 +1,13 @@
 {
+  "description": "Comparing CovBaseline with Vimco for MC=IW=4 and using different averaging (geometric vs. arithmetic).",
   "args": [
-    "--estimator covbaseline-arithmetic --iw 4 --mc 4",
-    "--estimator vimco-arithmetic --iw 4 --mc 4",
-    "--estimator covbaseline-geometric --iw 4 --mc 4",
-    "--estimator vimco-geometric --iw 4 --mc 4"
+
+    "--estimator vimco-arithmetic",
+    "--estimator vimco-geometric",
+    "--estimator covbaseline-arithmetic",
+    "--estimator covbaseline-geometric"
   ],
-  "global": "--silent --deterministic --epochs 1000 --lr_reduce_steps 2 --bs 32",
+  "global": "--silent --deterministic --epochs 1000 --lr_reduce_steps 2 --bs 32 --iw 4 --mc 4",
   "parameters": {
     "seed":[13, 64, 47, 23, 78, 202, 674, 8890, 267, 562]
   }

@@ -1,11 +1,12 @@
 {
+  "description": "compare VIMCO and Covbaseline using different number of IW samples and using different averaging (arithmetic vs geometric)",
   "args": [
     "--estimator covbaseline-arithmetic",
     "--estimator vimco-arithmetic",
     "--estimator covbaseline-geometric",
     "--estimator vimco-geometric"
   ],
-  "global": "--silent --deterministic --epochs 1000 --lr_reduce_steps 2 --bs 32",
+  "global": "--silent --deterministic --epochs 1000 --lr_reduce_steps 3 --bs 32",
   "parameters": {
     "iw": [2, 3, 5, 10, 20],
     "seed": [13, 64, 47, 23, 78]
