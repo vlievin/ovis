@@ -17,6 +17,8 @@ class Estimator(nn.Module):
         self.mc = mc
         self.iw = iw
         self.log_iw = np.log(iw)
+        self.log_mc = np.log(mc)
+        self.log_mc_iw_m1 = np.log(mc * iw - 1)
         self.freebits = FreeBits(freebits)
         self.detach_qlogits = False
         self.sequential_computation = sequential_computation
@@ -531,7 +533,7 @@ class Reinforce(VariationalInference):
         L_k, kl, N_eff = [iw_data[k] for k in ('L_k', 'kl', 'N_eff')]
 
         # compute score l: dL(z)\dtheta = L dq(z) \ dtheta
-        score = self.compute_score(iw_data, mc_estimate)
+        score = self.compute_score(iw_data, mc_estimate=mc_estimate)
 
         # baseline: b(x) + c
         control_variate = self.compute_control_variate(x, mc_estimate=mc_estimate, **iw_data, **output, **kwargs)
@@ -578,7 +580,7 @@ class Vimco(Reinforce):
         self.log_iw_m1 = np.log(self.iw - 1)
 
     @torch.no_grad()
-    def compute_control_variate(self, x: Tensor, mc_estimate: bool = True, arithmetic=False, return_raw=False, **data: Dict[str, Tensor]) -> Tensor:
+    def compute_control_variate(self, x: Tensor, mc_estimate: bool = True, arithmetic=False, return_raw=False, use_outer_samples=False, **data: Dict[str, Tensor]) -> Tensor:
         """Compute the baseline that will be substracted to the score L_k,
         `data` contains the output of the method `compute_iw_bound`.
         The output shape should be of size 4 and matching the shape [bs, mc, iw, nz]"""
@@ -590,35 +592,52 @@ class Vimco(Reinforce):
 
         if arithmetic: # log \hat{f}(x, h^{-j}) using the arithmetic mean
 
-            # stable log sum exp
-            _min = log_f_xz.min()
-            mask = 1 - torch.eye(self.iw, dtype=log_f_xz.dtype, device=log_f_xz.device)[None, None, :, :]
-            log_f_xz = log_f_xz[:, :, None, :].expand(-1, self.mc, self.iw, self.iw)
-            max, idx = ((1 - mask) * _min + mask * log_f_xz).max(dim=3, keepdim=True)
-            sum_exp = torch.sum(mask * torch.exp(log_f_xz - max), dim=3)
-            baseline =  max.squeeze(3) + torch.log(_EPS + sum_exp) - self.log_iw_m1
+            # todo: refactor using coe style from geometric mean
 
-            if torch.isnan(baseline).any():
-                if torch.isnan(baseline).all():
-                    baseline[baseline != baseline] = 0
-                else:
-                    baseline[baseline != baseline] = baseline[baseline == baseline].mean()
-                print(">>> vimco:compute_control_variate: log sum exp NAN")
+            if use_outer_samples:
+                # estimate \hat{w}^{-m}
+                b, _ =  log_f_xz.view(-1, self.mc*self.iw).max(dim=1)
+                sum_exp = torch.exp(log_f_xz - b[:, None, None]).sum(dim=(1, 2), keepdim=True) - log_f_xz + b[:, None, None]
+                _wn = b[:, None, None] + torch.log(_EPS + sum_exp) - self.log_mc_iw_m1
+
+                # c_m = 1/M sum_{n !=n} w_n + \hat{w}^{-m}
+                mask = 1 - torch.eye(self.iw, dtype=log_f_xz.dtype, device=log_f_xz.device)[None, None, :, :]
+                log_f_xz = log_f_xz[:, :, None, :].expand(-1, self.mc, self.iw, self.iw)
+                max, idx = ((1 - mask) * _wn[:, :, :,None] + mask * log_f_xz).max(dim=3, keepdim=True)
+                sum_exp = torch.sum(mask * torch.exp(log_f_xz - max), dim=3)
+                baseline = max.squeeze(3) + torch.log(_EPS + sum_exp) - self.log_iw
+
+            else:
+                # c_m = 1/(M-1) sum_{n !=n} w_n
+                _min = log_f_xz.min()
+                mask = 1 - torch.eye(self.iw, dtype=log_f_xz.dtype, device=log_f_xz.device)[None, None, :, :]
+                log_f_xz = log_f_xz[:, :, None, :].expand(-1, self.mc, self.iw, self.iw)
+                max, idx = ((1 - mask) * _min + mask * log_f_xz).max(dim=3, keepdim=True)
+                sum_exp = torch.sum(mask * torch.exp(log_f_xz - max), dim=3)
+                baseline =  max.squeeze(3) + torch.log(_EPS + sum_exp) - self.log_iw_m1
 
         else: # log \hat{f}(x, h^{-j}) using the geometric mean
 
-            log_f_xz_hat = (torch.sum(log_f_xz, dim=2, keepdim=True) - log_f_xz) / (self.iw - 1)
+            if use_outer_samples:
+                log_f_xz_hat = (torch.sum(log_f_xz, dim=(1, 2), keepdim=True) - log_f_xz) / (self.mc * self.iw - 1)
+            else:
+                log_f_xz_hat = (torch.sum(log_f_xz, dim=2, keepdim=True) - log_f_xz) / (self.iw - 1)
+
             log_f_xz_samples = log_f_xz.unsqueeze(-1) + torch.diag_embed(log_f_xz_hat - log_f_xz)
             baseline = torch.logsumexp(log_f_xz_samples, dim=2) - self.log_iw
 
+        # catchning nans
+        if torch.isnan(baseline).any():
+
+            print(">>> vimco:compute_control_variate: baseline NAN : ", len(baseline[baseline != baseline]))
+
+            if torch.isnan(baseline).all():
+                baseline[baseline != baseline] = 0
+            else:
+                baseline[baseline != baseline] = baseline[baseline == baseline].mean()
+
         if mc_estimate:
             baseline = baseline.mean(1, keepdim=True)
-
-        if torch.isnan(baseline).any():
-            print(">>> vimco:compute_control_variate: baseline NAN")
-
-        # set to zero if nan
-        baseline[baseline != baseline] = 0
 
         if return_raw:
             return baseline.unsqueeze(-1)

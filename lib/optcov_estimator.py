@@ -44,6 +44,7 @@ class OptCovReinforce(Reinforce):
         return v_kmn
 
     def compute_control_variate(self, x: Tensor, mc_estimate: bool = False, arithmetic: bool = True,
+                                use_outer_samples: bool = False,
                                 nz_estimate: bool = False,
                                 **data: Dict[str, Tensor]) -> Tensor:
         """
@@ -127,7 +128,7 @@ class OptCovReinforce(Reinforce):
             mask = 1 - torch.eye(self.iw, device=x.device, dtype=x.dtype)
 
             # compute \hat{L} \approx \log 1\k \sum_m w_m
-            L_hat = Vimco.compute_control_variate(self, x, mc_estimate=mc_estimate, arithmetic=arithmetic, return_raw=True, **data)
+            L_hat = Vimco.compute_control_variate(self, x, mc_estimate=mc_estimate, arithmetic=arithmetic, return_raw=True, use_outer_samples=use_outer_samples, **data)
 
             # compute the `v` term
             log_sum_exp_w = log_sum_exp_except_stable(log_w, dim=2, mask=mask)
