@@ -132,10 +132,21 @@ class BaseVAE(Template):
             l *= w.abs().max()
         return l
 
-    def forward(self, x, tau=0, zgrads=False, **kwargs):
+    def forward(self, x, tau=0, zgrads=False, mc=1, iw=1, **kwargs):
         qlogits = self.infer(x)
+        qlogits.retain_grad()
 
-        qz = self.prior_dist(logits=qlogits, tau=tau)
+        if mc > 1 or iw > 1:
+            bs, *dims = qlogits.shape
+            qlogits_expanded = qlogits[:, None, None, :].expand(x.size(0), mc, iw, *dims).contiguous()
+            qlogits_expanded = qlogits_expanded.view(-1, *dims)
+
+        else:
+            qlogits_expanded = qlogits
+
+
+
+        qz = self.prior_dist(logits=qlogits_expanded, tau=tau)
         z = qz.rsample()
 
         if not zgrads:
@@ -145,7 +156,7 @@ class BaseVAE(Template):
 
         px = self.generate(z)
 
-        return {'px': px, 'z': [z], 'qz': [qz], 'pz': [pz]}
+        return {'px': px, 'z': [z], 'qz': [qz], 'pz': [pz], 'qlogits': [qlogits]}
 
     def sample_from_prior(self, N):
         prior = self.prior.expand(N, *self.prior_dim)

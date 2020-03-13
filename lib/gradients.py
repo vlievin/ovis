@@ -1,23 +1,65 @@
+import sys
+import numpy as np
 import torch
+from collections import defaultdict
+from .utils import flatten
 
 eps = 1e-20
 
+def cov(m, y=None):
+    if y is not None:
+        m = torch.cat((m, y), dim=0)
+    m_exp = torch.mean(m, dim=1)
+    x = m - m_exp[:, None]
+    cov = 1 / (x.size(1) - 1) * x.mm(x.t())
+    return cov
 
-def get_gradients_log_total_variance(estimator, model, x, key_filter='', **config):
-    """numerically stable computation using the logsumexp trick and double precision"""
-    # todo: double check this
-    m = None
-    sum_var = torch.zeros((1,), dtype=torch.double)
-    model.train()
-    loss, diagnostics, output = estimator(model, x, backward=False, **config)
-    for l in loss:
-        l.backward(create_graph=True, retain_graph=True)
-        for k, v in model.named_parameters():
-            if key_filter in k and v.grad is not None:
-                v_grads = v.grad.detach().var(0).double()
-                log_v_grads = torch.log(eps + v_grads)
-                if m is None:
-                    m = log_v_grads.max()
-                sum_var += (log_v_grads - m).exp().sum().detach()
 
-    return (m + torch.log(eps + sum_var)).float().detach().item()
+def get_gradients_log_total_variance(estimator, model, x, batch_size=32, seed=None, **config):
+    """
+    Comput the average log of the total variance
+
+    y = E_x[ trace( E_q(z|x) [ cov(grads(L(x, z)) ] ) ]
+    """
+
+    log_sum_var_grads = []
+    control_variate_mses = []
+
+    for x_i in x:
+        x_i = x_i[None].expand(batch_size, *x_i.size())
+
+        if seed is not None:
+            _seed = int(torch.randint(1, sys.maxsize, (1,)).item())
+            torch.manual_seed(seed)
+
+        model.train()
+        model.zero_grad()
+
+        # forward, backward to compute the gradients
+        loss, diagnostics, output = estimator(model, x_i, backward=False, **config)
+        loss.mean().backward(create_graph=True, retain_graph=True)
+
+        # get the logits of the variational distributions
+        q_logits = [ p for i, p in enumerate(output['qlogits'])]
+
+        # get thw gradients, flatten and concat them
+        bs = x_i.size(0)
+        gradients = torch.cat([p.grad.view(bs, -1) for p in q_logits], 1)
+
+        with torch.no_grad():
+            # compute the covariance of the gradients and the total variance
+            covariance = cov(gradients)
+            total_variance = covariance.trace()
+
+            # x_i output
+            mse = diagnostics.get('loss').get('control_variate_mse')
+            control_variate_mses += [ mse.mean().item() if mse is not None else None ]
+            log_sum_var_grads += [total_variance.log().item()]
+
+    if seed is not None:
+        torch.manual_seed(_seed)
+
+    # reinitialize grads
+    model.zero_grad()
+
+    return np.mean(log_sum_var_grads), np.mean(control_variate_mses)

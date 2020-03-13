@@ -6,7 +6,7 @@ from shutil import rmtree
 
 import numpy as np
 import torch
-from booster import Aggregator
+from booster import Aggregator, Diagnostic
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
@@ -47,6 +47,13 @@ parser.add_argument('--mc', default=1, type=int, help='number of Monte-Carlo sam
 parser.add_argument('--iw', default=1, type=int, help='number of Importance-Weighted samples')
 parser.add_argument('--iw_valid', default=100, type=int, help='number of Importance-Weighted samples for validation')
 
+# gradients analysis
+parser.add_argument('--grad_eval_freq', default=5, type=int, help='frequency for the gradients evaluation')
+parser.add_argument('--grad_samples', default=16, type=int, help='number of samples used to evaluate the variance. (at maximum it is size `bs` to avoid using too much memory)')
+parser.add_argument('--counterfactuals', default='',
+                    help='comma separated list of estimators for which the gradients will be evaluated without being used for optimization.'
+                         'example: `reinforce, covbaseline-arithmetic`')
+
 # latent space
 parser.add_argument('--prior', default='categorical', help='family of the prior distribution : [categorcial | normal]')
 parser.add_argument('--N', default=8, type=int, help='number of latent variables')
@@ -71,7 +78,8 @@ if opt.silent:
     tqdm = notqdm
 
 # defining the run identifier
-use_baseline = '-baseline' in opt.estimator
+counterfactual_estimators = opt.counterfactuals.replace(" ", "").split(",") if len(opt.counterfactuals) else []
+use_baseline = any(['-baseline' in e for e in [opt.estimator] + counterfactual_estimators])
 run_id = f"{opt.dataset}-{opt.model}-{opt.prior}-{opt.estimator}-seed{opt.seed}"
 if len(opt.id) > 0:
     run_id += f"-{opt.id}"
@@ -131,8 +139,17 @@ try:
     Estimator, config = get_config(opt.estimator)
     estimator = Estimator(baseline=baseline, mc=opt.mc, iw=opt.iw, N=opt.N, K=opt.K, hdim=opt.hdim)
 
+    # valid estimator (it is important that all models are evaluated using the same evaluator)
     config_valid = {'tau': 0, 'zgrads': False}
     estimator_valid = VariationalInference(mc=1, iw=opt.iw_valid, sequential_computation=True)
+
+    # counterfactual estimators:
+    # they are use to measure the variance of the gradients given other estimator without using them for optimization
+    if len(counterfactual_estimators) :
+        c_Estimators, c_configs = zip(*[get_config(c) for c in counterfactual_estimators])
+        c_estimators = [Est(baseline=baseline, mc=opt.mc, iw=opt.iw, N=opt.N, K=opt.K, hdim=opt.hdim) for Est in c_Estimators]
+    else:
+        c_configs = c_estimators = []
 
     # get device and move models
     device = "cuda:0" if torch.cuda.device_count() else "cpu"
@@ -140,7 +157,7 @@ try:
     estimator.to(device)
     estimator_valid.to(device)
 
-    # optimizer
+    # optimizers
     optimizers = []
     optimizers += [torch.optim.Adam(model.parameters(), lr=opt.lr)]
     if len(list(estimator.parameters())):
@@ -161,6 +178,10 @@ try:
     # tensorboard writers
     writer_train = SummaryWriter(os.path.join(logdir, 'train'))
     writer_valid = SummaryWriter(os.path.join(logdir, 'valid'))
+    counterfactual_writers = [SummaryWriter(os.path.join(logdir, c)) for c in counterfactual_estimators]
+
+    # batch of data for the gradients variance evaluation (at maximum of size bs)
+    x_grads_eval = next(iter(loader_train)).to(device)[:opt.grad_samples]
 
     # run
     best_elbo = (-1e20, 0, 0)
@@ -183,10 +204,18 @@ try:
             global_step += 1
         summary_train = agg_train.data.to('cpu')
 
-        # estimate the variance of the gradients
-        x = next(iter(loader_train)).to(device)
-        # warning: key_filter does not hold for other models like LVAE.
-        summary_train["loss"]["log_grad_var"] = get_gradients_log_total_variance(estimator, model, x, key_filter='encoder', **config)
+        if epoch % opt.grad_eval_freq == 0:
+            # estimate the variance of the gradients (for `opt.grad_samples` data points)
+            grad_args = {'seed':opt.seed, 'batch_size': opt.bs}
+            # current model
+            summary_train["loss"]["log_grad_var"], *_ = get_gradients_log_total_variance(estimator, model, x_grads_eval, **grad_args, **config)
+            # counter factual estimation of other estimators
+            for (c_writer, c_conf, c_est, c) in zip(counterfactual_writers, c_configs, c_estimators, counterfactual_estimators):
+                log_grad_var, control_variate_mse = get_gradients_log_total_variance(c_est, model, x_grads_eval, **grad_args, **c_conf)
+                summary = Diagnostic({'loss': {'log_grad_var': log_grad_var, 'control_variate_mse': control_variate_mse}})
+                summary.log(c_writer, global_step)
+                train_logger.info(f" | counterfactual | {c:{max(map(len, counterfactual_estimators))}s} "
+                                  f"| log_grad_var = {log_grad_var:.3f}, mse = {summary['loss']['control_variate_mse']:.3f}")
 
         # valid epoch
         with torch.no_grad():
