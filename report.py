@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import traceback
+from collections import defaultdict
 from datetime import datetime
 from shutil import rmtree
 
@@ -27,12 +28,12 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--root', default='runs/', help='experiment directory')
 parser.add_argument('--output', default='reports/', help='output directory')
 parser.add_argument('--exp', default='exclude-sample-0.1', type=str, help='experiment id')
-parser.add_argument('--metrics', default='max:elbo,avg:log_grad_var', type=str,
+parser.add_argument('--metrics', default='max:elbo, avg:log_grad_var', type=str,
                     help='comma separated list of metrics to report in the table, the prefix defines the aggregation function (min, avg, max)')
-parser.add_argument('--train_keys', default='control_variate_mse,log_grad_var', type=str,
-                    help='comma separated list of keys to read from the training tensorboard logs')
-parser.add_argument('--valid_keys', default='elbo,kl,N_eff', type=str,
-                    help='comma separated list of keys to read from the valid tensorboard logs')
+parser.add_argument('--keys', default='train:control_variate_mse, train:log_grad_var, valid:elbo, valid:N_eff, valid:nll, valid:kl', type=str,
+                    help='comma separated list of keys to read from the tensorboard logs')
+parser.add_argument('--ylims', default='', type=str,
+                    help='comma separated list of limit values for the curve plot (syntax: key:min:max), example: `elbo:-60:-5,kl:4:10`')
 parser.add_argument('--main_key', default='estimator', type=str, help='main parameter to include in the report')
 parser.add_argument('--aux_key', default='iw', type=str, help='auxiliary parameter to include in the report')
 parser.add_argument('--latex', action='store_true', help='print as latex table')
@@ -73,13 +74,13 @@ def _print_df(df):
         logger.info(df)
 
 
-# define keys to read from the logs
-valid_keys = list(opt.valid_keys.split(','))
-train_keys = list(opt.train_keys.split(','))
+# define keys to read from the logs ("header" is the tensorboard key (train/valid), "key" is the value (elbo, nll))
+_headers, _keys = zip(*[u.split(":") for u in opt.keys.replace(" ", "").split(',')])
+__keys = defaultdict(list)
+[__keys[h].append(k) for (h, k) in zip(_headers, _keys)]
+tf__keys = {h: list(map(_to_tb, v)) for h, v in __keys.items()}
 
-tf_valid_keys = list(map(_to_tb, valid_keys))
-tf_train_keys = list(map(_to_tb, train_keys))
-metrics_agg_fns, metrics = zip(*[u.split(':') for u in opt.metrics.split(",")])
+metrics_agg_fns, metrics = zip(*[u.split(':') for u in opt.metrics.replace(" ", "").split(",")])
 metrics_agg_fns = [{'min': np.min, 'max': np.max, 'avg': np.mean}[m] for m in metrics_agg_fns]
 metrics = list(metrics)
 
@@ -112,31 +113,18 @@ for e in experiments:
                 with open(os.path.join(exp_path, 'config.json'), 'r') as fp:
                     args = DotMap(json.load(fp))
 
-                # read training logs
-                _dir = os.path.join(exp_path, 'train')
-                _tf_log = [os.path.join(_dir, o) for o in os.listdir(_dir) if 'events.out.tfevents' in o][0]
-                with open(_tf_log, 'rb') as f:
-                    reader = EventsFileReader(f)
+                for header in _headers:
+                    _dir = os.path.join(exp_path, 'train')
+                    _tf_log = [os.path.join(_dir, o) for o in os.listdir(_dir) if 'events.out.tfevents' in o][0]
+                    with open(_tf_log, 'rb') as f:
+                        reader = EventsFileReader(f)
 
-                    for item in reader:
-                        step = item.step
-                        for v in item.summary.value:
-                            if v.tag in tf_train_keys:
-                                logs += [{'id': e, 'step': step, '_key': _from_tb(v.tag),
-                                          '_value': float(v.simple_value)}]
-
-                # read valid logs
-                _dir = os.path.join(exp_path, 'valid')
-                _tf_log = [os.path.join(_dir, o) for o in os.listdir(_dir) if 'events.out.tfevents' in o][0]
-                with open(_tf_log, 'rb') as f:
-                    reader = EventsFileReader(f)
-
-                    for item in reader:
-                        step = item.step
-                        for v in item.summary.value:
-                            if v.tag in tf_valid_keys:
-                                logs += [{'id': e, 'step': step, '_key': _from_tb(v.tag),
-                                          '_value': float(v.simple_value)}]
+                        for item in reader:
+                            step = item.step
+                            for v in item.summary.value:
+                                if v.tag in tf__keys[header]:
+                                    logs += [{'id': e, 'step': step, '_key': _from_tb(v.tag),
+                                              '_value': float(v.simple_value)}]
 
                 # gather config/hyperparameters
                 d = dict(args)
@@ -151,10 +139,10 @@ for e in experiments:
         logger.info(_sep)
         logger.info("\nException: ", ex, "\n")
 
-
 # exit if not data
 if len(data) == 0:
-    logger.info(f"{_sep}\nCouldn't read any record. Either they are errors or the experiments are not yet completed.\n{_sep}")
+    logger.info(
+        f"{_sep}\nCouldn't read any record. Either they are errors or the experiments are not yet completed.\n{_sep}")
     exit()
 
 # compile data into a dataframe
@@ -221,13 +209,21 @@ def aggfunc(serie):
     return f"{mean:{opt.float_format}} ± {std:{opt.float_format}} (n={len(serie)})"
 
 
-_columns = [opt.aux_key] if len(opt.aux_key) > 0 else []
-_keys = [k for k in df.keys() if k not in metrics and k != "seed" and k not in _columns]
-pivot = df.pivot_table(index=_keys, columns=_columns, values=metrics, aggfunc=aggfunc)
+_columns = []  # [opt.aux_key] if len(opt.aux_key) > 0 else []
+_index = [k for k in df.keys() if k not in metrics + _columns + ["seed", opt.main_key, opt.aux_key]] + [opt.main_key]
+if len(opt.aux_key):
+    _index = [opt.aux_key] + _index
+pivot = df.pivot_table(index=_index, columns=_columns, values=metrics, aggfunc=aggfunc)
+
 # sort pivot according to the mean value
-mean_pivot = df.pivot_table(index=_keys, values=metrics[0], aggfunc=np.mean)
+mean_pivot = df.pivot_table(index=_index, values=metrics[0], aggfunc=np.mean)
 mean_pivot = mean_pivot.sort_values(metrics[0], ascending=False)
+# mean_pivot.sort_values([*_index, metrics[0]], ascending=True, inplace=True)
 pivot = pivot.reindex(mean_pivot.index)
+
+# sort index
+for idx in _index[::-1][1:]:
+    pivot.sort_index(level=idx, sort_remaining=False, inplace=True)
 
 logger.info("\n" + _sep)
 logger.info("Pivot table:\n" + _sep)
@@ -244,7 +240,6 @@ plot line plots with uncertainty intervals
 _last_indexes = ['seed', '_key', 'step']
 _index = [k for k in logs.keys() if k != '_value' and k not in _last_indexes]
 _index += _last_indexes
-_keys = logs['_key'].unique()
 
 # get max step
 M = logs['step'].max()
@@ -272,7 +267,7 @@ logs.dropna(inplace=True)
 logs.to_csv(os.path.join(output_path, "curves.csv"))
 
 
-def plot_logs(logs, _keys, path, style_key=None):
+def plot_logs(logs, _keys, path, style_key=None, ylims=dict()):
     """
     Make a grid of line plots with std intervals.
     :param logs: dataframe containing all the training data per time step
@@ -306,12 +301,15 @@ def plot_logs(logs, _keys, path, style_key=None):
 
         ax.set_ylabel(k)
         # y lims
-        ys = logs[(logs['_key'] == k) & (logs['step'] > step_min)]['_value'].values.tolist()
-        if len(ys):
-            a, b = np.percentile(ys, [25, 75])
-            M = b - a
-            k = 1.5
-            ax.set_ylim([a - k * M, b + k * M])
+        if k in ylims:
+            ax.set_ylim(ylims[k])
+        else:
+            ys = logs[(logs['_key'] == k) & (logs['step'] > step_min)]['_value'].values.tolist()
+            if len(ys):
+                a, b = np.percentile(ys, [25, 75])
+                M = b - a
+                k = 1.5
+                ax.set_ylim([a - k * M, b + k * M])
 
         if i < len(_keys) - 1:
             ax.get_legend().remove()
@@ -326,11 +324,18 @@ def plot_logs(logs, _keys, path, style_key=None):
 
 
 # plot for all auxiliary keys
+if len(opt.ylims):
+    ylims = [u.split(":") for u in opt.ylims.replace(" ", "").split(',')]
+    ylims = {u[0]: [eval(u[1]), eval(u[2])] for u in ylims}
+else:
+    ylims = {}
 logger.info("Generating merged plots ...")
-plot_logs(logs, _keys, os.path.join(output_path, f"curves.png"), style_key=opt.aux_key if len(opt.aux_key) else None)
+plot_logs(logs, _keys, os.path.join(output_path, f"curves.png"), ylims=ylims,
+          style_key=opt.aux_key if len(opt.aux_key) else None)
 if len(opt.aux_key):
     # on plot for each key
     values = list(logs[opt.aux_key].unique())
     for i, v in enumerate(sorted(values)):
         f"Generating plots for {opt.aux_key} = {v} [{i + 1} / {values}]"
-        plot_logs(logs[logs[opt.aux_key] == v], _keys, os.path.join(output_path, f"curves-{opt.aux_key}={v}.png"))
+        plot_logs(logs[logs[opt.aux_key] == v], _keys, os.path.join(output_path, f"curves-{opt.aux_key}={v}.png"),
+                  ylims=ylims)
