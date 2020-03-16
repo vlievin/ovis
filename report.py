@@ -28,14 +28,17 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--root', default='runs/', help='experiment directory')
 parser.add_argument('--output', default='reports/', help='output directory')
 parser.add_argument('--exp', default='exclude-sample-0.1', type=str, help='experiment id')
-parser.add_argument('--metrics', default='max:elbo, avg:log_grad_var', type=str,
+parser.add_argument('--filter', default='', type=str, help='filter run by id')
+parser.add_argument('--parse_estimator_args', default='', type=str, help='parse an estimator id to extract a key. For instance extract the key `outer` from the estimator `vimco-outer`')
+parser.add_argument('--pivot_metrics', default='max:elbo, avg:log_grad_var', type=str,
                     help='comma separated list of metrics to report in the table, the prefix defines the aggregation function (min, avg, max)')
-parser.add_argument('--keys', default='train:control_variate_mse, train:log_grad_var, valid:elbo, valid:N_eff, valid:nll, valid:kl', type=str,
+parser.add_argument('--metrics', default='train:control_variate_mse, train:log_grad_var, valid:elbo, valid:N_eff, valid:nll, valid:kl', type=str,
                     help='comma separated list of keys to read from the tensorboard logs')
 parser.add_argument('--ylims', default='', type=str,
                     help='comma separated list of limit values for the curve plot (syntax: key:min:max), example: `elbo:-60:-5,kl:4:10`')
 parser.add_argument('--main_key', default='estimator', type=str, help='main parameter to include in the report')
 parser.add_argument('--aux_key', default='iw', type=str, help='auxiliary parameter to include in the report')
+parser.add_argument('--third_key', default='', type=str, help='second auxiliary parameter to include in the report')
 parser.add_argument('--latex', action='store_true', help='print as latex table')
 parser.add_argument('--float_format', default=".3f", help='float format')
 parser.add_argument('--nsamples', default=64, type=int, help='number of points in the line plot')
@@ -75,14 +78,18 @@ def _print_df(df):
 
 
 # define keys to read from the logs ("header" is the tensorboard key (train/valid), "key" is the value (elbo, nll))
-_headers, _keys = zip(*[u.split(":") for u in opt.keys.replace(" ", "").split(',')])
-__keys = defaultdict(list)
-[__keys[h].append(k) for (h, k) in zip(_headers, _keys)]
-tf__keys = {h: list(map(_to_tb, v)) for h, v in __keys.items()}
+_headers, _metrics = zip(*[u.split(":") for u in opt.metrics.replace(" ", "").split(',')])
+__metrics = defaultdict(list)
+[__metrics[h].append(k) for (h, k) in zip(_headers, _metrics)]
+tf__metrics = {h: list(map(_to_tb, v)) for h, v in __metrics.items()}
 
-metrics_agg_fns, metrics = zip(*[u.split(':') for u in opt.metrics.replace(" ", "").split(",")])
+metrics_agg_fns, metrics = zip(*[u.split(':') for u in opt.pivot_metrics.replace(" ", "").split(",")])
 metrics_agg_fns = [{'min': np.min, 'max': np.max, 'avg': np.mean}[m] for m in metrics_agg_fns]
 metrics = list(metrics)
+
+# filters
+filters = opt.filter.replace(" ","").split(',') if len(opt.filter) else ""
+
 
 print("# Metrics:", metrics)
 print("# Agg. Fns:", metrics_agg_fns)
@@ -92,29 +99,49 @@ logger.info(f"# reading experiments from path: {path}")
 logger.info(_sep)
 data = []  # store hyperparameters and configs
 logs = []  # store training data from tensorboard logs
-for e in experiments:
-    logger.info(f" - exp = {e}")
+pbar = tqdm(experiments)
+for e in pbar:
+    pbar.set_description(f"{e}")
 
     exp_path = os.path.join(path, e)
-
     files = os.listdir(exp_path)
     _success_file = 'success.txt'
     try:
         if not _success_file in files:
-            logger.info(f" >>>  Not yet completed.")
+            logger.info(f" >>>  Not yet completed: {e}")
+        elif any([(u in e) for u in filters]):
+            logger.info(f" >>>  filtered: {e}")
         else:
             with open(os.path.join(exp_path, _success_file), 'r') as fp:
                 success_ = fp.read()
 
             if not "Success." in success_:
-                logger.info(f" >>> Failed.")
+                logger.info(f" >>> Failed: {e}")
             else:
                 # reading configuration files with run parameter
                 with open(os.path.join(exp_path, 'config.json'), 'r') as fp:
                     args = DotMap(json.load(fp))
 
+                # parse estimator args: e.g. `vimco-outer` -> `vimco` + `outer`
+                if len(opt.parse_estimator_args):
+                    for opt_estimator_arg in opt.parse_estimator_args.replace(" ","").split(","):
+                        if opt_estimator_arg == 'geometric': # special case
+                            if "-geometric" in args.estimator:
+                                args.estimator = args.estimator.replace(f"-geometric", "")
+                                args["w_hat"] = "geometric"
+                            elif "-arithmetic" in args.estimator:
+                                args.estimator = args.estimator.replace(f"-arithmetic", "")
+                                args["w_hat"] = "arithmetic"
+                            else:
+                                raise ValueError(f"-geometric or -arithmetic must be in {args.estimator}")
+                        else:
+                            has_arg = f"-{opt_estimator_arg}" in args.estimator
+                            args.estimator = args.estimator.replace(f"-{opt_estimator_arg}", "")
+                            args[opt_estimator_arg] = has_arg
+
+                # read tensorboard logs
                 for header in _headers:
-                    _dir = os.path.join(exp_path, 'train')
+                    _dir = os.path.join(exp_path, header)
                     _tf_log = [os.path.join(_dir, o) for o in os.listdir(_dir) if 'events.out.tfevents' in o][0]
                     with open(_tf_log, 'rb') as f:
                         reader = EventsFileReader(f)
@@ -122,7 +149,7 @@ for e in experiments:
                         for item in reader:
                             step = item.step
                             for v in item.summary.value:
-                                if v.tag in tf__keys[header]:
+                                if v.tag in tf__metrics[header]:
                                     logs += [{'id': e, 'step': step, '_key': _from_tb(v.tag),
                                               '_value': float(v.simple_value)}]
 
@@ -191,12 +218,7 @@ logger.info(os.path.abspath(path))
 logger.info(_sep)
 logger.info(f"all data: varying parameters: {[k for k in df.keys() if k not in metrics]}")
 logger.info(_sep)
-if "dataset" in df.keys():
-    for dset in set(df["dataset"].values):
-        _print_df(df[df["dataset"] == dset])
-        logger.info(_sep)
-else:
-    _print_df(df)
+_print_df(df)
 
 """
 pivot table
@@ -206,7 +228,7 @@ pivot table
 def aggfunc(serie):
     mean = np.mean(serie)
     std = np.std(serie)
-    return f"{mean:{opt.float_format}} ± {std:{opt.float_format}} (n={len(serie)})"
+    return f"{mean:{opt.float_format}} +/- {std:{opt.float_format}} (n={len(serie)})"
 
 
 _columns = []  # [opt.aux_key] if len(opt.aux_key) > 0 else []
@@ -330,12 +352,12 @@ if len(opt.ylims):
 else:
     ylims = {}
 logger.info("Generating merged plots ...")
-plot_logs(logs, _keys, os.path.join(output_path, f"curves.png"), ylims=ylims,
+plot_logs(logs, _metrics, os.path.join(output_path, f"curves.png"), ylims=ylims,
           style_key=opt.aux_key if len(opt.aux_key) else None)
 if len(opt.aux_key):
     # on plot for each key
     values = list(logs[opt.aux_key].unique())
     for i, v in enumerate(sorted(values)):
         f"Generating plots for {opt.aux_key} = {v} [{i + 1} / {values}]"
-        plot_logs(logs[logs[opt.aux_key] == v], _keys, os.path.join(output_path, f"curves-{opt.aux_key}={v}.png"),
-                  ylims=ylims)
+        plot_logs(logs[logs[opt.aux_key] == v], _metrics, os.path.join(output_path, f"curves-{opt.aux_key}={v}.png"),
+                  ylims=ylims, style_key=opt.third_key if len(opt.third_key) else None)

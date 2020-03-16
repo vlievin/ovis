@@ -92,6 +92,7 @@ if opt.learn_prior:
 run_id += f"-arch{opt.hdim}x{opt.nlayers}"
 if opt.norm is not 'none':
     run_id += f"-{opt.norm}"
+_exp_id = opt.exp
 
 # defining the run directory
 logdir = os.path.join(opt.root, opt.exp)
@@ -195,7 +196,7 @@ try:
         [o.zero_grad() for o in optimizers]
         model.train()
         agg_train.initialize()
-        for x in tqdm(loader_train):
+        for x in tqdm(loader_train, desc=_exp_id):
             x = x.to(device)
             loss, diagnostics, output = estimator(model, x, backward=True, **config)
             [o.step() for o in optimizers]
@@ -221,7 +222,7 @@ try:
         with torch.no_grad():
             model.eval()
             agg_valid.initialize()
-            for x in tqdm(loader_train):
+            for x in tqdm(loader_train, desc=_exp_id):
                 x = x.to(device)
                 _, diagnostics, _ = estimator_valid(model, x, backward=False, **config_valid)
                 agg_valid.update(diagnostics)
@@ -231,8 +232,8 @@ try:
         best_elbo = save_model(model, summary_valid, global_step, epoch, best_elbo, logdir)
 
         # log to console and tensorboard
-        log_summary(summary_train, global_step, epoch, logger=train_logger, writer=writer_train)
-        log_summary(summary_valid, global_step, epoch, logger=valid_logger, best=best_elbo, writer=writer_valid)
+        log_summary(summary_train, global_step, epoch, logger=train_logger, writer=writer_train, exp_id=_exp_id)
+        log_summary(summary_valid, global_step, epoch, logger=valid_logger, best=best_elbo, writer=writer_valid, exp_id=_exp_id)
 
         # reduce learning rate
         lr_freq = (opt.epochs // (opt.lr_reduce_steps + 1))
