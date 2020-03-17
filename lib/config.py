@@ -17,25 +17,27 @@ def get_config(estimator):
         mc_estimate = '-mc' in estimator
         nz_estimate = '-nz' in estimator
         use_outer_samples = '-outer' in estimator
+        use_double = not ('-float32' in estimator)
         if '-arithmetic' in estimator:
             arithmetic = True
         elif '-geometric' in estimator:
             arithmetic = False
         else:
             raise ValueError(f"Estimator arg = {estimator} must contain `-arithmetic` or `-geometric`")
-        config = {'tau': 0, 'zgrads': False, 'mc_estimate': mc_estimate, 'nz_estimate': nz_estimate, 'arithmetic': arithmetic, 'use_outer_samples': use_outer_samples}
+        config = {'tau': 0, 'zgrads': False, 'mc_estimate': mc_estimate, 'nz_estimate': nz_estimate, 'arithmetic': arithmetic, 'use_outer_samples': use_outer_samples, 'use_double': use_double}
 
     elif 'vimco' in estimator:
         Estimator = Vimco
         mc_estimate = '-mc' in estimator
         use_outer_samples = '-outer' in estimator
+        use_double = not ('-float32' in estimator)
         if '-arithmetic' in estimator:
             arithmetic = True
         elif '-geometric' in estimator:
             arithmetic = False
         else:
             raise ValueError(f"Estimator arg = {estimator} must contain `-arithmetic` or `-geometric`")
-        config = {'tau': 0, 'zgrads': False, 'mc_estimate': mc_estimate, 'arithmetic': arithmetic, 'use_outer_samples': use_outer_samples}
+        config = {'tau': 0, 'zgrads': False, 'mc_estimate': mc_estimate, 'arithmetic': arithmetic, 'use_outer_samples': use_outer_samples, 'use_double': use_double}
 
     elif estimator == 'gs':
         Estimator = VariationalInference

@@ -1,7 +1,6 @@
 from .estimators import *
+from .estimators import _EPS
 from .utils import *
-
-_EPS = 1e-18
 
 
 class OptCovReinforce(Reinforce):
@@ -46,6 +45,7 @@ class OptCovReinforce(Reinforce):
     def compute_control_variate(self, x: Tensor, mc_estimate: bool = False, arithmetic: bool = True,
                                 use_outer_samples: bool = False,
                                 nz_estimate: bool = False,
+                                use_double: bool = True,
                                 **data: Dict[str, Tensor]) -> Tensor:
         """
         Compute the baseline that will be substracted to the score L_k,
@@ -67,9 +67,10 @@ class OptCovReinforce(Reinforce):
         z, qz = z[0], qz[0]
 
         # convert to double
-        qz.logits = qz.logits.double()
-        z = z.double()
-        log_f_xz = log_f_xz.double()
+        if use_double:
+            qz.logits = qz.logits.double()
+            z = z.double()
+            log_f_xz = log_f_xz.double()
 
         # compute log probs
         qlogits = qz.logits
@@ -105,13 +106,19 @@ class OptCovReinforce(Reinforce):
                 sum_exp = sum_except(torch.exp(tensor - max), dim)
                 return torch.log(eps + sum_exp) + max
 
-            def log_sum_exp_except_stable(tensor, dim=-1, eps: float = 1e-20, mask=None):
+            def log_sum_exp_except_stable(tensor, dim=-1, mask=None):
                 assert tensor.shape == (bs, self.mc, self.iw)
                 assert dim == 2
 
-                _min = tensor.min()
+                # expand sample
                 tensor = tensor[:, :, None, :].expand(bs, self.mc, self.iw, self.iw)
-                max, idx = ((1 - mask) * _min + mask * tensor).max(dim=3, keepdim=True)
+
+                # set the excluded sample as the min for numerical stability
+                _min, _ = tensor.min(dim=3, keepdim=True)
+                tensor = (1 - mask) * _min + mask * tensor
+
+                # max for the LSE trick
+                max, idx = tensor.max(dim=3, keepdim=True)
 
                 sum_exp = torch.sum(mask * torch.exp(tensor - max), dim=3)
 
@@ -128,27 +135,32 @@ class OptCovReinforce(Reinforce):
             mask = 1 - torch.eye(self.iw, device=x.device, dtype=x.dtype)
 
             # compute \hat{L} \approx \log 1\k \sum_m w_m
-            L_hat = Vimco.compute_control_variate(self, x, mc_estimate=mc_estimate, arithmetic=arithmetic, return_raw=True, use_outer_samples=use_outer_samples, **data)
+            L_hat, _n_nans = Vimco.compute_control_variate(self, x, mc_estimate=mc_estimate, arithmetic=arithmetic,
+                                                           return_raw=True, use_double=use_double,
+                                                           use_outer_samples=use_outer_samples, **data)
 
             # compute the `v` term
             log_sum_exp_w = log_sum_exp_except_stable(log_w, dim=2, mask=mask)
-            if torch.isnan(log_sum_exp_w).any():
+
+            log_sum_exp_w_nans = len(log_sum_exp_w[log_sum_exp_w != log_sum_exp_w])
+            _n_nans += log_sum_exp_w_nans
+            if log_sum_exp_w_nans > 0:
                 if torch.isnan(log_sum_exp_w).all():
                     log_sum_exp_w[log_sum_exp_w != log_sum_exp_w] = 0
                 else:
                     log_sum_exp_w[log_sum_exp_w != log_sum_exp_w] = log_sum_exp_w[log_sum_exp_w == log_sum_exp_w].mean()
-                print(">>> c*: log sum exp NAN")
+                print(">>> c*: log sum exp NAN, N =", _n_nans)
+
             v_mn = (log_w[:, :, :, None] - log_sum_exp_w[:, :, None, :]).exp()
             # removing diagonal terms
-            #v_kmn = v_kmn * mask
+            # v_kmn = v_kmn * mask
 
             # catching errors that are most likely due to numnerical stability issues
-            v_mn = self.catch_error(mask[None, None, :, :]*v_mn)
+            v_mn = self.catch_error(mask[None, None, :, :] * v_mn)
 
             h_m = h_m.view(bs, self.mc, self.iw, _n, -1)
             v_mn = v_mn.view(bs, self.mc, self.iw, self.iw)
             L_hat = L_hat[:, :, :, None].view(bs, -1, self.iw, 1)
-
 
             # shape = [bs, k, m, m', _n, h]
             #       = [bs, k, m, n, u, h]
@@ -169,7 +181,7 @@ class OptCovReinforce(Reinforce):
             num = sp_h_p_T_h_n[:, :, None, :, :] - h_m_T_h_n
 
             # weights alpha_mn: sum_{n != m} alpha_mn = 1
-            alpha_mn = num / den[:, :, :,None, :]
+            alpha_mn = num / (_EPS + den[:, :, :, None, :])
 
             # f_{k,m'}^{-m}
             f_mn = L_hat - v_mn
@@ -180,13 +192,15 @@ class OptCovReinforce(Reinforce):
             if mc_estimate:
                 c_opt = c_opt.sum(1, keepdims=True)
 
-            if torch.isnan(c_opt).any():
-                print(">>> c*: c_opt NAN")
+            c_opt_nans = len(c_opt[c_opt != c_opt])
+            _n_nans += c_opt_nans
+            if c_opt_nans:
+                print(">>> c*: c_opt NAN, N = ", _n_nans)
 
             # if any NaN, just replace with `0`
             c_opt[c_opt != c_opt] = 0
 
-        return c_opt.detach().type(x.dtype)
+        return c_opt.detach().type(x.dtype), _n_nans
 
 
 class OptCovReinforce___(Reinforce):

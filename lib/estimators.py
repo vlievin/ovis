@@ -1,3 +1,5 @@
+import sys
+
 import numpy as np
 from booster import Diagnostic
 from torch import nn, Tensor
@@ -25,7 +27,7 @@ class Estimator(nn.Module):
 
     def _expand_sample(self, x):
         bs, *dims = x.size()
-        self.bs = bs # added for TVO - perhaps a more elegant fix is possible.
+        self.bs = bs  # added for TVO - perhaps a more elegant fix is possible.
         x = x[:, None, None].repeat(1, self.mc, self.iw, *(1 for _ in dims))
         # flatten everything into the batch dimension
         return x.view(-1, *dims)
@@ -46,7 +48,7 @@ class Estimator(nn.Module):
         """
         raise NotImplementedError
 
-        
+
 class ThermoVariationalObjective(Estimator):
     """
     Thermovariational Inference. Based on https://arxiv.org/pdf/1907.00031.pdf / https://github.com/vmasrani/tvo
@@ -55,7 +57,8 @@ class ThermoVariationalObjective(Estimator):
     TODO: Continuous models?
     """
 
-    def compute_loss(self, log_px_z: Tensor, log_pzs: List[Tensor], log_qzs: List[Tensor], partition = 1, integration = 'left') -> Dict[str, Tensor]:
+    def compute_loss(self, log_px_z: Tensor, log_pzs: List[Tensor], log_qzs: List[Tensor], partition=1,
+                     integration='left') -> Dict[str, Tensor]:
         """
         TODO: ADD PARTITION ARGUMENT
 
@@ -81,10 +84,10 @@ class ThermoVariationalObjective(Estimator):
 
         # Generalize to accept custom partitions (current partition taken from default TVO settings on github)
         partition = torch.FloatTensor([0.0000e+00, 1.0000e-10, 1.2915e-09, 1.6681e-08, 2.1544e-07, 2.7826e-06,
-        3.5938e-05, 4.6416e-04, 5.9948e-03, 7.7426e-02, 1.0000e+00]).cuda()
+                                       3.5938e-05, 4.6416e-04, 5.9948e-03, 7.7426e-02, 1.0000e+00]).cuda()
 
         num_particles = self.iw
-        bs = self.bs # temporary
+        bs = self.bs  # temporary
 
         # compute the effective sample size
         N_eff = self.effective_sample_size(log_pzs, log_qzs)
@@ -110,7 +113,7 @@ class ThermoVariationalObjective(Estimator):
         log_f_xz = log_px_z - kl
 
         # compute log of weights w_s = p(x,z)/q(z|x) (between eq. 13 and 14)
-        log_weight = log_f_xz.view(bs, num_particles) # log_p_xz - log_q
+        log_weight = log_f_xz.view(bs, num_particles)  # log_p_xz - log_q
         heated_log_weight = log_weight.unsqueeze(-1) * partition
 
         def exponentiate_and_normalize(values, dim=0):
@@ -131,7 +134,7 @@ class ThermoVariationalObjective(Estimator):
         heated_normalized_weight = exponentiate_and_normalize(heated_log_weight, dim=1)
 
         # compute tilde{pi}_beta(z) (eq. 7)
-        log_p = log_px_z.view(-1,1) + log_pz # <---- is this correct ?
+        log_p = log_px_z.view(-1, 1) + log_pz  # <---- is this correct ?
         log_p = log_p.view(bs, num_particles)
         log_qz = log_qz.view(bs, num_particles)
         thermo_logp = partition * log_p.unsqueeze(-1) + (1 - partition) * log_qz.unsqueeze(-1)
@@ -150,8 +153,12 @@ class ThermoVariationalObjective(Estimator):
         # compute covariance (eq. 12)
         # .detach() makes sure PyTorch does not differentiate f_lambda(z) term.
         cov_term = correction * torch.sum(w_detached * (log_weight.unsqueeze(-1) -
-            torch.sum(wf, dim=1, keepdim=True)).detach() * (thermo_logp -
-            torch.sum(thermo_logp * w_detached, dim=1, keepdim=True)), dim=1)
+                                                        torch.sum(wf, dim=1, keepdim=True)).detach() * (thermo_logp -
+                                                                                                        torch.sum(
+                                                                                                            thermo_logp * w_detached,
+                                                                                                            dim=1,
+                                                                                                            keepdim=True)),
+                                          dim=1)
 
         # compute distances of partioning
         multiplier = torch.zeros_like(partition)
@@ -173,8 +180,8 @@ class ThermoVariationalObjective(Estimator):
 
         """ No mean over samples (necessary in this setup) """
         tvo = torch.sum(
-        multiplier * (cov_term + torch.sum(w_detached * log_weight.unsqueeze(-1),
-        dim=1)), dim=1)
+            multiplier * (cov_term + torch.sum(w_detached * log_weight.unsqueeze(-1),
+                                               dim=1)), dim=1)
 
         # multisampling ELBO
         log_evidence = torch.logsumexp(log_weight, dim=1) - np.log(num_particles)
@@ -276,10 +283,10 @@ class ThermoVariationalObjective(Estimator):
         tvo_data = self.compute_loss(log_px_z, log_pz, log_qz)
 
         # loss
-        tvo = tvo_data.get('tvo') # .mean(1)  # MC averaging (done in loss above - move here?)
+        tvo = tvo_data.get('tvo')  # .mean(1)  # MC averaging (done in loss above - move here?)
         loss = - tvo
 
-        elbo = tvo_data.get('elbo') # .mean(1)  # MC averaging (done in loss above - move here?)
+        elbo = tvo_data.get('elbo')  # .mean(1)  # MC averaging (done in loss above - move here?)
 
         # prepare diagnostics
         diagnostics = Diagnostic({
@@ -294,8 +301,8 @@ class ThermoVariationalObjective(Estimator):
             loss.mean().backward()
 
         return loss, diagnostics, output
-        
-        
+
+
 class VariationalInference(Estimator):
     """
     Variational Inference. Using this estimator requires the model to be compatible with the reparametrization trick.
@@ -374,10 +381,10 @@ class VariationalInference(Estimator):
 
         return N_eff
 
-    def evaluate_model(self, model: nn.Module, x: Tensor, x_target:Tensor, **kwargs: Any) -> Dict[str, Tensor]:
+    def evaluate_model(self, model: nn.Module, x: Tensor, x_target: Tensor, **kwargs: Any) -> Dict[str, Tensor]:
         # forward pass
         output = model(x, **kwargs)
-        px, z, qz, pz= [output[k] for k in ['px', 'z', 'qz', 'pz']]
+        px, z, qz, pz = [output[k] for k in ['px', 'z', 'qz', 'pz']]
 
         # compute log p(x|z), log p(z) and log q(z | x)
         log_px_z = batch_reduce(px.log_prob(x_target))
@@ -524,7 +531,7 @@ class Reinforce(VariationalInference):
         return score
 
     def forward(self, model: nn.Module, x: Tensor, backward: bool = False, mc_estimate: bool = False, **kwargs: Any) -> \
-    Tuple[Tensor, Dict, Dict]:
+            Tuple[Tensor, Dict, Dict]:
 
         x_target = self._expand_sample(x)
         output = self.evaluate_model(model, x, x_target, mc=self.mc, iw=self.iw, **kwargs)
@@ -536,7 +543,8 @@ class Reinforce(VariationalInference):
         score = self.compute_score(iw_data, mc_estimate=mc_estimate)
 
         # baseline: b(x) + c
-        control_variate = self.compute_control_variate(x, mc_estimate=mc_estimate, **iw_data, **output, **kwargs)
+        control_variate, _n_nans = self.compute_control_variate(x, mc_estimate=mc_estimate, **iw_data, **output,
+                                                                **kwargs)
         control_variate_mse = self.compute_control_variate_mse(score, control_variate)
 
         # concatenate all q(z_l| *, x)
@@ -559,7 +567,8 @@ class Reinforce(VariationalInference):
                      'kl': self._reduce_sample(kl),
                      'N_eff': N_eff,
                      'reinforce_loss': reinforce_loss,
-                     'control_variate_mse': control_variate_mse}
+                     'control_variate_mse': control_variate_mse,
+                     'NaNs': _n_nans}
         })
 
         if backward:
@@ -580,7 +589,8 @@ class Vimco(Reinforce):
         self.log_iw_m1 = np.log(self.iw - 1)
 
     @torch.no_grad()
-    def compute_control_variate(self, x: Tensor, mc_estimate: bool = True, arithmetic=False, return_raw=False, use_outer_samples=False, **data: Dict[str, Tensor]) -> Tensor:
+    def compute_control_variate(self, x: Tensor, mc_estimate: bool = True, arithmetic=False, return_raw=False,
+                                use_outer_samples=False, use_double: bool = True, **data: Dict[str, Tensor]) -> Tensor:
         """Compute the baseline that will be substracted to the score L_k,
         `data` contains the output of the method `compute_iw_bound`.
         The output shape should be of size 4 and matching the shape [bs, mc, iw, nz]"""
@@ -588,35 +598,66 @@ class Vimco(Reinforce):
         log_f_xz = data['log_f_xz']
         log_f_xz = log_f_xz.view(-1, self.mc, self.iw)
         _dtype = log_f_xz.dtype
-        log_f_xz = log_f_xz.double()
+        if use_double:
+            log_f_xz = log_f_xz.double()
 
-        if arithmetic: # log \hat{f}(x, h^{-j}) using the arithmetic mean
+        if arithmetic:  # log \hat{f}(x, h^{-j}) using the arithmetic mean
 
-            # todo: refactor using coe style from geometric mean
+            # todo: refactor using code style from geometric mean
 
             if use_outer_samples:
                 # estimate \hat{w}^{-m}
-                b, _ =  log_f_xz.view(-1, self.mc*self.iw).max(dim=1)
-                sum_exp = torch.exp(log_f_xz - b[:, None, None]).sum(dim=(1, 2), keepdim=True) - log_f_xz + b[:, None, None]
-                _wn = b[:, None, None] + torch.log(_EPS + sum_exp) - self.log_mc_iw_m1
+                # b, _ =  log_f_xz.view(-1, self.mc*self.iw).max(dim=1)
+                # sum_exp = torch.exp(log_f_xz - b[:, None, None]).sum(dim=(1, 2), keepdim=True) - log_f_xz # todo: this is wrong
+                # log_f_xz_hat = b[:, None, None] + torch.log(sum_exp) - self.log_mc_iw_m1
 
-                # c_m = 1/M sum_{n !=n} w_n + \hat{w}^{-m}
-                mask = 1 - torch.eye(self.iw, dtype=log_f_xz.dtype, device=log_f_xz.device)[None, None, :, :]
-                log_f_xz = log_f_xz[:, :, None, :].expand(-1, self.mc, self.iw, self.iw)
-                max, idx = ((1 - mask) * _wn[:, :, :,None] + mask * log_f_xz).max(dim=3, keepdim=True)
-                sum_exp = torch.sum(mask * torch.exp(log_f_xz - max), dim=3)
-                baseline = max.squeeze(3) + torch.log(_EPS + sum_exp) - self.log_iw
+                def __summarize(x, key):
+                    print(
+                        f">>> {key}: avg = {x.mean().item():.3f}, min = {x.min().item():.3f}, "
+                        f"max = {x.max().item():.3f}, std = {x.mean().item():.3f}")
+
+                # todo: make it work.
+
+                mask = 1 - torch.eye(self.iw * self.mc, dtype=log_f_xz.dtype, device=log_f_xz.device)[None, :, :]
+                _log_f_xz = log_f_xz[:, None, None, :, :].expand(-1, self.mc, self.iw, self.mc, self.iw)
+                _log_f_xz = _log_f_xz.view(log_f_xz.size(0), self.mc * self.iw, self.mc * self.iw)
+
+                # make sure to replace excluded samples with means so it doens't blow up to NAN with the exp (which gives `0` when multiplied by zero)
+                _min, _ = _log_f_xz.min(dim=2, keepdim=True)
+                _log_f_xz = (1 - mask) * _min + mask * _log_f_xz
+
+                # compute the maximum for the log sum exp
+                max, idx = _log_f_xz.max(dim=2, keepdim=True)
+
+                sum_exp = torch.sum(mask * torch.exp(_log_f_xz - max), dim=2)
+                log_f_xz_hat = max.squeeze(2) + torch.log(
+                    sum_exp) - self.log_mc_iw_m1  # adding eps should be necessary since the sum should be at least = exp(0)
+                log_f_xz_hat = log_f_xz_hat.view(log_f_xz.size(0), self.mc, self.iw)
+
+                log_f_xz_samples = log_f_xz.unsqueeze(-1) + torch.diag_embed(log_f_xz_hat - log_f_xz)
+                baseline = torch.logsumexp(log_f_xz_samples, dim=2) - self.log_iw
 
             else:
-                # c_m = 1/(M-1) sum_{n !=n} w_n
-                _min = log_f_xz.min()
                 mask = 1 - torch.eye(self.iw, dtype=log_f_xz.dtype, device=log_f_xz.device)[None, None, :, :]
-                log_f_xz = log_f_xz[:, :, None, :].expand(-1, self.mc, self.iw, self.iw)
-                max, idx = ((1 - mask) * _min + mask * log_f_xz).max(dim=3, keepdim=True)
-                sum_exp = torch.sum(mask * torch.exp(log_f_xz - max), dim=3)
-                baseline =  max.squeeze(3) + torch.log(_EPS + sum_exp) - self.log_iw_m1
+                _log_f_xz = log_f_xz[:, :, None, :].expand(-1, self.mc, self.iw, self.iw)
 
-        else: # log \hat{f}(x, h^{-j}) using the geometric mean
+                # make sure to replace excluded samples with means so it doens't blow up to NAN with the exp (which gives `0` when multiplied by zero)
+                _min, _ = _log_f_xz.min(dim=3, keepdim=True)
+                _log_f_xz = (1 - mask) * _min + mask * _log_f_xz
+
+                # get the max for the LSE trick
+                max, idx = _log_f_xz.max(dim=3, keepdim=True)
+
+                sum_exp = torch.sum(mask * torch.exp(_log_f_xz - max), dim=3)
+                log_f_xz_hat = max.squeeze(3) + torch.log(sum_exp) - self.log_iw_m1
+
+                log_f_xz_samples = log_f_xz.unsqueeze(-1) + torch.diag_embed(log_f_xz_hat - log_f_xz)
+                baseline = torch.logsumexp(log_f_xz_samples, dim=2) - self.log_iw
+
+
+
+
+        else:  # log \hat{f}(x, h^{-j}) using the geometric mean
 
             if use_outer_samples:
                 log_f_xz_hat = (torch.sum(log_f_xz, dim=(1, 2), keepdim=True) - log_f_xz) / (self.mc * self.iw - 1)
@@ -627,9 +668,12 @@ class Vimco(Reinforce):
             baseline = torch.logsumexp(log_f_xz_samples, dim=2) - self.log_iw
 
         # catchning nans
-        if torch.isnan(baseline).any():
 
-            print(">>> vimco:compute_control_variate: baseline NAN : ", len(baseline[baseline != baseline]))
+        _n_nans = len(baseline[baseline != baseline])
+        if _n_nans > 0:
+
+            print(">>> vimco:compute_control_variate: baseline NAN : ", len(baseline[baseline != baseline]),
+                  "scripts args = ", sys.argv)
 
             if torch.isnan(baseline).all():
                 baseline[baseline != baseline] = 0
@@ -640,9 +684,9 @@ class Vimco(Reinforce):
             baseline = baseline.mean(1, keepdim=True)
 
         if return_raw:
-            return baseline.unsqueeze(-1)
+            return baseline.unsqueeze(-1), _n_nans
         else:
-            return baseline.unsqueeze(-1).type(_dtype)  # output of shape [bs, mc, iw, 1]
+            return baseline.unsqueeze(-1).type(_dtype), _n_nans  # output of shape [bs, mc, iw, 1]
 
 
 class ExactReinforce(Reinforce):

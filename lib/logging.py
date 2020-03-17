@@ -50,12 +50,13 @@ def get_loggers(logdir, keys=['base', 'train', 'valid'], format='%(asctime)s %(n
     return (logging.getLogger(k) for k in keys)
 
 
-def summary2logger(logger, summary, global_step, epoch, best=None, stats_key='loss'):
+def summary2logger(logger, summary, global_step, epoch, best=None, stats_key='loss', exp_id=''):
     """write summary to logging"""
     if not stats_key in summary.keys():
         logger.warning('key ' + str(stats_key) + ' not int output dictionary')
     else:
-        message = f'\t[{global_step} / {epoch}]   '
+        message = exp_id
+        message += f'\t[{global_step} / {epoch}]   '
         message += ''.join([f'{k} {v:6.2f}   ' for k, v in summary.get(stats_key).items()])
         if 'info' in summary.keys() and 'elapsed-time' in summary['info'].keys():
             message += f'({summary["info"]["elapsed-time"]:.2f}s /iter)'
