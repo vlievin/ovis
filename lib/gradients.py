@@ -23,7 +23,7 @@ def get_gradients_log_total_variance(estimator, model, x, batch_size=32, seed=No
     """
 
     log_sum_var_grads = []
-    control_variate_mses = []
+    control_variate_l1s = []
 
     for x_i in x:
         x_i = x_i[None].expand(batch_size, *x_i.size())
@@ -52,8 +52,8 @@ def get_gradients_log_total_variance(estimator, model, x, batch_size=32, seed=No
             total_variance = covariance.trace()
 
             # x_i output
-            mse = diagnostics.get('loss').get('control_variate_mse')
-            control_variate_mses += [ mse.mean().item() if mse is not None else None ]
+            control_variate_l1 = diagnostics.get('loss').get('control_variate_l1')
+            control_variate_l1s += [ control_variate_l1.mean().item() if control_variate_l1 is not None else None ]
             log_sum_var_grads += [total_variance.log().item()]
 
     if seed is not None:
@@ -62,4 +62,4 @@ def get_gradients_log_total_variance(estimator, model, x, batch_size=32, seed=No
     # reinitialize grads
     model.zero_grad()
 
-    return np.mean(log_sum_var_grads), np.mean(control_variate_mses)
+    return np.mean(log_sum_var_grads), np.mean(control_variate_l1s)

@@ -2,6 +2,7 @@ import numpy as np
 from booster import Diagnostic
 from torch import nn, Tensor
 from torch.nn.functional import softmax
+from torch.distributions import Normal
 
 from .baseline import Baseline
 from .model import PseudoCategorical, VAE
@@ -503,8 +504,8 @@ class Reinforce(VariationalInference):
         # `score_from_phi` == True results in using case (b)
         self.score_from_phi = False
 
-        # measure distribution of mse for rejection sampling
-        self.z_score_mse = ZScore()
+        # measure distribution of L1 for rejection sampling
+        self.z_score_l1 = ZScore()
 
 
     def compute_control_variate(self, x: Tensor, **data: Dict[str, Tensor]) -> Tensor:
@@ -518,14 +519,14 @@ class Reinforce(VariationalInference):
         baseline = self.baseline(x)
         return baseline.view((x.size(0), 1, 1, 1))  # output of shape [bs, 1, 1, 1]
 
-    def compute_control_variate_mse(self, score, control_variate, weights=None):
-        """mse between the score function and its estimate"""
+    def compute_control_variate_l1(self, score, control_variate, weights=None):
+        """L1 between the score function and its estimate"""
 
         if weights is None:
             weights = torch.ones_like(score)
 
         diff = (control_variate - score[:, :, :, None].detach())
-        return (weights[...,None] * diff).pow(2).sum(3) # sum over z
+        return (weights[...,None] * diff).abs().sum(3) # sum over z
 
     def compute_reinforce_loss(self, score, control_variate, log_qz, weights=None):
 
@@ -575,21 +576,35 @@ class Reinforce(VariationalInference):
 
         # compute control variate and MSE
         control_variate, _n_nans = self.compute_control_variate(x, mc_estimate=mc_estimate, **iw_data, **output, **kwargs)
-        control_variate_mse = self.compute_control_variate_mse(score, control_variate)
+        control_variate_l1 = self.compute_control_variate_l1(score, control_variate)
 
-        # rejection sampling according to the control variate mse
+        # rejection sampling according to the control variate L1
         if z_reject>0:
-            z_score_mse = self.z_score_mse(control_variate_mse)
-            reject_weights = (z_score_mse < z_reject).float()
+            z_score_l1 = self.z_score_l1(control_variate_l1)
+            reject_weights = (z_score_l1 < z_reject).float()
 
             reject_ratio = (1-reject_weights).sum() / reject_weights.view(-1).shape[0]
 
-            if reject_ratio > 0.5 or (not self.z_score_mse.initialized): # safety
+            if reject_ratio > 0.5 or (not self.z_score_l1.initialized): # safety
                 reject_weights = None
                 reject_ratio = 0
         else:
             reject_weights = None
             reject_ratio = 0.
+
+
+        # log filtered f_m to a file for debugging
+        # if reject_weights is not None:
+        #     with torch.no_grad():
+        #         log_f_xz = iw_data.get('log_f_xz')
+        #         for b, w_b in enumerate(reject_weights):
+        #             for k, w_k in enumerate(w_b):
+        #                 if w_k.sum() / len(w_k.view(-1)) < 1:
+        #                     f_s = log_f_xz[b, k]
+        #                     f_keep = f_s[w_k==1]
+        #                     f_reject = f_s[w_k == 0]
+        #                     p_f_keep = Normal(f_keep.mean(), f_keep.std())
+        #                     print(f">> p(reject | keep) {p_f_keep.log_prob(f_reject).exp().mean().item():.2E}     ,p(keep | keep) {p_f_keep.log_prob(f_keep).exp().mean().item():.2E}")
 
         # concatenate all q(z_l| *, x)
         log_qz = torch.cat(log_qz, 1)
@@ -598,12 +613,12 @@ class Reinforce(VariationalInference):
         reinforce_loss = self.compute_reinforce_loss(score, control_variate, log_qz, weights=reject_weights)
 
         # averaging MSE
-        raw_control_variate_mse = control_variate_mse.mean((1, 2,))
+        control_variate_l1_raw = control_variate_l1.mean((1, 2,))
         if reject_weights is None:
-            control_variate_mse = raw_control_variate_mse
+            control_variate_l1 = control_variate_l1_raw
         else:
-            control_variate_mse = self.compute_control_variate_mse(score, control_variate, weights=reject_weights)
-            control_variate_mse = control_variate_mse.sum(dim=(1, 2,)) /  reject_weights.sum(dim=(1,2,))
+            control_variate_l1 = self.compute_control_variate_l1(score, control_variate, weights=reject_weights)
+            control_variate_l1 = control_variate_l1.sum(dim=(1, 2,)) /  reject_weights.sum(dim=(1,2,))
 
         # MC averaging
         reinforce_loss = reinforce_loss.mean(1)
@@ -616,7 +631,7 @@ class Reinforce(VariationalInference):
             _L_k = L_k = L_k.mean(1)
 
         # final loss
-        loss = - _L_k - reinforce_loss + self.control_variate_loss_weight * control_variate_mse
+        loss = - _L_k - reinforce_loss + self.control_variate_loss_weight * control_variate_l1
 
         # prepare diagnostics
         diagnostics = Diagnostic({
@@ -626,8 +641,8 @@ class Reinforce(VariationalInference):
                      'kl': self._reduce_sample(kl),
                      'N_eff': N_eff,
                      'reinforce_loss': reinforce_loss,
-                     'control_variate_mse': control_variate_mse,
-                     'raw_control_variate_mse': raw_control_variate_mse,
+                     'control_variate_l1': control_variate_l1,
+                     'control_variate_l1_raw': control_variate_l1_raw,
                      'NaNs': _n_nans,
                      'rejected': reject_ratio}
         })
