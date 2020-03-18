@@ -32,7 +32,7 @@ def get_gradients_log_total_variance(estimator, model, x, batch_size=32, seed=No
             _seed = int(torch.randint(1, sys.maxsize, (1,)).item())
             torch.manual_seed(seed)
 
-        model.train()
+        model.eval()
         model.zero_grad()
 
         # forward, backward to compute the gradients

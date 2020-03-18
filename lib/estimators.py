@@ -1,5 +1,3 @@
-import sys
-
 import numpy as np
 from booster import Diagnostic
 from torch import nn, Tensor
@@ -8,6 +6,7 @@ from torch.nn.functional import softmax
 from .baseline import Baseline
 from .model import PseudoCategorical, VAE
 from .utils import *
+import sys
 
 _EPS = 1e-18
 
@@ -27,7 +26,7 @@ class Estimator(nn.Module):
 
     def _expand_sample(self, x):
         bs, *dims = x.size()
-        self.bs = bs  # added for TVO - perhaps a more elegant fix is possible.
+        self.bs = bs # added for TVO - perhaps a more elegant fix is possible.
         x = x[:, None, None].repeat(1, self.mc, self.iw, *(1 for _ in dims))
         # flatten everything into the batch dimension
         return x.view(-1, *dims)
@@ -57,8 +56,7 @@ class ThermoVariationalObjective(Estimator):
     TODO: Continuous models?
     """
 
-    def compute_loss(self, log_px_z: Tensor, log_pzs: List[Tensor], log_qzs: List[Tensor], partition=1,
-                     integration='left') -> Dict[str, Tensor]:
+    def compute_loss(self, log_px_z: Tensor, log_pzs: List[Tensor], log_qzs: List[Tensor], partition = 1, integration = 'left') -> Dict[str, Tensor]:
         """
         TODO: ADD PARTITION ARGUMENT
 
@@ -84,10 +82,10 @@ class ThermoVariationalObjective(Estimator):
 
         # Generalize to accept custom partitions (current partition taken from default TVO settings on github)
         partition = torch.FloatTensor([0.0000e+00, 1.0000e-10, 1.2915e-09, 1.6681e-08, 2.1544e-07, 2.7826e-06,
-                                       3.5938e-05, 4.6416e-04, 5.9948e-03, 7.7426e-02, 1.0000e+00]).cuda()
+        3.5938e-05, 4.6416e-04, 5.9948e-03, 7.7426e-02, 1.0000e+00]).cuda()
 
         num_particles = self.iw
-        bs = self.bs  # temporary
+        bs = self.bs # temporary
 
         # compute the effective sample size
         N_eff = self.effective_sample_size(log_pzs, log_qzs)
@@ -113,7 +111,7 @@ class ThermoVariationalObjective(Estimator):
         log_f_xz = log_px_z - kl
 
         # compute log of weights w_s = p(x,z)/q(z|x) (between eq. 13 and 14)
-        log_weight = log_f_xz.view(bs, num_particles)  # log_p_xz - log_q
+        log_weight = log_f_xz.view(bs, num_particles) # log_p_xz - log_q
         heated_log_weight = log_weight.unsqueeze(-1) * partition
 
         def exponentiate_and_normalize(values, dim=0):
@@ -134,7 +132,7 @@ class ThermoVariationalObjective(Estimator):
         heated_normalized_weight = exponentiate_and_normalize(heated_log_weight, dim=1)
 
         # compute tilde{pi}_beta(z) (eq. 7)
-        log_p = log_px_z.view(-1, 1) + log_pz  # <---- is this correct ?
+        log_p = log_px_z.view(-1,1) + log_pz # <---- is this correct ?
         log_p = log_p.view(bs, num_particles)
         log_qz = log_qz.view(bs, num_particles)
         thermo_logp = partition * log_p.unsqueeze(-1) + (1 - partition) * log_qz.unsqueeze(-1)
@@ -153,12 +151,8 @@ class ThermoVariationalObjective(Estimator):
         # compute covariance (eq. 12)
         # .detach() makes sure PyTorch does not differentiate f_lambda(z) term.
         cov_term = correction * torch.sum(w_detached * (log_weight.unsqueeze(-1) -
-                                                        torch.sum(wf, dim=1, keepdim=True)).detach() * (thermo_logp -
-                                                                                                        torch.sum(
-                                                                                                            thermo_logp * w_detached,
-                                                                                                            dim=1,
-                                                                                                            keepdim=True)),
-                                          dim=1)
+            torch.sum(wf, dim=1, keepdim=True)).detach() * (thermo_logp -
+            torch.sum(thermo_logp * w_detached, dim=1, keepdim=True)), dim=1)
 
         # compute distances of partioning
         multiplier = torch.zeros_like(partition)
@@ -180,8 +174,8 @@ class ThermoVariationalObjective(Estimator):
 
         """ No mean over samples (necessary in this setup) """
         tvo = torch.sum(
-            multiplier * (cov_term + torch.sum(w_detached * log_weight.unsqueeze(-1),
-                                               dim=1)), dim=1)
+        multiplier * (cov_term + torch.sum(w_detached * log_weight.unsqueeze(-1),
+        dim=1)), dim=1)
 
         # multisampling ELBO
         log_evidence = torch.logsumexp(log_weight, dim=1) - np.log(num_particles)
@@ -283,10 +277,10 @@ class ThermoVariationalObjective(Estimator):
         tvo_data = self.compute_loss(log_px_z, log_pz, log_qz)
 
         # loss
-        tvo = tvo_data.get('tvo')  # .mean(1)  # MC averaging (done in loss above - move here?)
+        tvo = tvo_data.get('tvo') # .mean(1)  # MC averaging (done in loss above - move here?)
         loss = - tvo
 
-        elbo = tvo_data.get('elbo')  # .mean(1)  # MC averaging (done in loss above - move here?)
+        elbo = tvo_data.get('elbo') # .mean(1)  # MC averaging (done in loss above - move here?)
 
         # prepare diagnostics
         diagnostics = Diagnostic({
@@ -381,10 +375,10 @@ class VariationalInference(Estimator):
 
         return N_eff
 
-    def evaluate_model(self, model: nn.Module, x: Tensor, x_target: Tensor, **kwargs: Any) -> Dict[str, Tensor]:
+    def evaluate_model(self, model: nn.Module, x: Tensor, x_target:Tensor, **kwargs: Any) -> Dict[str, Tensor]:
         # forward pass
         output = model(x, **kwargs)
-        px, z, qz, pz = [output[k] for k in ['px', 'z', 'qz', 'pz']]
+        px, z, qz, pz= [output[k] for k in ['px', 'z', 'qz', 'pz']]
 
         # compute log p(x|z), log p(z) and log q(z | x)
         log_px_z = batch_reduce(px.log_prob(x_target))
@@ -458,6 +452,28 @@ class VariationalInference(Estimator):
         return loss, diagnostics, output
 
 
+class ZScore(nn.Module):
+    def __init__(self, momentum=0.2, eps=1e-05):
+        super().__init__()
+        self.momentum = momentum
+        self.eps = eps
+        self.initialized = False
+        self.register_buffer("mean", torch.tensor(0.))
+        self.register_buffer("variance", torch.tensor(1.))
+
+    def forward(self, x):
+        z = (x.view(-1) - self.mean) / (self.eps + self.variance.sqrt())
+
+        if self.training:
+            self.initialized = True
+
+            with torch.no_grad():
+                self.mean = (1 - self.momentum) * self.mean + self.momentum * x.mean()
+                self.variance = (1 - self.momentum) * self.variance + self.momentum * x.var()
+
+        return z.view_as(x)
+
+
 class Reinforce(VariationalInference):
     """
     Reinforce with optional baseline:
@@ -487,6 +503,10 @@ class Reinforce(VariationalInference):
         # `score_from_phi` == True results in using case (b)
         self.score_from_phi = False
 
+        # measure distribution of mse for rejection sampling
+        self.z_score_mse = ZScore()
+
+
     def compute_control_variate(self, x: Tensor, **data: Dict[str, Tensor]) -> Tensor:
         """Compute the baseline that will be substracted to the score L_k,
         `data` contains `kwargs` and the outputs of the methods `compute_iw_bound` and `evaluate_model`.
@@ -498,17 +518,28 @@ class Reinforce(VariationalInference):
         baseline = self.baseline(x)
         return baseline.view((x.size(0), 1, 1, 1))  # output of shape [bs, 1, 1, 1]
 
-    def compute_control_variate_mse(self, score, control_variate):
+    def compute_control_variate_mse(self, score, control_variate, weights=None):
         """mse between the score function and its estimate"""
-        return (control_variate - score[:, :, :, None].detach()).pow(2).sum(3).mean(2)  # <-> sum(z).mean(iw)
 
-    def compute_reinforce_loss(self, score, control_variate, log_qz):
+        if weights is None:
+            weights = torch.ones_like(score)
+
+        diff = (control_variate - score[:, :, :, None].detach())
+        return (weights[...,None] * diff).pow(2).sum(3) # sum over z
+
+    def compute_reinforce_loss(self, score, control_variate, log_qz, weights=None):
+
         log_qz = log_qz.view(score.size(0), self.mc, self.iw, -1)
+
+        if weights is None:
+            weights = torch.ones_like(score)
 
         # \nabla loss = [ f(x, z) - b(x) ] \nabla log q_theta(z | x)
         reinforce_loss = (score[:, :, :, None] - control_variate).detach() * log_qz
+
         # sum over iw: log Q(z_{1..K} | x) = \sum_{i=1..K} log q(z_i | x)
-        return reinforce_loss.sum((2, 3))  # sum over z and iw
+        return (weights[...,None] * reinforce_loss).sum((2, 3))  # sum over z and iw
+
 
     def normalized_importance_weights(self, log_f_xz):
         v = softmax(log_f_xz, dim=2)
@@ -530,8 +561,8 @@ class Reinforce(VariationalInference):
 
         return score
 
-    def forward(self, model: nn.Module, x: Tensor, backward: bool = False, mc_estimate: bool = False, **kwargs: Any) -> \
-            Tuple[Tensor, Dict, Dict]:
+    def forward(self, model: nn.Module, x: Tensor, backward: bool = False, mc_estimate: bool = False, z_reject=0, **kwargs: Any) -> \
+    Tuple[Tensor, Dict, Dict]:
 
         x_target = self._expand_sample(x)
         output = self.evaluate_model(model, x, x_target, mc=self.mc, iw=self.iw, **kwargs)
@@ -542,22 +573,50 @@ class Reinforce(VariationalInference):
         # compute score l: dL(z)\dtheta = L dq(z) \ dtheta
         score = self.compute_score(iw_data, mc_estimate=mc_estimate)
 
-        # baseline: b(x) + c
-        control_variate, _n_nans = self.compute_control_variate(x, mc_estimate=mc_estimate, **iw_data, **output,
-                                                                **kwargs)
+        # compute control variate and MSE
+        control_variate, _n_nans = self.compute_control_variate(x, mc_estimate=mc_estimate, **iw_data, **output, **kwargs)
         control_variate_mse = self.compute_control_variate_mse(score, control_variate)
+
+        # rejection sampling according to the control variate mse
+        if z_reject>0:
+            z_score_mse = self.z_score_mse(control_variate_mse)
+            reject_weights = (z_score_mse < z_reject).float()
+
+            reject_ratio = (1-reject_weights).sum() / reject_weights.view(-1).shape[0]
+
+            if reject_ratio > 0.5 or (not self.z_score_mse.initialized): # safety
+                reject_weights = None
+                reject_ratio = 0
+        else:
+            reject_weights = None
+            reject_ratio = 0.
 
         # concatenate all q(z_l| *, x)
         log_qz = torch.cat(log_qz, 1)
 
         # reinforce loss
-        reinforce_loss = self.compute_reinforce_loss(score, control_variate, log_qz)
+        reinforce_loss = self.compute_reinforce_loss(score, control_variate, log_qz, weights=reject_weights)
+
+        # averaging MSE
+        raw_control_variate_mse = control_variate_mse.mean((1, 2,))
+        if reject_weights is None:
+            control_variate_mse = raw_control_variate_mse
+        else:
+            control_variate_mse = self.compute_control_variate_mse(score, control_variate, weights=reject_weights)
+            control_variate_mse = control_variate_mse.sum(dim=(1, 2,)) /  reject_weights.sum(dim=(1,2,))
 
         # MC averaging
-        L_k, reinforce_loss, control_variate_mse = map(lambda x: x.mean(1), (L_k, reinforce_loss, control_variate_mse))
+        reinforce_loss = reinforce_loss.mean(1)
+        if reject_weights is not None:
+            m_weights = reject_weights.sum(2)
+            w = m_weights / reject_weights.shape[2]
+            _L_k = (w * L_k).sum(1) / w.sum(1)
+            L_k = L_k.mean(1)
+        else:
+            _L_k = L_k = L_k.mean(1)
 
         # final loss
-        loss = - L_k - reinforce_loss + self.control_variate_loss_weight * control_variate_mse
+        loss = - _L_k - reinforce_loss + self.control_variate_loss_weight * control_variate_mse
 
         # prepare diagnostics
         diagnostics = Diagnostic({
@@ -568,7 +627,9 @@ class Reinforce(VariationalInference):
                      'N_eff': N_eff,
                      'reinforce_loss': reinforce_loss,
                      'control_variate_mse': control_variate_mse,
-                     'NaNs': _n_nans}
+                     'raw_control_variate_mse': raw_control_variate_mse,
+                     'NaNs': _n_nans,
+                     'rejected': reject_ratio}
         })
 
         if backward:
@@ -589,8 +650,7 @@ class Vimco(Reinforce):
         self.log_iw_m1 = np.log(self.iw - 1)
 
     @torch.no_grad()
-    def compute_control_variate(self, x: Tensor, mc_estimate: bool = True, arithmetic=False, return_raw=False,
-                                use_outer_samples=False, use_double: bool = True, **data: Dict[str, Tensor]) -> Tensor:
+    def compute_control_variate(self, x: Tensor, mc_estimate: bool = True, arithmetic=False, return_raw=False, use_outer_samples=False, use_double:bool=True, **data: Dict[str, Tensor]) -> Tensor:
         """Compute the baseline that will be substracted to the score L_k,
         `data` contains the output of the method `compute_iw_bound`.
         The output shape should be of size 4 and matching the shape [bs, mc, iw, nz]"""
@@ -601,7 +661,7 @@ class Vimco(Reinforce):
         if use_double:
             log_f_xz = log_f_xz.double()
 
-        if arithmetic:  # log \hat{f}(x, h^{-j}) using the arithmetic mean
+        if arithmetic: # log \hat{f}(x, h^{-j}) using the arithmetic mean
 
             # todo: refactor using code style from geometric mean
 
@@ -618,9 +678,9 @@ class Vimco(Reinforce):
 
                 # todo: make it work.
 
-                mask = 1 - torch.eye(self.iw * self.mc, dtype=log_f_xz.dtype, device=log_f_xz.device)[None, :, :]
+                mask = 1 - torch.eye(self.iw*self.mc, dtype=log_f_xz.dtype, device=log_f_xz.device)[None, :, :]
                 _log_f_xz = log_f_xz[:, None, None, :, :].expand(-1, self.mc, self.iw, self.mc, self.iw)
-                _log_f_xz = _log_f_xz.view(log_f_xz.size(0), self.mc * self.iw, self.mc * self.iw)
+                _log_f_xz = _log_f_xz.view(log_f_xz.size(0), self.mc*self.iw, self.mc*self.iw)
 
                 # make sure to replace excluded samples with means so it doens't blow up to NAN with the exp (which gives `0` when multiplied by zero)
                 _min, _ = _log_f_xz.min(dim=2, keepdim=True)
@@ -630,8 +690,7 @@ class Vimco(Reinforce):
                 max, idx = _log_f_xz.max(dim=2, keepdim=True)
 
                 sum_exp = torch.sum(mask * torch.exp(_log_f_xz - max), dim=2)
-                log_f_xz_hat = max.squeeze(2) + torch.log(
-                    sum_exp) - self.log_mc_iw_m1  # adding eps should be necessary since the sum should be at least = exp(0)
+                log_f_xz_hat = max.squeeze(2) + torch.log(sum_exp) - self.log_mc_iw_m1 # adding eps should be necessary since the sum should be at least = exp(0)
                 log_f_xz_hat = log_f_xz_hat.view(log_f_xz.size(0), self.mc, self.iw)
 
                 log_f_xz_samples = log_f_xz.unsqueeze(-1) + torch.diag_embed(log_f_xz_hat - log_f_xz)
@@ -657,7 +716,7 @@ class Vimco(Reinforce):
 
 
 
-        else:  # log \hat{f}(x, h^{-j}) using the geometric mean
+        else: # log \hat{f}(x, h^{-j}) using the geometric mean
 
             if use_outer_samples:
                 log_f_xz_hat = (torch.sum(log_f_xz, dim=(1, 2), keepdim=True) - log_f_xz) / (self.mc * self.iw - 1)
@@ -672,8 +731,8 @@ class Vimco(Reinforce):
         _n_nans = len(baseline[baseline != baseline])
         if _n_nans > 0:
 
-            print(">>> vimco:compute_control_variate: baseline NAN : ", len(baseline[baseline != baseline]),
-                  "scripts args = ", sys.argv)
+            print(">>> vimco:compute_control_variate: baseline NAN : ", len(baseline[baseline != baseline]))
+            # print("scripts args = ", sys.argv)
 
             if torch.isnan(baseline).all():
                 baseline[baseline != baseline] = 0

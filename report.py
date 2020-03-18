@@ -51,7 +51,10 @@ path = os.path.join(opt.root, opt.exp)
 experiments = [e for e in os.listdir(path) if '.' != e[0]]
 
 # prepare output diorectory
-output_path = os.path.join(opt.output, opt.exp)
+_id = opt.exp
+if len(opt.filter):
+    _id += f"-filter{opt.filter}"
+output_path = os.path.join(opt.output, _id)
 if os.path.exists(output_path):
     rmtree(output_path)
 os.makedirs(output_path)
