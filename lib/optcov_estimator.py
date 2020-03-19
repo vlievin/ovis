@@ -27,15 +27,17 @@ class OptCovReinforce(Reinforce):
     def catch_error(self, v_kmn):
 
         # catching numerical errors
-        # todo: there must something wrong here because this works perfectly fine in the REINFORCE part
-        # in some cases the terms v are > 1, which must be due to numerical errors (or am I missing something?)
-        if v_kmn[v_kmn.abs() > 1].sum() > 0:
+
+        # in some cases the terms v were > 1, crash if this happen again
+        if len(v_kmn[v_kmn.abs() > 1 + _EPS]) > 0:
+            raise ValueError("v_kmn > 1")
+
             print(">>> warning: v>1:", v_kmn[v_kmn.abs() > 1])
             # then make sure that \sum_n v_{*,n} = 1
-            v_kmn = v_kmn / v_kmn.sum(-1, keepdims=True)
+            v_kmn = v_kmn / (_EPS + v_kmn.sum(-1, keepdims=True))
 
         # debugging
-        if v_kmn[v_kmn.abs() > 1 + _EPS].sum() > 0:
+        if len(v_kmn[v_kmn.abs() > 1 + _EPS]) > 0:
             print(">>>> error: values of v_kmn are >1: v summary:", v_kmn.max(), v_kmn.min(), v_kmn.mean(),
                   v_kmn.std())
             print(">>>> v[v>1]", v_kmn[v_kmn.abs() > 1])
@@ -125,8 +127,17 @@ class OptCovReinforce(Reinforce):
                 return max.squeeze(3) + torch.log(sum_exp)
 
             def __summarize(x, key):
+                """print the summary of a variable"""
                 print(
                     f">>> {key}: avg = {x.mean().item():.3f}, min = {x.min().item():.3f}, max = {x.max().item():.3f}, std = {x.mean().item():.3f}")
+
+            def __nan_block(x, key):
+                """raise value error if a `NaN` is detected"""
+                n_infs = len(x[x.abs() == float('inf')])
+                if n_infs:
+                    print("# inf values:", n_infs)
+                if len(x[x != x]) > 0:
+                    raise ValueError(f"# NANS found in the computation of {key}, and that shouldn't happen")
 
             # log ratios
             log_w = log_f_xz.view(-1, self.mc, self.iw)
@@ -145,17 +156,23 @@ class OptCovReinforce(Reinforce):
             log_sum_exp_w_nans = len(log_sum_exp_w[log_sum_exp_w != log_sum_exp_w])
             _n_nans += log_sum_exp_w_nans
             if log_sum_exp_w_nans > 0:
+
                 if torch.isnan(log_sum_exp_w).all():
                     log_sum_exp_w[log_sum_exp_w != log_sum_exp_w] = 0
                 else:
                     log_sum_exp_w[log_sum_exp_w != log_sum_exp_w] = log_sum_exp_w[log_sum_exp_w == log_sum_exp_w].mean()
                 print(">>> c*: log sum exp NAN, N =", _n_nans)
 
-            v_mn = (log_w[:, :, :, None] - log_sum_exp_w[:, :, None, :]).exp()
-            # removing diagonal terms
-            # v_kmn = v_kmn * mask
+            log_v_mn = log_w[:, :, :, None] - log_sum_exp_w[:, :, None, :]
 
-            # catching errors that are most likely due to numnerical stability issues
+            # mask `m` samples to avoid getting `inf` and then 'NaN'
+            _min, _ = log_v_mn.min(dim=-1, keepdim=True)
+            _masked_log_vmn = (1 - mask[None, None, :, :]) * _min + mask[None, None, :, :] * log_v_mn
+
+            v_mn = _masked_log_vmn.exp()
+
+            # check if v_m < 1
+            # todo: check if it sums to one
             v_mn = self.catch_error(mask[None, None, :, :] * v_mn)
 
             h_m = h_m.view(bs, self.mc, self.iw, _n, -1)
@@ -185,6 +202,13 @@ class OptCovReinforce(Reinforce):
 
             # f_{k,m'}^{-m}
             f_mn = L_hat - v_mn
+
+            __nan_block(L_hat, "L_hat")
+            __nan_block(v_mn, "v_mn")
+            __nan_block(f_mn, "f_mn")
+
+            if len(alpha_mn[alpha_mn != alpha_mn]) > 0:
+                assert ValueError("# NANS found in the computation of `alpha_mn`, and that shouldn't happen")
 
             # control variate
             c_opt = torch.einsum("mn, bkmnu, bkmn -> bkmu", [mask, alpha_mn, f_mn])

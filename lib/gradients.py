@@ -53,7 +53,7 @@ def get_gradients_log_total_variance(estimator, model, x, batch_size=32, seed=No
 
             # x_i output
             control_variate_l1 = diagnostics.get('loss').get('control_variate_l1')
-            control_variate_l1s += [ control_variate_l1.mean().item() if control_variate_l1 is not None else None ]
+            control_variate_l1s += [ control_variate_l1.mean().item() if control_variate_l1 is not None else 0. ]
             log_sum_var_grads += [total_variance.log().item()]
 
     if seed is not None:

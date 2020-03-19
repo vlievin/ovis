@@ -432,7 +432,7 @@ class VariationalInference(Estimator):
             output = self._sequential_evaluation(model, x, **kwargs)
         else:
             x_target = self._expand_sample(x)
-            output = self.evaluate_model(model, x, x_target, **kwargs)
+            output = self.evaluate_model(model, x, x_target, mc=self.mc, iw=self.iw, **kwargs)
 
         log_px_z, log_pz, log_qz = [output[k] for k in ('log_px_z', 'log_pz', 'log_qz')]
         iw_data = self.compute_iw_bound(log_px_z, log_pz, log_qz)
@@ -457,7 +457,7 @@ class VariationalInference(Estimator):
 
 
 class ZScore(nn.Module):
-    def __init__(self, momentum=0.2, eps=1e-05):
+    def __init__(self, momentum=0.001, eps=1e-05):
         super().__init__()
         self.momentum = momentum
         self.eps = eps
@@ -465,17 +465,28 @@ class ZScore(nn.Module):
         self.register_buffer("mean", torch.tensor(0.))
         self.register_buffer("variance", torch.tensor(1.))
 
+
+    def update_statistics(self, x, momentum):
+        self.mean = (1 - momentum) * self.mean + momentum * x.mean()
+        self.variance = (1 - momentum) * self.variance + momentum * x.var()
+
+    @torch.no_grad()
     def forward(self, x):
-        z = (x.view(-1) - self.mean) / (self.eps + self.variance.sqrt())
+        z = (x - self.mean) / (self.eps + self.variance.sqrt())
 
         if self.training:
-            self.initialized = True
 
-            with torch.no_grad():
-                self.mean = (1 - self.momentum) * self.mean + self.momentum * x.mean()
-                self.variance = (1 - self.momentum) * self.variance + self.momentum * x.var()
+            if self.initialized:
+                self.update_statistics(x, self.momentum)
+            else:
+                self.initialized = True
+                self.update_statistics(x, 1)
 
-        return z.view_as(x)
+        return z
+
+    @torch.no_grad()
+    def get_threshold(self, z_reject):
+        return z_reject * (self.eps + self.variance.sqrt()) + self.mean
 
 
 class Reinforce(VariationalInference):
@@ -587,6 +598,7 @@ class Reinforce(VariationalInference):
             reject_weights = (z_score_l1 < z_reject).float()
 
             reject_ratio = (1 - reject_weights).sum() / reject_weights.view(-1).shape[0]
+            l1_threshold = self.z_score_l1.get_threshold(z_reject)
 
             if reject_ratio > 0.5 or (not self.z_score_l1.initialized):  # safety
                 reject_weights = None
@@ -594,6 +606,7 @@ class Reinforce(VariationalInference):
         else:
             reject_weights = None
             reject_ratio = 0.
+            l1_threshold = 0.
 
         # log filtered f_m to a file for debugging
         # if reject_weights is not None:
@@ -657,6 +670,7 @@ class Reinforce(VariationalInference):
                      'reinforce_loss': reinforce_loss,
                      'control_variate_l1': control_variate_l1,
                      'control_variate_l1_raw': control_variate_l1_raw,
+                     'l1_threshold': l1_threshold,
                      'NaNs': _n_nans,
                      'rejected': reject_ratio}
         })
