@@ -6,6 +6,7 @@ import shutil
 import sys
 import json
 import warnings
+from tqdm import tqdm
 from multiprocessing import Pool
 
 import GPUtil
@@ -104,4 +105,5 @@ if __name__ == '__main__':
     # run processes in parallel
     pool = Pool(processes=processes)
     devices_args = [deviceIDs for _ in args]
-    pool.map(fn, zip(args, devices_args), chunksize=1)
+    for _ in tqdm(pool.imap_unordered(fn, zip(args, devices_args), chunksize=1), total=len(args), desc="Job Manager"):
+        pass

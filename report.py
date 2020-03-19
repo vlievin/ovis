@@ -339,7 +339,9 @@ def plot_logs(logs, _keys, path, style_key=None, ylims=dict()):
                      hue=opt.main_key,
                      hue_order=hue_order,
                      style=style_key,
-                     data=logs[logs['_key'] == k], ax=ax)
+                     data=logs[logs['_key'] == k], ax=ax,
+                     # palette=sns.color_palette("mako_r", 4)
+                     )
 
         ax.set_ylabel(k)
         # y lims

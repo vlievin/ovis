@@ -33,6 +33,7 @@ parser.add_argument('--seed', default=13, type=int, help='random seed')
 parser.add_argument('--rm', action='store_true', help='delete previous run')
 parser.add_argument('--silent', action='store_true', help='silence tqdm')
 parser.add_argument('--deterministic', action='store_true', help='use deterministic backend')
+parser.add_argument('--sequential_computation', action='store_true', help='compute each iw sample sequential during validation')
 
 # epochs, batch size, MC samples, lr
 parser.add_argument('--epochs', default=500, type=int, help='number of epochs')
@@ -45,7 +46,7 @@ parser.add_argument('--lr_reduce_steps', default=4, type=int, help='number of le
 parser.add_argument('--estimator', default='reinforce', help='[vi, reinforce, vimco, gs, st-gs]')
 parser.add_argument('--mc', default=1, type=int, help='number of Monte-Carlo samples')
 parser.add_argument('--iw', default=1, type=int, help='number of Importance-Weighted samples')
-parser.add_argument('--iw_valid', default=100, type=int, help='number of Importance-Weighted samples for validation')
+parser.add_argument('--iw_valid', default=10, type=int, help='number of Importance-Weighted samples for validation')
 
 # gradients analysis
 parser.add_argument('--grad_eval_freq', default=5, type=int, help='frequency for the gradients evaluation')
@@ -142,7 +143,7 @@ try:
 
     # valid estimator (it is important that all models are evaluated using the same evaluator)
     config_valid = {'tau': 0, 'zgrads': False}
-    estimator_valid = VariationalInference(mc=1, iw=opt.iw_valid, sequential_computation=True)
+    estimator_valid = VariationalInference(mc=1, iw=opt.iw_valid, sequential_computation=opt.sequential_computation)
 
     # counterfactual estimators:
     # they are use to measure the variance of the gradients given other estimator without using them for optimization
