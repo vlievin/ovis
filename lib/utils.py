@@ -2,9 +2,11 @@ import operator
 from collections import defaultdict
 from functools import reduce
 from typing import *
-
+import re
 import torch
 
+def parse_numbers(s):
+    return [eval(n) for n in re.findall("\d+", s)]
 
 def notqdm(iterable, *args, **kwargs):
     """

@@ -1,7 +1,6 @@
-import re
-
 from .optcov_estimator import *
 from .structured_estimators import *
+from .utils import parse_numbers
 
 
 def get_config(estimator):
@@ -15,7 +14,8 @@ def get_config(estimator):
         # parse the pattern `estimator-z_reject{`value`}`
         z_reject_args = [arg for arg in estimator.split('-') if 'z_reject' in arg]
 
-        z_reject = float(eval(re.findall("\d+", z_reject_args[0])[0])) if len(z_reject_args) else 0
+        z_reject = parse_numbers(z_reject_args[0])[0] if len(z_reject_args) else 0
+
         reinforce_args = {'tau': 0,
                           'zgrads': False,
                           'mc_estimate': '-mc' in estimator,

@@ -14,6 +14,7 @@ from dotmap import DotMap
 from tqdm import tqdm
 
 from lib.logging import get_loggers
+from lib.utils import parse_numbers
 
 sns.set()
 
@@ -29,10 +30,11 @@ parser.add_argument('--root', default='runs/', help='experiment directory')
 parser.add_argument('--output', default='reports/', help='output directory')
 parser.add_argument('--exp', default='exclude-sample-0.1', type=str, help='experiment id')
 parser.add_argument('--filter', default='', type=str, help='filter run by id')
-parser.add_argument('--parse_estimator_args', default='', type=str, help='parse an estimator id to extract a key. For instance extract the key `outer` from the estimator `vimco-outer`')
 parser.add_argument('--pivot_metrics', default='max:elbo, avg:log_grad_var', type=str,
                     help='comma separated list of metrics to report in the table, the prefix defines the aggregation function (min, avg, max)')
-parser.add_argument('--metrics', default='train:control_variate_mse, train:log_grad_var, valid:elbo, valid:N_eff, valid:nll, valid:kl', type=str,
+parser.add_argument('--metrics',
+                    default='train:control_variate_l1, train:log_grad_var, valid:elbo, valid:N_eff, valid:nll, valid:kl',
+                    type=str,
                     help='comma separated list of keys to read from the tensorboard logs')
 parser.add_argument('--ylims', default='', type=str,
                     help='comma separated list of limit values for the curve plot (syntax: key:min:max), example: `elbo:-60:-5,kl:4:10`')
@@ -40,7 +42,7 @@ parser.add_argument('--main_key', default='estimator', type=str, help='main para
 parser.add_argument('--aux_key', default='iw', type=str, help='auxiliary parameter to include in the report')
 parser.add_argument('--third_key', default='', type=str, help='second auxiliary parameter to include in the report')
 parser.add_argument('--latex', action='store_true', help='print as latex table')
-parser.add_argument('--float_format', default=".3f", help='float format')
+parser.add_argument('--float_format', default=".2f", help='float format')
 parser.add_argument('--nsamples', default=64, type=int, help='number of points in the line plot')
 opt = parser.parse_args()
 
@@ -91,8 +93,7 @@ metrics_agg_fns = [{'min': np.min, 'max': np.max, 'avg': np.mean}[m] for m in me
 metrics = list(metrics)
 
 # filters
-filters = opt.filter.replace(" ","").split(',') if len(opt.filter) else ""
-
+filters = opt.filter.replace(" ", "").split(',') if len(opt.filter) else ""
 
 print("# Metrics:", metrics)
 print("# Agg. Fns:", metrics_agg_fns)
@@ -125,22 +126,32 @@ for e in pbar:
                 with open(os.path.join(exp_path, 'config.json'), 'r') as fp:
                     args = DotMap(json.load(fp))
 
-                # parse estimator args: e.g. `vimco-outer` -> `vimco` + `outer`
-                if len(opt.parse_estimator_args):
-                    for opt_estimator_arg in opt.parse_estimator_args.replace(" ","").split(","):
-                        if opt_estimator_arg == 'geometric': # special case
-                            if "-geometric" in args.estimator:
-                                args.estimator = args.estimator.replace(f"-geometric", "")
-                                args["w_hat"] = "geometric"
-                            elif "-arithmetic" in args.estimator:
-                                args.estimator = args.estimator.replace(f"-arithmetic", "")
-                                args["w_hat"] = "arithmetic"
-                            else:
-                                raise ValueError(f"-geometric or -arithmetic must be in {args.estimator}")
+                # parse estimator args: e.g.
+                # * `vimco-outer` -> estimator=vimco, outer=True
+                # * `vimco-z_reject6` -> estimator=vimco, z_reject=6
+                if "-" in args.estimator:
+
+                    estimator_args = args.estimator.split("-")
+
+                    # estimator is the first arg
+                    args['estimator'] = estimator_args[0]
+
+                    # for each estimator arg
+                    for arg in estimator_args[1:]:
+                        if arg == "geometric":
+                            args.estimator = args.estimator.replace(f"-geometric", "")
+                            args["w_hat"] = "geometric"
+                        elif arg == "arithmetic":
+                            args.estimator = args.estimator.replace(f"-arithmetic", "")
+                            args["w_hat"] = "arithmetic"
                         else:
-                            has_arg = f"-{opt_estimator_arg}" in args.estimator
-                            args.estimator = args.estimator.replace(f"-{opt_estimator_arg}", "")
-                            args[opt_estimator_arg] = has_arg
+                            numbers = parse_numbers(arg)
+                            if len(numbers):
+                                value = numbers[0]
+                                arg = arg.replace(str(value), "")
+                                args[arg] = value
+                            else:
+                                args[arg] = True
 
                 # read tensorboard logs
                 for header in _headers:
@@ -177,6 +188,12 @@ if len(data) == 0:
 
 # compile data into a dataframe
 df = pd.DataFrame(data)
+
+# replace void estimator arguments with False (important since nans are dropped afterwards)
+# for instance, for thwo different estimator names
+# *  "vimco-zreject6" is parsed into estimator = vimco, zreject=6
+# *  "vimco" is parsed into estimator = vimco, zreject=None
+df = df.fillna(0)  # todo: fill with zero when numbers else False
 
 # drop columns that contain the same attributes (they will be dropped from `df`)
 nunique = df.apply(pd.Series.nunique)
