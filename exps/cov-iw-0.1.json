@@ -6,10 +6,10 @@
     "--estimator covbaseline-geometric",
     "--estimator vimco-geometric"
   ],
-  "global": "--silent --deterministic --epochs 1000 --lr_reduce_steps 3 --bs 32",
+  "global": "--silent --deterministic --epochs 1000 --lr_reduce_steps 3 --bs 32 --iw_valid 10",
   "parameters": {
     "iw": [2, 3, 5, 10, 20],
-    "seed": [13, 64, 47, 23, 78]
+    "seed": [13, 64, 47, 23, 78, 202, 674, 8890, 267, 562]
   }
 
 }

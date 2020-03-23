@@ -5,6 +5,12 @@ from typing import *
 import re
 import torch
 
+
+def print_summary(x, key):
+    """print the summary of a variable"""
+    print(
+        f">>> {key}: avg = {x.mean().item():.3f}, min = {x.min().item():.3f}, max = {x.max().item():.3f}, std = {x.mean().item():.3f}")
+
 def parse_numbers(s):
     return [eval(n) for n in re.findall("\d+", s)]
 

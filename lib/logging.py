@@ -66,6 +66,11 @@ def summary2logger(logger, summary, global_step, epoch, best=None, stats_key='lo
 
 
 def log_summary(summary, global_step, epoch, logger=None, writer=None, **kwargs):
+
+    # add `epoch` to `info/epoch`
+    summary['info']['epoch'] = epoch
+
+    # log to both logging and tensorboard
     if logger is not None:
         summary2logger(logger, summary, global_step, epoch, **kwargs)
     if writer is not None:

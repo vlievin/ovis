@@ -1,12 +1,13 @@
 {
   "description": "Comparing CovBaseline vs. Vimco using a basic MLP VAE on 3 binary images datasets.",
   "args": [
-    "--estimator vimco-geometric",
-    "--estimator covbaseline-geometric"
+    "--estimator vimco-arithmetic",
+    "--estimator covbaseline-arithmetic"
   ],
-  "global": "--silent --deterministic --epochs 500 --lr_reduce_steps 3 --model vae --bs 64 --hdim 256 --iw_valid 10 --iw 4 --mc 1 --N 16",
+  "global": "--silent --deterministic --epochs 500 --lr_reduce_steps 3 --model vae --bs 32 --hdim 256 --iw_valid 4 --N 16",
   "parameters": {
+    "iw" : [3, 5, 10, 20, 50],
     "dataset" : ["binmnist", "omniglot", "fashion"],
-    "seed":[13, 64, 47]
+    "seed":[13, 64, 47, 45, 32, 73, 279, 434, 789, 97]
   }
 }

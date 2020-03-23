@@ -2,11 +2,11 @@ import sys
 import numpy as np
 import torch
 from collections import defaultdict
-from .utils import flatten
+from .utils import flatten, print_summary
 
 eps = 1e-20
 
-def cov(m, y=None):
+def covariance(m, y=None):
     if y is not None:
         m = torch.cat((m, y), dim=0)
     m_exp = torch.mean(m, dim=1)
@@ -17,7 +17,7 @@ def cov(m, y=None):
 
 def get_gradients_log_total_variance(estimator, model, x, batch_size=32, seed=None, **config):
     """
-    Comput the average log of the total variance
+    Compute the average log of the total variance
 
     y = E_x[ trace( E_q(z|x) [ cov(grads(L(x, z)) ] ) ]
     """
@@ -42,24 +42,26 @@ def get_gradients_log_total_variance(estimator, model, x, batch_size=32, seed=No
         # get the logits of the variational distributions
         q_logits = [ p for i, p in enumerate(output['qlogits'])]
 
-        # get thw gradients, flatten and concat them
+        # get the gradients, flatten and concat them
         bs = x_i.size(0)
         gradients = torch.cat([p.grad.view(bs, -1) for p in q_logits], 1)
 
         with torch.no_grad():
             # compute the covariance of the gradients and the total variance
-            covariance = cov(gradients)
-            total_variance = covariance.trace()
+            gradients_covariance = covariance(gradients)
+            total_variance = gradients_covariance.trace()
 
             # x_i output
             control_variate_l1 = diagnostics.get('loss').get('control_variate_l1')
             control_variate_l1s += [ control_variate_l1.mean().item() if control_variate_l1 is not None else 0. ]
-            log_sum_var_grads += [total_variance.log().item()]
+            log_sum_var_grads += [(eps + total_variance).log().item()]
 
     if seed is not None:
         torch.manual_seed(_seed)
 
     # reinitialize grads
     model.zero_grad()
+
+    # print_summary(torch.tensor(log_sum_var_grads), "log_sum_var_grads")
 
     return np.mean(log_sum_var_grads), np.mean(control_variate_l1s)

@@ -6,6 +6,7 @@ from shutil import rmtree
 
 import numpy as np
 import torch
+from torch.optim import Adam, Adamax, SGD
 from booster import Aggregator, Diagnostic
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
@@ -18,6 +19,7 @@ from lib.config import get_config
 from lib.gradients import get_gradients_log_total_variance
 from lib.logging import sample_model, get_loggers, log_summary, save_model
 from lib.utils import notqdm
+from lib.ops import training_step, test_step
 
 _sep = os.get_terminal_size().columns * "-"
 
@@ -25,6 +27,7 @@ parser = argparse.ArgumentParser()
 
 # run directory, id and seed
 parser.add_argument('--dataset', default='shapes', help='dataset [shapes | binmnist | omniglot | fashion]')
+parser.add_argument('--mini', action='store_true', help='use a sub-sampled version of the dataset')
 parser.add_argument('--root', default='runs/', help='directory to store training logs')
 parser.add_argument('--data_root', default='data/', help='directory to store the data')
 parser.add_argument('--exp', default='sandbox', help='experiment directory')
@@ -37,6 +40,7 @@ parser.add_argument('--sequential_computation', action='store_true', help='compu
 
 # epochs, batch size, MC samples, lr
 parser.add_argument('--epochs', default=500, type=int, help='number of epochs')
+parser.add_argument('--optimizer', default='adamax', help='[sgd | adam | adamax]')
 parser.add_argument('--lr', default=1e-3, type=float, help='learning rate')
 parser.add_argument('--baseline_lr', default=5e-3, type=float, help='learning rate for the weight of the baseline')
 parser.add_argument('--bs', default=64, type=int, help='batch size')
@@ -81,7 +85,9 @@ if opt.silent:
 # defining the run identifier
 counterfactual_estimators = opt.counterfactuals.replace(" ", "").split(",") if len(opt.counterfactuals) else []
 use_baseline = any(['-baseline' in e for e in [opt.estimator] + counterfactual_estimators])
-run_id = f"{opt.dataset}-{opt.model}-{opt.prior}-{opt.estimator}-seed{opt.seed}"
+run_id = f"{opt.dataset}-{opt.optimizer}-{opt.model}-{opt.prior}-{opt.estimator}-seed{opt.seed}"
+if opt.mini:
+    run_id = "mini-" + run_id
 if len(opt.id) > 0:
     run_id += f"-{opt.id}"
 run_id += f"-lr{opt.lr:.1E}-bs{opt.bs}-mc{opt.mc}-iw{opt.iw}+{opt.iw_valid}"
@@ -161,7 +167,8 @@ try:
 
     # optimizers
     optimizers = []
-    optimizers += [torch.optim.Adam(model.parameters(), lr=opt.lr)]
+    _OPT = {'sgd': SGD, 'adam': Adam, 'adamax': Adamax}[opt.optimizer]
+    optimizers += [_OPT(model.parameters(), lr=opt.lr)]
     if len(list(estimator.parameters())):
         optimizers += [torch.optim.Adam(estimator.parameters(), lr=opt.baseline_lr)]
 
@@ -199,9 +206,7 @@ try:
         agg_train.initialize()
         for x in tqdm(loader_train, desc=_exp_id):
             x = x.to(device)
-            loss, diagnostics, output = estimator(model, x, backward=True, **config)
-            [o.step() for o in optimizers]
-            [o.zero_grad() for o in optimizers]
+            diagnostics = training_step(x, model, estimator, optimizers, **config)
             agg_train.update(diagnostics)
             global_step += 1
         summary_train = agg_train.data.to('cpu')
@@ -223,9 +228,9 @@ try:
         with torch.no_grad():
             model.eval()
             agg_valid.initialize()
-            for x in tqdm(loader_train, desc=_exp_id):
+            for x in tqdm(loader_valid, desc=_exp_id):
                 x = x.to(device)
-                _, diagnostics, _ = estimator_valid(model, x, backward=False, **config_valid)
+                diagnostics = test_step(x, model, estimator_valid, **config)
                 agg_valid.update(diagnostics)
             summary_valid = agg_valid.data.to('cpu')
 

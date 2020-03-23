@@ -11,7 +11,7 @@
     "--estimator covbaseline-arithmetic-outer",
     "--estimator covbaseline-geometric-outer"
   ],
-  "global": "--silent --deterministic --epochs 1000 --lr_reduce_steps 2 --bs 32 --iw 4 --mc 4",
+  "global": "--silent --deterministic --epochs 1000 --lr_reduce_steps 2 --bs 32 --iw 4 --mc 4 --iw_valid 16",
   "parameters": {
     "seed":[13, 64, 47, 23, 78, 202, 674, 8890, 267, 562]
   }

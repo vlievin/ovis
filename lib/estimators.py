@@ -521,16 +521,18 @@ class Reinforce(VariationalInference):
         # measure distribution of L1 for rejection sampling
         self.z_score_l1 = ZScore()
 
-    def compute_control_variate(self, x: Tensor, **data: Dict[str, Tensor]) -> Tensor:
+    def compute_control_variate(self, x: Tensor, **data: Dict[str, Tensor]) -> Tuple[Tensor, int]:
         """Compute the baseline that will be substracted to the score L_k,
         `data` contains `kwargs` and the outputs of the methods `compute_iw_bound` and `evaluate_model`.
         The output shape should be of size 4 and matching the shape [bs, mc, iw, nz]"""
 
         if self.baseline is None:
-            return torch.zeros((x.size(0), 1, 1, 1), device=x.device, dtype=x.dtype)
+            return torch.zeros((x.size(0), 1, 1, 1), device=x.device, dtype=x.dtype), 0
 
         baseline = self.baseline(x)
-        return baseline.view((x.size(0), 1, 1, 1))  # output of shape [bs, 1, 1, 1]
+        n_nans = len(baseline[baseline!=baseline])
+
+        return baseline.view((x.size(0), 1, 1, 1)), n_nans  # output of shape [bs, 1, 1, 1], Number of NaNs
 
     def compute_control_variate_l1(self, score, control_variate, weights=None):
         """L1 between the score function and its estimate"""

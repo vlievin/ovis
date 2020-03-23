@@ -33,7 +33,7 @@ parser.add_argument('--filter', default='', type=str, help='filter run by id')
 parser.add_argument('--pivot_metrics', default='max:elbo, avg:log_grad_var', type=str,
                     help='comma separated list of metrics to report in the table, the prefix defines the aggregation function (min, avg, max)')
 parser.add_argument('--metrics',
-                    default='train:control_variate_l1, train:log_grad_var, valid:elbo, valid:N_eff, valid:nll, valid:kl',
+                    default='train:control_variate_l1, train:log_grad_var, train:elbo, train:N_eff, train:nll, train:kl',
                     type=str,
                     help='comma separated list of keys to read from the tensorboard logs')
 parser.add_argument('--ylims', default='', type=str,
@@ -41,6 +41,7 @@ parser.add_argument('--ylims', default='', type=str,
 parser.add_argument('--main_key', default='estimator', type=str, help='main parameter to include in the report')
 parser.add_argument('--aux_key', default='iw', type=str, help='auxiliary parameter to include in the report')
 parser.add_argument('--third_key', default='', type=str, help='second auxiliary parameter to include in the report')
+parser.add_argument('--parse_estimator_args', action='store_true', help='parse estimator arguments such that `vimco-outer` -> `vimco` + outer=True')
 parser.add_argument('--latex', action='store_true', help='print as latex table')
 parser.add_argument('--float_format', default=".2f", help='float format')
 parser.add_argument('--nsamples', default=64, type=int, help='number of points in the line plot')
@@ -129,7 +130,7 @@ for e in pbar:
                 # parse estimator args: e.g.
                 # * `vimco-outer` -> estimator=vimco, outer=True
                 # * `vimco-z_reject6` -> estimator=vimco, z_reject=6
-                if "-" in args.estimator:
+                if opt.parse_estimator_args and "-" in args.estimator:
 
                     estimator_args = args.estimator.split("-")
 
