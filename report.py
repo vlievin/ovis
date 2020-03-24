@@ -374,11 +374,14 @@ if len(opt.ylims):
     ylims = {u[0]: [eval(u[1]), eval(u[2])] for u in ylims}
 else:
     ylims = {}
+
+# plot all data
 logger.info("Generating merged plots ...")
 plot_logs(logs, _metrics, os.path.join(output_path, f"curves.png"), ylims=ylims,
           style_key=opt.aux_key if len(opt.aux_key) else None)
+
+# on plot for each key
 if len(opt.aux_key):
-    # on plot for each key
     values = list(logs[opt.aux_key].unique())
     for i, v in enumerate(sorted(values)):
         f"Generating plots for {opt.aux_key} = {v} [{i + 1} / {values}]"

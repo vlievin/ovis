@@ -50,7 +50,7 @@ class StructuredReinforce(Reinforce):
 
             # baseline: b(x) + c
             control_variate = self.compute_control_variate(x, **iw_data)
-            control_variate_mse = self.compute_control_variate_mse(L_k, control_variate)
+            control_variate_mse = self.compute_control_variate_l1(L_k, control_variate)
 
             # concatenate all q(z_l| *, x)
             log_qz = torch.cat(log_qz, 1)
