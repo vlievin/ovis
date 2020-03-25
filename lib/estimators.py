@@ -292,7 +292,7 @@ class ThermoVariationalObjective(Estimator):
                      'elbo': elbo,
                      'nll': - self._reduce_sample(log_px_z),
                      'kl': self._reduce_sample(tvo_data.get('kl')),
-                     'N_eff': tvo_data.get('N_eff')},
+                     'r_eff': tvo_data.get('N_eff') / self.iw},
         })
 
         if backward:
@@ -447,7 +447,7 @@ class VariationalInference(Estimator):
                      'elbo': L_k,
                      'nll': - self._reduce_sample(log_px_z),
                      'kl': self._reduce_sample(iw_data.get('kl')),
-                     'N_eff': iw_data.get('N_eff')},
+                     'r_eff': iw_data.get('N_eff') / self.iw},
         })
 
         if backward:
@@ -464,7 +464,6 @@ class ZScore(nn.Module):
         self.initialized = False
         self.register_buffer("mean", torch.tensor(0.))
         self.register_buffer("variance", torch.tensor(1.))
-
 
     def update_statistics(self, x, momentum):
         self.mean = (1 - momentum) * self.mean + momentum * x.mean()
@@ -530,7 +529,7 @@ class Reinforce(VariationalInference):
             return torch.zeros((x.size(0), 1, 1, 1), device=x.device, dtype=x.dtype), 0
 
         baseline = self.baseline(x)
-        n_nans = len(baseline[baseline!=baseline])
+        n_nans = len(baseline[baseline != baseline])
 
         return baseline.view((x.size(0), 1, 1, 1)), n_nans  # output of shape [bs, 1, 1, 1], Number of NaNs
 
@@ -541,7 +540,7 @@ class Reinforce(VariationalInference):
             weights = torch.ones_like(score)
 
         diff = (control_variate - score[:, :, :, None].detach())
-        return (weights[..., None] * diff).abs().sum(3)  # sum over z
+        return (weights[..., None] * diff).abs().mean(3)
 
     def compute_reinforce_loss(self, score, control_variate, log_qz, weights=None):
 
@@ -668,13 +667,15 @@ class Reinforce(VariationalInference):
                      'elbo': L_k,
                      'nll': - self._reduce_sample(log_px_z),
                      'kl': self._reduce_sample(kl),
-                     'N_eff': N_eff,
-                     'reinforce_loss': reinforce_loss,
-                     'control_variate_l1': control_variate_l1,
-                     'control_variate_l1_raw': control_variate_l1_raw,
-                     'l1_threshold': l1_threshold,
-                     'NaNs': _n_nans,
-                     'rejected': reject_ratio}
+                     'r_eff': N_eff / self.iw},
+            'reinforce': {
+                'reinforce_loss': reinforce_loss,
+                'control_variate_l1': control_variate_l1,
+                'control_variate_l1_raw': control_variate_l1_raw,
+                'l1_threshold': l1_threshold,
+                'NaNs': _n_nans,
+                'rejected': reject_ratio
+            }
         })
 
         if backward:
