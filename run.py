@@ -1,13 +1,13 @@
 import argparse
-import os
 import json
+import os
 import traceback
 from shutil import rmtree
 
 import numpy as np
 import torch
-from torch.optim import Adam, Adamax, SGD
 from booster import Aggregator, Diagnostic
+from torch.optim import Adam, Adamax, SGD
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
@@ -18,8 +18,8 @@ from lib import get_datasets
 from lib.config import get_config
 from lib.gradients import get_gradients_log_total_variance
 from lib.logging import sample_model, get_loggers, log_summary, save_model
-from lib.utils import notqdm
 from lib.ops import training_step, test_step
+from lib.utils import notqdm
 
 _sep = os.get_terminal_size().columns * "-"
 
@@ -36,11 +36,12 @@ parser.add_argument('--seed', default=13, type=int, help='random seed')
 parser.add_argument('--rm', action='store_true', help='delete previous run')
 parser.add_argument('--silent', action='store_true', help='silence tqdm')
 parser.add_argument('--deterministic', action='store_true', help='use deterministic backend')
-parser.add_argument('--sequential_computation', action='store_true', help='compute each iw sample sequential during validation')
+parser.add_argument('--sequential_computation', action='store_true',
+                    help='compute each iw sample sequential during validation')
 
 # epochs, batch size, MC samples, lr
 parser.add_argument('--epochs', default=500, type=int, help='number of epochs')
-parser.add_argument('--optimizer', default='adamax', help='[sgd | adam | adamax]')
+parser.add_argument('--optimizer', default='adam', help='[sgd | adam | adamax]')
 parser.add_argument('--lr', default=1e-3, type=float, help='learning rate')
 parser.add_argument('--baseline_lr', default=5e-3, type=float, help='learning rate for the weight of the baseline')
 parser.add_argument('--bs', default=64, type=int, help='batch size')
@@ -54,7 +55,8 @@ parser.add_argument('--iw_valid', default=10, type=int, help='number of Importan
 
 # gradients analysis
 parser.add_argument('--grad_eval_freq', default=5, type=int, help='frequency for the gradients evaluation')
-parser.add_argument('--grad_samples', default=16, type=int, help='number of samples used to evaluate the variance. (at maximum it is size `bs` to avoid using too much memory)')
+parser.add_argument('--grad_samples', default=10, type=int,
+                    help='number of samples used to evaluate the variance. (at maximum it is size `bs` to avoid using too much memory)')
 parser.add_argument('--counterfactuals', default='',
                     help='comma separated list of estimators for which the gradients will be evaluated without being used for optimization.'
                          'example: `reinforce, covbaseline-arithmetic`')
@@ -99,6 +101,7 @@ if opt.learn_prior:
 run_id += f"-arch{opt.hdim}x{opt.nlayers}"
 if opt.norm is not 'none':
     run_id += f"-{opt.norm}"
+
 _exp_id = opt.exp
 
 # defining the run directory
@@ -138,7 +141,8 @@ try:
     # define model
     torch.manual_seed(opt.seed)
     _MODEL = {'vae': VAE, 'conv-vae': ConvVAE}[opt.model]
-    model = _MODEL(x.shape, opt.N, opt.K, opt.hdim, kdim=opt.kdim, nlayers=opt.nlayers, learn_prior=opt.learn_prior, prior=opt.prior, normalization=opt.norm)
+    model = _MODEL(x.shape, opt.N, opt.K, opt.hdim, kdim=opt.kdim, nlayers=opt.nlayers, learn_prior=opt.learn_prior,
+                   prior=opt.prior, normalization=opt.norm)
 
     # define baseline
     baseline = Baseline(x.shape, opt.b_nlayers, opt.hdim) if use_baseline else None
@@ -153,9 +157,10 @@ try:
 
     # counterfactual estimators:
     # they are use to measure the variance of the gradients given other estimator without using them for optimization
-    if len(counterfactual_estimators) :
+    if len(counterfactual_estimators):
         c_Estimators, c_configs = zip(*[get_config(c) for c in counterfactual_estimators])
-        c_estimators = [Est(baseline=baseline, mc=opt.mc, iw=opt.iw, N=opt.N, K=opt.K, hdim=opt.hdim) for Est in c_Estimators]
+        c_estimators = [Est(baseline=baseline, mc=opt.mc, iw=opt.iw, N=opt.N, K=opt.K, hdim=opt.hdim) for Est in
+                        c_Estimators]
     else:
         c_configs = c_estimators = []
 
@@ -213,16 +218,19 @@ try:
 
         if epoch % opt.grad_eval_freq == 0:
             # estimate the variance of the gradients (for `opt.grad_samples` data points)
-            grad_args = {'seed':opt.seed, 'batch_size': opt.bs}
+            grad_args = {'seed': opt.seed, 'batch_size': opt.grad_samples}
             # current model
-            summary_train["loss"]["log_grad_var"], *_ = get_gradients_log_total_variance(estimator, model, x_grads_eval, **grad_args, **config)
+            summary_train["grads"] = get_gradients_log_total_variance(estimator, model, x_grads_eval, **grad_args,
+                                                                      **config)
+
             # counter factual estimation of other estimators
-            for (c_writer, c_conf, c_est, c) in zip(counterfactual_writers, c_configs, c_estimators, counterfactual_estimators):
-                log_grad_var, control_variate_mse = get_gradients_log_total_variance(c_est, model, x_grads_eval, **grad_args, **c_conf)
-                summary = Diagnostic({'loss': {'log_grad_var': log_grad_var, 'control_variate_mse': control_variate_mse}})
+            for (c_writer, c_conf, c_est, c) in zip(counterfactual_writers, c_configs, c_estimators,
+                                                    counterfactual_estimators):
+                grad_data = get_gradients_log_total_variance(c_est, model, x_grads_eval, **grad_args, **c_conf)
+                summary = Diagnostic({'grads': grad_data})
                 summary.log(c_writer, global_step)
                 train_logger.info(f" | counterfactual | {c:{max(map(len, counterfactual_estimators))}s} "
-                                  f"| log_grad_var = {log_grad_var:.3f}, mse = {summary['loss']['control_variate_mse']:.3f}")
+                                  f"| log_snr = {grad_data.get('log_snr', 0.):.3f}, log_variance = {grad_data.get('log_variance', 0.):.3f}")
 
         # valid epoch
         with torch.no_grad():
@@ -239,7 +247,8 @@ try:
 
         # log to console and tensorboard
         log_summary(summary_train, global_step, epoch, logger=train_logger, writer=writer_train, exp_id=_exp_id)
-        log_summary(summary_valid, global_step, epoch, logger=valid_logger, best=best_elbo, writer=writer_valid, exp_id=_exp_id)
+        log_summary(summary_valid, global_step, epoch, logger=valid_logger, best=best_elbo, writer=writer_valid,
+                    exp_id=_exp_id)
 
         # reduce learning rate
         lr_freq = (opt.epochs // (opt.lr_reduce_steps + 1))
@@ -250,7 +259,6 @@ try:
                     new_lr = lr / 2
                     param_group['lr'] = new_lr
                     base_logger.info(f"Reducing lr, group = {i} : {lr:.2E} -> {new_lr:.2E}")
-
 
     # write outcome to a file (success, interrupted, error)
     print("## SUCCESS")
