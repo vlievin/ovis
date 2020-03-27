@@ -40,11 +40,12 @@ parser.add_argument('--sequential_computation', action='store_true',
                     help='compute each iw sample sequential during validation')
 
 # epochs, batch size, MC samples, lr
-parser.add_argument('--epochs', default=500, type=int, help='number of epochs')
+parser.add_argument('--epochs', default=-1, type=int, help='number of epochs (use n_steps if `epochs` < 0)')
+parser.add_argument('--nsteps', default=600000, type=int, help='number of iterations')
 parser.add_argument('--optimizer', default='adam', help='[sgd | adam | adamax]')
 parser.add_argument('--lr', default=1e-3, type=float, help='learning rate')
 parser.add_argument('--baseline_lr', default=5e-3, type=float, help='learning rate for the weight of the baseline')
-parser.add_argument('--bs', default=64, type=int, help='batch size')
+parser.add_argument('--bs', default=32, type=int, help='batch size')
 parser.add_argument('--lr_reduce_steps', default=4, type=int, help='number of learning rate reduce steps')
 
 # estimator
@@ -54,8 +55,8 @@ parser.add_argument('--iw', default=1, type=int, help='number of Importance-Weig
 parser.add_argument('--iw_valid', default=10, type=int, help='number of Importance-Weighted samples for validation')
 
 # gradients analysis
-parser.add_argument('--grad_eval_freq', default=5, type=int, help='frequency for the gradients evaluation')
-parser.add_argument('--grad_samples', default=10, type=int,
+parser.add_argument('--grad_eval_freq', default=10, type=int, help='frequency for the gradients evaluation')
+parser.add_argument('--grad_samples', default=16, type=int,
                     help='number of samples used to evaluate the variance. (at maximum it is size `bs` to avoid using too much memory)')
 parser.add_argument('--counterfactuals', default='',
                     help='comma separated list of estimators for which the gradients will be evaluated without being used for optimization.'
@@ -197,10 +198,19 @@ try:
     # batch of data for the gradients variance evaluation (at maximum of size bs)
     x_grads_eval = next(iter(loader_train)).to(device)[:opt.grad_samples]
 
+
+    # run lenght
+    epochs = opt.epochs
+    if epochs < 0:
+        iter_per_epoch = len(loader_train.dataset) // opt.bs
+        print("# iter_per_epoch:", iter_per_epoch)
+        epochs = 1 + opt.nsteps // iter_per_epoch
+    print("# epochs:", epochs)
+
     # run
     best_elbo = (-1e20, 0, 0)
     global_step = 0
-    for epoch in range(1, opt.epochs + 1):
+    for epoch in range(1, epochs + 1):
 
         # sample model
         sample_model("prior-sample", model, logdir, global_step=global_step, writer=writer_valid, seed=opt.seed)
