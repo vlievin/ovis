@@ -663,15 +663,17 @@ class Reinforce(VariationalInference):
 
         # prepare diagnostics
         diagnostics = Diagnostic({
-            'loss': {'loss': loss,
-                     'elbo': L_k,
-                     'nll': - self._reduce_sample(log_px_z),
-                     'kl': self._reduce_sample(kl),
-                     'r_eff': N_eff / self.iw},
+            'loss': {
+                'loss': loss,
+                'elbo': L_k,
+                'nll': - self._reduce_sample(log_px_z),
+                'kl': self._reduce_sample(kl),
+                'r_eff': N_eff / self.iw
+            },
             'reinforce': {
-                'reinforce_loss': reinforce_loss,
-                'control_variate_l1': control_variate_l1,
-                'control_variate_l1_raw': control_variate_l1_raw,
+                'loss': reinforce_loss,
+                'l1': control_variate_l1,
+                'l1_raw': control_variate_l1_raw,
                 'l1_threshold': l1_threshold,
                 'NaNs': _n_nans,
                 'rejected': reject_ratio

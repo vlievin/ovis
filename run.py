@@ -16,7 +16,7 @@ from lib import VAE, Baseline, ConvVAE
 from lib import VariationalInference
 from lib import get_datasets
 from lib.config import get_config
-from lib.gradients import get_gradients_log_total_variance
+from lib.gradients import get_gradients_statistics
 from lib.logging import sample_model, get_loggers, log_summary, save_model
 from lib.ops import training_step, test_step
 from lib.utils import notqdm
@@ -220,13 +220,13 @@ try:
             # estimate the variance of the gradients (for `opt.grad_samples` data points)
             grad_args = {'seed': opt.seed, 'batch_size': opt.grad_samples}
             # current model
-            summary_train["grads"] = get_gradients_log_total_variance(estimator, model, x_grads_eval, **grad_args,
-                                                                      **config)
+            summary_train["grads"] = get_gradients_statistics(estimator, model, x_grads_eval, **grad_args,
+                                                              **config)
 
             # counter factual estimation of other estimators
             for (c_writer, c_conf, c_est, c) in zip(counterfactual_writers, c_configs, c_estimators,
                                                     counterfactual_estimators):
-                grad_data = get_gradients_log_total_variance(c_est, model, x_grads_eval, **grad_args, **c_conf)
+                grad_data = get_gradients_statistics(c_est, model, x_grads_eval, **grad_args, **c_conf)
                 summary = Diagnostic({'grads': grad_data})
                 summary.log(c_writer, global_step)
                 train_logger.info(f" | counterfactual | {c:{max(map(len, counterfactual_estimators))}s} "
