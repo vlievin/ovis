@@ -16,13 +16,13 @@ class MLP(nn.Module):
         Norm = {'batchnorm': nn.BatchNorm1d, 'layernorm': nn.LayerNorm, 'none': None, None: None}[normalization]
         layers = []
         if act_in:
-            layers += [Norm(ninp), nn.ELU()]
+            layers += [Norm(ninp), nn.ReLU()]
         h = ninp
         for i in range(nlayers):
             layers += [nn.Linear(h, nhid, bias=bias)]
             if Norm is not None:
                 layers += [Norm(nhid)]
-            layers += [nn.ELU()]
+            layers += [nn.ReLU()]
             h = nhid
         layers += [Flatten(), nn.Linear(h, nout, bias=bias)]
 
@@ -40,7 +40,7 @@ class ConvEncoder(nn.Module):
         layers = []
 
         if act_in:
-            layers += [Norm(shp[0]), nn.ELU()]
+            layers += [Norm(shp[0]), nn.ReLU()]
 
         for i in range(nlayers-1):
             layers += [nn.Conv2d(shp[0], nhid, kernel_size=kernel_size, bias=bias, padding=(kernel_size - 1) // 2, stride=2)]
@@ -48,7 +48,7 @@ class ConvEncoder(nn.Module):
 
             if Norm is not None:
                 layers += [Norm(nhid)]
-            layers += [nn.ELU()]
+            layers += [nn.ReLU()]
 
         layers += [
             nn.Conv2d(shp[0], nout, kernel_size=kernel_size, bias=bias, padding=(kernel_size - 1) // 2, stride=2)]
@@ -70,7 +70,7 @@ class ConvDecoder(nn.Module):
         layers = []
 
         if act_in:
-            layers += [Norm(shp[0]), nn.ELU()]
+            layers += [Norm(shp[0]), nn.ReLU()]
 
         for i in range(nlayers-1):
             layers += [
@@ -79,7 +79,7 @@ class ConvDecoder(nn.Module):
 
             if Norm is not None:
                 layers += [Norm(nhid)]
-            layers += [nn.ELU()]
+            layers += [nn.ReLU()]
 
         layers += [
             nn.ConvTranspose2d(shp[0], nout, kernel_size=kernel_size, bias=bias, padding=(kernel_size - 1) // 2, output_padding=1, stride=2)]
