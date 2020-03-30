@@ -1,9 +1,10 @@
 import sys
+from time import time
 
 import numpy as np
 import torch
 
-eps = 1e-20
+eps = 1e-18
 
 
 def covariance(x):
@@ -12,15 +13,19 @@ def covariance(x):
     return cov
 
 
-def get_gradients_statistics(estimator, model, x, batch_size=32, seed=None, **config):
+def get_gradients_statistics(estimator, model, x, batch_size=32, seed=None, key_filter='', **config):
     """
     Compute the variance, magnitude and SNR of the gradients.
     """
 
-    all_grads = None
+    _start = time()
+
     control_variate_l1s = []
+    magnitudes = []
+    variances = []
 
     for i, x_i in enumerate(x):
+        # repeat sample x_i
         x_i = x_i[None].expand(batch_size, *x_i.size())
 
         if seed is not None:
@@ -32,22 +37,35 @@ def get_gradients_statistics(estimator, model, x, batch_size=32, seed=None, **co
         # forward, backward to compute the gradients
         loss, diagnostics, output = estimator(model, x_i, backward=False, **config)
 
+        # gather individual gradients
+        all_grads = None
         for j, l in enumerate(loss):
 
             model.zero_grad()
+
+            # backward individual gradients \nabla L[i]
             l.mean().backward(create_graph=True, retain_graph=True)
 
-            grads = torch.cat([p.grad.view(1, -1) for p in model.parameters() if p.grad is not None], 1)
+            # gather gradients for each parameter
+            grads = torch.cat(
+                [p.grad.view(1, -1) for k, p in model.named_parameters() if (p.grad is not None) and (key_filter in k)]
+                , 1)
 
+            # conctatenate individual grads into a batch of individual grads resulting in a tensor `all_grads` = `nsamples x params`
             with torch.no_grad():
                 if all_grads is None:
                     all_grads = grads
                 else:
                     all_grads = torch.cat([all_grads, grads], 0)
 
-        # return L1 term
-        l1 = diagnostics.get('loss').get('control_variate_l1')
-        control_variate_l1s += [l1.mean().item() if l1 is not None else 0.]
+        with torch.no_grad():
+            # return reinforce l1 term
+            l1 = diagnostics.get('loss').get('control_variate_l1')
+            control_variate_l1s += [l1.mean().item() if l1 is not None else 0.]
+
+            # gather grads expected value and variance of the gradients
+            variances += [all_grads.var(0, keepdim=True)]
+            magnitudes += [all_grads.mean(0, keepdim=True)]
 
     if seed is not None:
         torch.manual_seed(_seed)
@@ -55,13 +73,31 @@ def get_gradients_statistics(estimator, model, x, batch_size=32, seed=None, **co
     # reinitialize grads
     model.zero_grad()
 
-    avg_variance = all_grads.var(0).mean()
-    avg_magnitude = all_grads.mean(0).abs().mean()
-    avg_snr = (all_grads.mean(0) / (eps + all_grads.std(0))).abs().mean()
+    # concatenate across x_i`s
+    variances = torch.cat(variances)
+    magnitudes = torch.cat(magnitudes)
+
+    # compute batch variance and magnitude
+    # see `tighter variational bounds are not necessarily better` (eq. 10)
+    variance = (variances / variances.shape[0] ** 2).sum(0)
+    magnitude = magnitudes.mean(0)
+
+    # compute mask to exclude parameters with zero variance
+    mask = (variance.pow(.5) > eps).float()
+    def _mean(x):
+        return (mask * x).sum() / mask.sum()
+
+    # compute signal-to-noise ratio. see `tighter variational bounds are not necessarily better` (eq. 4)
+    snr = (magnitude / (eps + variance.pow(.5))).abs()
+    # snr mean of NON zeros
+
     avg_l1 = np.mean(control_variate_l1s)
 
-    return {'log_variance': avg_variance.log(), 'magnitude': avg_magnitude, 'log_snr': avg_snr.log(),
-            'reinforce_l1': avg_l1}
+    # print(
+    #     f">> grads: iw = {estimator.iw}, elapsed time = {time() - _start:.3f}, snr = {snr.mean().log().item():.3f}, masked. snr {_mean(snr).log().item():.3f},  log_var = {_mean(variance).log().item():.3f}, Estimator = {estimator}")
+
+    return {'log_variance': _mean(variance).log(), 'magnitude': _mean(magnitude).abs(), 'log_snr': _mean(snr).log(),
+            'reinforce_l1': avg_l1}, snr[variance>eps]
 
 
 def get_gradients_log_total_variance__(estimator, model, x, batch_size=32, seed=None, **config):
