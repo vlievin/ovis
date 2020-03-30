@@ -41,22 +41,24 @@ parser.add_argument('--sequential_computation', action='store_true',
 
 # epochs, batch size, MC samples, lr
 parser.add_argument('--epochs', default=-1, type=int, help='number of epochs (use n_steps if `epochs` < 0)')
-parser.add_argument('--nsteps', default=600000, type=int, help='number of iterations')
+parser.add_argument('--nsteps', default=500000, type=int, help='number of optimization steps')
 parser.add_argument('--optimizer', default='adam', help='[sgd | adam | adamax]')
 parser.add_argument('--lr', default=1e-3, type=float, help='learning rate')
 parser.add_argument('--baseline_lr', default=5e-3, type=float, help='learning rate for the weight of the baseline')
 parser.add_argument('--bs', default=32, type=int, help='batch size')
 parser.add_argument('--lr_reduce_steps', default=4, type=int, help='number of learning rate reduce steps')
 
+
 # estimator
 parser.add_argument('--estimator', default='reinforce', help='[vi, reinforce, vimco, gs, st-gs]')
 parser.add_argument('--mc', default=1, type=int, help='number of Monte-Carlo samples')
 parser.add_argument('--iw', default=1, type=int, help='number of Importance-Weighted samples')
-parser.add_argument('--iw_valid', default=10, type=int, help='number of Importance-Weighted samples for validation')
 
+# evaluation
+parser.add_argument('--eval_freq', default=10, type=int, help='frequency for the evaluation [test set + grads]')
+parser.add_argument('--iw_valid', default=10, type=int, help='number of Importance-Weighted samples for validation')
 # gradients analysis
-parser.add_argument('--grad_eval_freq', default=10, type=int, help='frequency for the gradients evaluation')
-parser.add_argument('--grad_samples', default=16, type=int,
+parser.add_argument('--grad_samples', default=10, type=int,
                     help='number of samples used to evaluate the variance. (at maximum it is size `bs` to avoid using too much memory)')
 parser.add_argument('--counterfactuals', default='',
                     help='comma separated list of estimators for which the gradients will be evaluated without being used for optimization.'
@@ -136,8 +138,8 @@ try:
     base_logger.info(f"Sample: x.shape = {x.shape}, x.min = {x.min():.1f}, x.max = {x.max():.1f}, x.dtype = {x.dtype}")
 
     # dataloaders
-    loader_train = DataLoader(dset_train, batch_size=opt.bs, shuffle=True)
-    loader_valid = DataLoader(dset_valid, batch_size=2 * opt.bs, shuffle=True)
+    loader_train = DataLoader(dset_train, batch_size=opt.bs, shuffle=True, num_workers=1)
+    loader_valid = DataLoader(dset_valid, batch_size=2 * opt.bs, shuffle=True, num_workers=1)
 
     # define model
     torch.manual_seed(opt.seed)
@@ -195,17 +197,13 @@ try:
     writer_valid = SummaryWriter(os.path.join(logdir, 'valid'))
     counterfactual_writers = [SummaryWriter(os.path.join(logdir, c)) for c in counterfactual_estimators]
 
-    # batch of data for the gradients variance evaluation (at maximum of size bs)
-    x_grads_eval = next(iter(loader_train)).to(device)[:opt.grad_samples]
-
-
     # run lenght
     epochs = opt.epochs
+    iter_per_epoch = len(loader_train.dataset) // opt.bs
     if epochs < 0:
-        iter_per_epoch = len(loader_train.dataset) // opt.bs
         print("# iter_per_epoch:", iter_per_epoch)
         epochs = 1 + opt.nsteps // iter_per_epoch
-    print("# epochs:", epochs)
+    base_logger.info(f"# {opt.dataset}: running for {epochs} epochs, {iter_per_epoch * epochs} steps")
 
     # run
     best_elbo = (-1e20, 0, 0)
@@ -226,42 +224,50 @@ try:
             global_step += 1
         summary_train = agg_train.data.to('cpu')
 
-        if epoch % opt.grad_eval_freq == 0:
+        if epoch % opt.eval_freq == 0:
+
+            # batch of data for the gradients variance evaluation (at maximum of size bs)
+            x_grads_eval = next(iter(loader_train)).to(device) #[:opt.grad_samples]
+
             # estimate the variance of the gradients (for `opt.grad_samples` data points)
-            grad_args = {'seed': opt.seed, 'batch_size': opt.grad_samples}
+            grad_args = {'seed': opt.seed, 'batch_size': min(opt.grad_samples, opt.bs), 'key_filter': 'encoder'}
             # current model
-            summary_train["grads"] = get_gradients_statistics(estimator, model, x_grads_eval, **grad_args,
-                                                              **config)
+            summary_train["grads"], snr_dist = get_gradients_statistics(estimator, model, x_grads_eval, **grad_args, **config)
+            # log distribution of SNRs
+            if len(snr_dist):
+                writer_train.add_histogram("grads/snr", snr_dist)
 
             # counter factual estimation of other estimators
             for (c_writer, c_conf, c_est, c) in zip(counterfactual_writers, c_configs, c_estimators,
                                                     counterfactual_estimators):
-                grad_data = get_gradients_statistics(c_est, model, x_grads_eval, **grad_args, **c_conf)
+                grad_data, *_ = get_gradients_statistics(c_est, model, x_grads_eval, **grad_args, **c_conf)
                 summary = Diagnostic({'grads': grad_data})
                 summary.log(c_writer, global_step)
                 train_logger.info(f" | counterfactual | {c:{max(map(len, counterfactual_estimators))}s} "
                                   f"| log_snr = {grad_data.get('log_snr', 0.):.3f}, log_variance = {grad_data.get('log_variance', 0.):.3f}")
 
-        # valid epoch
-        with torch.no_grad():
-            model.eval()
-            agg_valid.initialize()
-            for x in tqdm(loader_valid, desc=_exp_id):
-                x = x.to(device)
-                diagnostics = test_step(x, model, estimator_valid, **config)
-                agg_valid.update(diagnostics)
-            summary_valid = agg_valid.data.to('cpu')
+            # valid epoch
+            with torch.no_grad():
+                model.eval()
+                agg_valid.initialize()
+                for x in tqdm(loader_valid, desc=_exp_id):
+                    x = x.to(device)
+                    diagnostics = test_step(x, model, estimator_valid, **config)
+                    agg_valid.update(diagnostics)
+                summary_valid = agg_valid.data.to('cpu')
 
-        # update best elbo and save model
-        best_elbo = save_model(model, summary_valid, global_step, epoch, best_elbo, logdir)
+            # update best elbo and save model
+            best_elbo = save_model(model, summary_valid, global_step, epoch, best_elbo, logdir)
 
-        # log to console and tensorboard
+            # log valid summary to console and tensorboar
+            log_summary(summary_valid, global_step, epoch, logger=valid_logger, best=best_elbo, writer=writer_valid,
+                        exp_id=_exp_id)
+
+        # log train summary to console and tensorboar
         log_summary(summary_train, global_step, epoch, logger=train_logger, writer=writer_train, exp_id=_exp_id)
-        log_summary(summary_valid, global_step, epoch, logger=valid_logger, best=best_elbo, writer=writer_valid,
-                    exp_id=_exp_id)
 
         # reduce learning rate
-        lr_freq = (opt.epochs // (opt.lr_reduce_steps + 1))
+        lr_freq = (epochs // (opt.lr_reduce_steps + 1))
         if epoch % lr_freq == 0:
             for o in optimizers:
                 for i, param_group in enumerate(o.param_groups):
