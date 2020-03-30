@@ -31,10 +31,10 @@ parser.add_argument('--root', default='runs/', help='experiment directory')
 parser.add_argument('--output', default='reports/', help='output directory')
 parser.add_argument('--exp', default='exclude-sample-0.1', type=str, help='experiment id')
 parser.add_argument('--filter', default='', type=str, help='filter run by id')
-parser.add_argument('--pivot_metrics', default='max:train:loss/elbo, avg:train:grads/log_snr', type=str,
+parser.add_argument('--pivot_metrics', default='max:train:loss/elbo, avg:train:grads/log_snr, avg:train:loss/r_eff', type=str,
                     help='comma separated list of metrics to report in the table, the prefix defines the aggregation function (min, avg, max)')
 parser.add_argument('--metrics',
-                    default='train:reinforce/control_variate_l1, train:grads/log_snr, train:loss/elbo, train:loss/r_eff, train:loss/nll, train:loss/kl',
+                    default='train:reinforce/l1, train:grads/log_snr, train:loss/elbo, train:loss/r_eff, train:loss/nll, train:loss/kl',
                     type=str,
                     help='comma separated list of keys to read from the tensorboard logs')
 parser.add_argument('--ylims', default='', type=str,
@@ -49,6 +49,7 @@ parser.add_argument('--latex', action='store_true', help='print as latex table')
 parser.add_argument('--float_format', default=".2f", help='float format')
 parser.add_argument('--nsamples', default=64, type=int, help='target number of points in the line plot (downsampling)')
 parser.add_argument('--non_completed', action='store_true', help='also keep runs that are not yet completed.')
+parser.add_argument('--max_records', default=-1, type=int, help='only read the first `max_records` data point (`-1` = no limit)')
 opt = parser.parse_args()
 
 _sep = os.get_terminal_size().columns * "-"
@@ -85,7 +86,8 @@ curves_metrics = opt.metrics.replace(" ", "").split(',')
 # define the metrics for the `spot-on` plot
 keys = list(opt.keys.replace(" ", "").split(','))
 spot_on_metrics = list(opt.spot_on_metrics.replace(" ", "").split(','))
-
+if spot_on_metrics[0] == "":
+    spot_on_metrics = []
 
 # define the `pivot table` metrics
 def _parse_pivot_metric(u):
@@ -126,7 +128,7 @@ for e in pbar:
     try:
         if (not opt.non_completed) and (not _success_file in files):
             logger.info(f" >>>  Not yet completed: {e}")
-        elif any([(u in e) for u in filters]):
+        elif any([(u not in e) for u in filters]):
             logger.info(f" >>>  filtered: {e}")
         else:
             with open(os.path.join(exp_path, _success_file), 'r') as fp:
@@ -186,8 +188,8 @@ for e in pbar:
                 # append data and logs
                 data += [d]
 
-                # if len(data) > 10:
-                #     break
+                if opt.max_records > 0 and len(data) > opt.max_records:
+                    break
 
     except Exception as ex:
         logger.info("## FAILED. Exception:")
@@ -438,7 +440,67 @@ def spot_on_plot(logs, path, metrics, main_key, auxiliary_key, style_key=None, y
                     k = 1.5
                     ax.set_ylim([a - k * M, b + k * M])
 
-            if i < len(metrics) - 1 or j < len(aux_keys):
+            if  i == len(metrics) - 1 and   j < len(aux_keys) - 1:
+                ax.get_legend().remove()
+
+    plt.tight_layout()
+    plt.savefig(path)
+    plt.close()
+
+
+def pivot_plot(df, path, metrics, main_key, auxiliary_key, style_key=None, ylims=dict()):
+    """make a grid of plot metrics x aux. keys values"""
+
+    color_palette = sns.color_palette()
+    line_styles = ["-", "--", "x", "---"]
+    marker_styles = ["o", "x", "v", "^", "O", "X"]
+    dsets = df['dataset'].unique()
+    ncols = len(dsets)
+    nrows = len(metrics)
+
+    if style_key is not None:
+        main_keys =list(logs[main_key].unique())
+        style_keys = list(logs[style_key].unique())
+        key_name = f"{main_key}-{style_key}"
+        df[key_name] = [f"{x}-{y}" for (x,y) in zip(df[main_key].values, df[style_key].values)]
+        df = df.drop(main_key, 1)
+        df = df.drop(style_key, 1)
+
+        hue_order, linestyles, palette, markers = [], [], [], []
+        for y, _linestyle in zip(style_keys, line_styles):
+            for x, hue, _marker in zip(main_keys, color_palette, marker_styles):
+                hue_order += [f"{x}-{y}"]
+                linestyles += [_linestyle]
+                markers += [_marker]
+                palette += [hue]
+
+    else:
+        key_name = main_key
+        hue_order = list(logs[main_key].unique())
+        linestyles = [line_styles[0] for _ in hue_order]
+        palette = color_palette
+        markers = marker_styles
+
+
+    if nrows == 0 or ncols == 0:
+        return None
+
+    hue_order = list(df[key_name].unique())
+    fig, axes = plt.subplots(nrows, ncols, figsize=(6 * ncols, 4 * nrows))
+
+    for j, dset in enumerate(dsets):
+        dset_data = df[df["dataset"] == dset]
+
+        for i, metric in enumerate(metrics):
+            ax = axes[i, j]
+
+            sns.pointplot(x=auxiliary_key, y=metric, hue=key_name, data=dset_data, ax=ax, hue_order=hue_order, linestyles=linestyles, color_palette=palette, markers=markers)
+
+            if i == 0:
+                ax.set_title(f"Dataset = {dset}")
+            ax.set_ylabel(metric)
+
+            if  i == len(metrics) - 1 and   j < len(dsets) - 1:
                 ax.get_legend().remove()
 
     plt.tight_layout()
@@ -453,6 +515,12 @@ third_key = keys[2] if len(keys) > 2 else None  # line style (in auxiliary plots
 if len(keys) > 3:
     warnings.warn(
         f"Plotting doesn't handle more than 3 levels (len(keys) = {len(keys)}). Keys = {len(keys[2:])} will be simply ignored.")
+
+
+# pvot plot
+logger.info(f"|- Generating pivot plots..")
+_path = os.path.join(output_path, f"pivot-plot.png")
+pivot_plot(df, _path, pivot_metrics, main_key, aux_key, style_key=third_key)
 
 # plot all data
 for dset in logs['dataset'].unique():
