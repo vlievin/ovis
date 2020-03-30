@@ -207,8 +207,8 @@ class ThermoVariationalObjective(Estimator):
         # compute effective sample size
         if self.iw > 1:
             # compute effective sample size
-            w = batch_reduce(log_pz - log_qz).exp().view(-1, self.mc, self.iw)
-            N_eff = torch.sum(w, 2) ** 2 / torch.sum(w ** 2, 2)
+            log_w = batch_reduce(log_pz - log_qz).view(-1, self.mc, self.iw)
+            N_eff = torch.exp( 2 * torch.logsumexp(log_w, dim=2) - torch.logsumexp(2 * log_w, dim=2) )
             N_eff = N_eff.mean(1)  # MC
         else:
             x = (log_pz).view(-1, self.mc, self.iw)
@@ -370,8 +370,8 @@ class VariationalInference(Estimator):
         # compute effective sample size
         if self.iw > 1:
             # compute effective sample size
-            w = batch_reduce(log_pz - log_qz).exp().view(-1, self.mc, self.iw)
-            N_eff = torch.sum(w, 2) ** 2 / torch.sum(w ** 2, 2)
+            log_w = batch_reduce(log_pz - log_qz).view(-1, self.mc, self.iw)
+            N_eff = torch.exp(2 * torch.logsumexp(log_w, dim=2) - torch.logsumexp(2 * log_w, dim=2))
             N_eff = N_eff.mean(1)  # MC
         else:
             x = (log_pz).view(-1, self.mc, self.iw)
@@ -448,12 +448,17 @@ class VariationalInference(Estimator):
                      'nll': - self._reduce_sample(log_px_z),
                      'kl': self._reduce_sample(iw_data.get('kl')),
                      'r_eff': iw_data.get('N_eff') / self.iw},
+            'prior': self.prior_diagnostics(output)
         })
 
         if backward:
             loss.mean().backward()
 
         return loss, diagnostics, output
+
+    def prior_diagnostics(self, output):
+        Hp, usage = [output[k] for k in ('Hp', 'usage')]
+        return {'Hp': torch.sum(torch.cat(Hp)), 'usage': torch.mean(torch.cat(usage))}
 
 
 class ZScore(nn.Module):
@@ -677,7 +682,8 @@ class Reinforce(VariationalInference):
                 'l1_threshold': l1_threshold,
                 'NaNs': _n_nans,
                 'rejected': reject_ratio
-            }
+            },
+            'prior': self.prior_diagnostics(output)
         })
 
         if backward:
