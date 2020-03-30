@@ -144,8 +144,6 @@ class BaseVAE(Template):
         else:
             qlogits_expanded = qlogits
 
-
-
         qz = self.prior_dist(logits=qlogits_expanded, tau=tau)
         z = qz.rsample()
 
@@ -156,13 +154,25 @@ class BaseVAE(Template):
 
         px = self.generate(z)
 
-        return {'px': px, 'z': [z], 'qz': [qz], 'pz': [pz], 'qlogits': [qlogits]}
+        diagnostics = self._get_diagnostics(z, qz, pz)
+
+        return {'px': px, 'z': [z], 'qz': [qz], 'pz': [pz], 'qlogits': [qlogits], **diagnostics}
 
     def sample_from_prior(self, N):
         prior = self.prior.expand(N, *self.prior_dim)
         z = self.prior_dist(logits=prior).sample()
         px = self.generate(z)
         return {'px': px, 'z': z}
+
+    def _get_diagnostics(self, z, qz, pz):
+        Hp = batch_reduce(pz.entropy())
+        if isinstance(pz, PseudoCategorical):
+            usage = (z.sum(dim=0, keepdim=True)>0).float()
+            usage = usage.mean(dim=(1,2,))
+        else:
+            usage = None
+
+        return {'Hp': [Hp], 'usage': [usage]}
 
 
 class VAE(BaseVAE):

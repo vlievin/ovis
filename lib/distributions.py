@@ -8,7 +8,7 @@ from torch.nn.functional import gumbel_softmax, log_softmax
 class PseudoCategorical(Distribution):
 
     def __init__(self, logits: Tensor, tau: float = 0, dim: int = -1):
-        self.logits = logits
+        self.logits = logits - logits.logsumexp(dim=dim, keepdim=True)
         self.dim = dim
         self.tau = tau
 
@@ -26,6 +26,9 @@ class PseudoCategorical(Distribution):
     def sample(self):
         return self.rsample().detach()
 
+    def entropy(self):
+        return - (self.logits * self.logits.exp()).sum(dim=self.dim)
+
     def log_prob(self, value):
         log_pdf = log_softmax(self.logits, self.dim)
         return (value * log_pdf).sum(self.dim)
@@ -33,7 +36,7 @@ class PseudoCategorical(Distribution):
 
 class NormalFromLogits(Distribution):
     def __init__(self, logits: Tensor, dim: int = -1, **kwargs: Any):
-        """hacking the Normal class so we can easily compute d p.log_prob(z) / d logits [gif: https://imgur.com/Hfzf14T]"""
+        """hacking the Normal class so we can easily compute d p.log_prob(z) / d logits"""
         super().__init__()
         self.logits = logits
         self.dim = dim
@@ -45,14 +48,18 @@ class NormalFromLogits(Distribution):
         scale = log_std.mul(0.5).exp()
         return mu, scale
 
+    @property
+    def _torch_normal(self):
+        return Normal(*self._params)
+
     def sample(self):
-        loc, scale = self._params
-        return Normal(loc, scale).sample()
+        return self._torch_normal.sample()
 
     def rsample(self):
-        loc, scale = self._params
-        return Normal(loc, scale).rsample()
+        return self._torch_normal.rsample()
+
+    def entropy(self):
+        return self._torch_normal.entropy()
 
     def log_prob(self, x):
-        loc, scale = self._params
-        return Normal(loc, scale).log_prob(x)
+        return self._torch_normal.log_prob(x)
