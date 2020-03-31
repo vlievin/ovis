@@ -17,7 +17,7 @@ from lib import VariationalInference
 from lib import get_datasets
 from lib.config import get_config
 from lib.gradients import get_gradients_statistics
-from lib.logging import sample_model, get_loggers, log_summary, save_model
+from lib.logging import sample_model, get_loggers, log_summary, save_model, load_model
 from lib.ops import training_step, test_step
 from lib.utils import notqdm
 
@@ -47,7 +47,8 @@ parser.add_argument('--lr', default=1e-3, type=float, help='learning rate')
 parser.add_argument('--baseline_lr', default=5e-3, type=float, help='learning rate for the weight of the baseline')
 parser.add_argument('--bs', default=32, type=int, help='batch size')
 parser.add_argument('--lr_reduce_steps', default=4, type=int, help='number of learning rate reduce steps')
-
+parser.add_argument('--only_train_set', action='store_true',
+                    help='only use the training dataset: useful to study optimization behaviour.')
 
 # estimator
 parser.add_argument('--estimator', default='reinforce', help='[vi, reinforce, vimco, gs, st-gs]')
@@ -124,17 +125,19 @@ with open(os.path.join(logdir, 'config.json'), 'w') as fp:
 # wrap the training loop inside a try/except so we can write potential errors to a file.
 try:
     # define logger
-    base_logger, train_logger, valid_logger = get_loggers(logdir)
+    base_logger, train_logger, valid_logger, test_logger = get_loggers(logdir)
     base_logger.info(f"Torch version: {torch.__version__}")
 
     # setting the random seed
     torch.manual_seed(opt.seed)
     np.random.seed(opt.seed)
 
-    # get datasets
+    # get datasets (ony use training sets if `opt.only_train_set`)
     dset_train, dset_valid, dset_test = get_datasets(opt)
-    x = dset_train[0]
     base_logger.info(f"Dataset size: train = {len(dset_train)}, valid = {len(dset_valid)}")
+
+    # get a sample to evaluate the input shape
+    x = dset_train[0]
     base_logger.info(f"Sample: x.shape = {x.shape}, x.min = {x.min():.1f}, x.max = {x.max():.1f}, x.dtype = {x.dtype}")
 
     # dataloaders
@@ -210,9 +213,6 @@ try:
     global_step = 0
     for epoch in range(1, epochs + 1):
 
-        # sample model
-        sample_model("prior-sample", model, logdir, global_step=global_step, writer=writer_valid, seed=opt.seed)
-
         # train epoch
         [o.zero_grad() for o in optimizers]
         model.train()
@@ -227,12 +227,13 @@ try:
         if epoch % opt.eval_freq == 0:
 
             # batch of data for the gradients variance evaluation (at maximum of size bs)
-            x_grads_eval = next(iter(loader_train)).to(device) #[:opt.grad_samples]
+            x_grads_eval = next(iter(loader_train)).to(device)  # [:opt.grad_samples]
 
             # estimate the variance of the gradients (for `opt.grad_samples` data points)
             grad_args = {'seed': opt.seed, 'batch_size': min(opt.grad_samples, opt.bs), 'key_filter': 'encoder'}
             # current model
-            summary_train["grads"], snr_dist = get_gradients_statistics(estimator, model, x_grads_eval, **grad_args, **config)
+            summary_train["grads"], snr_dist = get_gradients_statistics(estimator, model, x_grads_eval, **grad_args,
+                                                                        **config)
             # log distribution of SNRs
             if len(snr_dist):
                 writer_train.add_histogram("grads/snr", snr_dist)
@@ -263,6 +264,9 @@ try:
             log_summary(summary_valid, global_step, epoch, logger=valid_logger, best=best_elbo, writer=writer_valid,
                         exp_id=_exp_id)
 
+            # sample model
+            sample_model("prior-sample", model, logdir, global_step=global_step, writer=writer_valid, seed=opt.seed)
+
         # log train summary to console and tensorboar
         log_summary(summary_train, global_step, epoch, logger=train_logger, writer=writer_train, exp_id=_exp_id)
 
@@ -275,6 +279,27 @@ try:
                     new_lr = lr / 2
                     param_group['lr'] = new_lr
                     base_logger.info(f"Reducing lr, group = {i} : {lr:.2E} -> {new_lr:.2E}")
+
+
+    print("TESTING..", best_elbo)
+    # testing step
+    writer_test = SummaryWriter(os.path.join(logdir, 'test'))
+    loader_test = DataLoader(dset_test, batch_size=2 * opt.bs, shuffle=True, num_workers=1)
+    agg_test = Aggregator()
+
+    # load best model and run over the test set
+    load_model(model, logdir)
+    model.eval()
+    agg_test.initialize()
+    for x in tqdm(loader_test, desc=_exp_id + "-test"):
+        x = x.to(device)
+        diagnostics = test_step(x, model, estimator_valid, **config)
+        agg_test.update(diagnostics)
+    summary_test = agg_test.data.to('cpu')
+
+    # log
+    _, global_step, epoch = best_elbo
+    log_summary(summary_test, global_step, epoch, logger=test_logger, best=None, writer=writer_test, exp_id=_exp_id)
 
     # write outcome to a file (success, interrupted, error)
     print("## SUCCESS")

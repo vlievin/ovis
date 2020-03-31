@@ -34,15 +34,23 @@ def get_datasets(opt):
     transform = ToTensor()
 
     if "shapes" in opt.dataset:
-        output =  get_shapes_datasets(transform=transform)
+        output = get_shapes_datasets(transform=transform)
     elif "binmnist" in opt.dataset:
         output = get_binmnist_datasets(opt.data_root, transform=transform)
     elif "omniglot" in opt.dataset:
         output = get_omniglot_datasets(opt.data_root, transform=transform, dynamic=True)
     elif "fashion" in opt.dataset:
-        output =  get_fashion_datasets(opt.data_root, transform=transform, binarize=True)
+        output = get_fashion_datasets(opt.data_root, transform=transform, binarize=True)
     else:
         raise ValueError(f"Unknown data: {opt.dataset}")
+
+    if opt.only_train_set:
+        def use_only_training(dset_train, dset_valid, dset_test):
+            dset_test = dset_train
+            dset_valid = MiniDataset(dset_train, len(dset_valid), opt.seed)
+            return dset_train, dset_valid, dset_test
+
+        output = use_only_training(*output)
 
     if opt.mini:
         def wrapper(dset_train, dset_valid, dset_test):

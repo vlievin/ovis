@@ -1,7 +1,6 @@
 import logging
 import math
 import os
-import random
 import sys
 
 import matplotlib.image
@@ -40,7 +39,7 @@ def sample_model(key, model, logdir, global_step=0, writer=None, N=100, seed=Non
         torch.manual_seed(_seed)
 
 
-def get_loggers(logdir, keys=['base', 'train', 'valid'], format='%(asctime)s %(name)-4s %(levelname)-4s %(message)s'):
+def get_loggers(logdir, keys=['base', 'train', 'valid', 'test'], format='%(asctime)s %(name)-4s %(levelname)-4s %(message)s'):
     logging.basicConfig(level=logging.INFO,
                         format=format,
                         datefmt='%m-%d %H:%M',
@@ -66,7 +65,6 @@ def summary2logger(logger, summary, global_step, epoch, best=None, stats_key='lo
 
 
 def log_summary(summary, global_step, epoch, logger=None, writer=None, **kwargs):
-
     # add `epoch` to `info/epoch`
     summary['info']['epoch'] = epoch
 
@@ -82,7 +80,12 @@ def save_model(model, eval_summary, global_step, epoch, best_elbo, logdir, key='
     prev_elbo, *_ = best_elbo
     if elbo > prev_elbo:
         best_elbo = (elbo, global_step, epoch)
-        pth = os.path.join(logdir, "model.pth")
+        pth = os.path.join(logdir, "model.pt")
         torch.save(model.state_dict(), pth)
 
     return best_elbo
+
+
+def load_model(model, logdir):
+    device = next(iter(model.parameters())).device
+    model.load_state_dict(torch.load(os.path.join(logdir, "model.pth"), map_location=device))
