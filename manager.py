@@ -1,18 +1,46 @@
 import argparse
+import json
 import logging
 import multiprocessing
 import os
 import shutil
+import socket
 import sys
-import json
 import warnings
-from tqdm import tqdm
+from datetime import datetime
 from multiprocessing import Pool
 
 import GPUtil
+from filelock import filelock  # pip installl git+https://github.com/dmfrey/FileLock.git
+from tinydb import TinyDB, Query  # pip install tinydb
+from tqdm import tqdm
 
-def fn(allargs):
-    args, devices = allargs
+
+def open_db(logdir):
+    db = TinyDB(os.path.join(logdir, '.db.json'))
+    query = Query()
+    return db.table('experiments'), query
+
+
+def fn(job_args):
+    logdir, devices = job_args
+    _max_attempts = 10
+    _hostname = socket.gethostname()
+    _pid = os.getpid()
+    _jobid = f"{_hostname}-{_pid}"
+
+    # retrieve the next queued experiment from the database
+    # lock db file to avoid concurrency problems
+    with filelock.FileLock(os.path.join(logdir, ".db.json.lock")):
+        db, query = open_db(logdir)
+        item = db.get(query.queued == True)
+        if item is None:
+            exit()
+
+        item['queued'] = False
+        args = item['arg']
+        db.write_back([item])
+        del db
 
     process_id = eval(multiprocessing.current_process().name.split('-')[-1]) - 1
     device = devices[process_id % len(devices)]
@@ -29,7 +57,7 @@ def fn(allargs):
     except:
         print(f"Command `{command}` failed.")
 
-    print(f"{process_id} DONE.")
+    print(f"{process_id} DONE. \nargs = {args}\n\n")
 
 
 if __name__ == '__main__':
@@ -69,6 +97,14 @@ if __name__ == '__main__':
             else:
                 sys.exit()
 
+    # copy library
+    shutil.copytree('./',
+                    os.path.join(logdir, '.snapshot', str(datetime.now())),
+                    ignore=shutil.ignore_patterns('.*', '*.git', 'runs', 'reports', 'data'))
+
+    # init db
+    db, query = open_db(logdir)
+
     # logging
     logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler()])
     logger = logging.getLogger('exp-manager')
@@ -99,11 +135,21 @@ if __name__ == '__main__':
                 _args += [f"--{_arg} {v} " + a for a in args]
             args = _args
 
+    # for i, a in enumerate(args):
+    #     logger.info(f"# EXPERIMENT #{i}:  {a}")
+
+    # write all experiments to a database
     for i, a in enumerate(args):
-        logger.info(f"# EXPERIMENT #{i}:  {a}")
+        if not db.contains(query.arg == a):
+            db.insert({'arg': a, 'queued': True, "job_id": "none"})
+
+    n_records = len(db.search(query.queued))
+
+    logger.info(
+        f"Database: queued experiments : {n_records}, total experiments: {len(db)}")
 
     # run processes in parallel
     pool = Pool(processes=processes)
-    devices_args = [deviceIDs for _ in args]
-    for _ in tqdm(pool.imap_unordered(fn, zip(args, devices_args), chunksize=1), total=len(args), desc="Job Manager"):
+    job_args = [(logdir, deviceIDs) for _ in range(n_records)]
+    for _ in tqdm(pool.imap_unordered(fn, job_args, chunksize=1), total=n_records, desc="Job Manager"):
         pass
