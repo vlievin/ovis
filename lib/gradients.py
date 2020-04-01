@@ -4,7 +4,7 @@ from time import time
 import numpy as np
 import torch
 
-eps = 1e-18
+eps = 1e-12
 
 
 def covariance(x):
@@ -84,6 +84,11 @@ def get_gradients_statistics(estimator, model, x, batch_size=32, seed=None, key_
 
     # compute mask to exclude parameters with zero variance
     mask = (variance.pow(.5) > eps).float()
+
+    # don't use mask for now
+    mask = torch.ones_like(mask)
+
+
     def _mean(x):
         return (mask * x).sum() / mask.sum()
 
@@ -93,8 +98,7 @@ def get_gradients_statistics(estimator, model, x, batch_size=32, seed=None, key_
 
     avg_l1 = np.mean(control_variate_l1s)
 
-    # print(
-    #     f">> grads: iw = {estimator.iw}, elapsed time = {time() - _start:.3f}, snr = {snr.mean().log().item():.3f}, masked. snr {_mean(snr).log().item():.3f},  log_var = {_mean(variance).log().item():.3f}, Estimator = {estimator}")
+    print(f">> grads: iw = {estimator.iw}, elapsed time = {time() - _start:.3f}, snr = {snr.mean().log().item():.3f}, masked. snr {_mean(snr).log().item():.3f},  log_var = {_mean(variance).log().item():.3f}, Estimator = {estimator}")
 
     return {'log_variance': _mean(variance).log(), 'magnitude': _mean(magnitude).abs(), 'log_snr': _mean(snr).log(),
             'reinforce_l1': avg_l1}, snr[variance>eps]

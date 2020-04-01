@@ -6,7 +6,7 @@
     "--estimator vimco-geometric",
     "--estimator covbaseline-geometric"
   ],
-  "global": "--silent --deterministic --nsteps 600000 --lr_reduce_steps 3 --model vae --bs 32 --hdim 256 --iw_valid 20 --N 16 --K 16 --learn_prior --grad_eval_freq 10 --grad_samples 32",
+  "global": "--silent --deterministic --nsteps 1000000 --lr_reduce_steps 3 --model vae --bs 32 --hdim 256 --iw_valid 20 --N 16 --K 16 --learn_prior --grad_eval_freq 10 --grad_samples 32",
   "parameters": {
     "iw" : [50, 20, 10, 5, 3],
     "dataset" : ["binmnist", "omniglot", "fashion"],

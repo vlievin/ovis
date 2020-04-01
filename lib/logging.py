@@ -88,4 +88,4 @@ def save_model(model, eval_summary, global_step, epoch, best_elbo, logdir, key='
 
 def load_model(model, logdir):
     device = next(iter(model.parameters())).device
-    model.load_state_dict(torch.load(os.path.join(logdir, "model.pth"), map_location=device))
+    model.load_state_dict(torch.load(os.path.join(logdir, "model.pt"), map_location=device))

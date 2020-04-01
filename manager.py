@@ -34,30 +34,33 @@ def fn(job_args):
     with filelock.FileLock(os.path.join(logdir, ".db.json.lock")):
         db, query = open_db(logdir)
         item = db.get(query.queued == True)
-        if item is None:
-            exit()
-
-        item['queued'] = False
-        args = item['arg']
-        db.write_back([item])
+        if item is not None:
+            item['queued'] = False
+            db.write_back([item])
         del db
 
-    process_id = eval(multiprocessing.current_process().name.split('-')[-1]) - 1
-    device = devices[process_id % len(devices)]
-    print(
-        f"initializing process with PID = {os.getpid()}, process id: {process_id}, allocated device: {device}, args= {args}")
-
-    if 'cuda' in device:
-        device_id = device.split(':')[-1]
-        command = f"CUDA_VISIBLE_DEVICES={device_id} python {opt.script} {args}"
+    if item is None:
+        print(f"Manager: no job left.")
+        return None
     else:
-        command = f"python {opt.script} {args}"
-    try:
-        os.system(command)
-    except:
-        print(f"Command `{command}` failed.")
+        args = item['arg']
 
-    print(f"{process_id} DONE. \nargs = {args}\n\n")
+        process_id = eval(multiprocessing.current_process().name.split('-')[-1]) - 1
+        device = devices[process_id % len(devices)]
+        print(
+            f"initializing process with PID = {os.getpid()}, process id: {process_id}, allocated device: {device}, args= {args}")
+
+        if 'cuda' in device:
+            device_id = device.split(':')[-1]
+            command = f"CUDA_VISIBLE_DEVICES={device_id} python {opt.script} {args}"
+        else:
+            command = f"python {opt.script} {args}"
+        try:
+            os.system(command)
+        except:
+            print(f"Command `{command}` failed.")
+
+        print(f"{process_id} DONE. \nargs = {args}\n\n")
 
 
 if __name__ == '__main__':
@@ -97,9 +100,9 @@ if __name__ == '__main__':
             else:
                 sys.exit()
 
-    # copy library
+    # copy library # todo load the copied library within the jobs to ensure consistency between runs
     shutil.copytree('./',
-                    os.path.join(logdir, '.snapshot', str(datetime.now())),
+                    os.path.join(logdir, '.lib_snapshot', f"{socket.gethostname()}:{datetime.now()}"),
                     ignore=shutil.ignore_patterns('.*', '*.git', 'runs', 'reports', 'data'))
 
     # init db

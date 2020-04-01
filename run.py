@@ -43,10 +43,10 @@ parser.add_argument('--sequential_computation', action='store_true',
 parser.add_argument('--epochs', default=-1, type=int, help='number of epochs (use n_steps if `epochs` < 0)')
 parser.add_argument('--nsteps', default=500000, type=int, help='number of optimization steps')
 parser.add_argument('--optimizer', default='adam', help='[sgd | adam | adamax]')
-parser.add_argument('--lr', default=1e-3, type=float, help='learning rate')
+parser.add_argument('--lr', default=2e-3, type=float, help='learning rate')
 parser.add_argument('--baseline_lr', default=5e-3, type=float, help='learning rate for the weight of the baseline')
 parser.add_argument('--bs', default=32, type=int, help='batch size')
-parser.add_argument('--lr_reduce_steps', default=4, type=int, help='number of learning rate reduce steps')
+parser.add_argument('--lr_reduce_steps', default=3, type=int, help='number of learning rate reduce steps')
 parser.add_argument('--only_train_set', action='store_true',
                     help='only use the training dataset: useful to study optimization behaviour.')
 
@@ -141,8 +141,8 @@ try:
     base_logger.info(f"Sample: x.shape = {x.shape}, x.min = {x.min():.1f}, x.max = {x.max():.1f}, x.dtype = {x.dtype}")
 
     # dataloaders
-    loader_train = DataLoader(dset_train, batch_size=opt.bs, shuffle=True, num_workers=1)
-    loader_valid = DataLoader(dset_valid, batch_size=2 * opt.bs, shuffle=True, num_workers=1)
+    loader_train = DataLoader(dset_train, batch_size=opt.bs, shuffle=True, num_workers=1, pin_memory=True)
+    loader_valid = DataLoader(dset_valid, batch_size=2 * opt.bs, shuffle=True, num_workers=1, pin_memory=True)
 
     # define model
     torch.manual_seed(opt.seed)
@@ -183,13 +183,13 @@ try:
     if len(list(estimator.parameters())):
         optimizers += [torch.optim.Adam(estimator.parameters(), lr=opt.baseline_lr)]
 
-    print(f"{_sep}\nModel paramters:")
-    for k, v in model.named_parameters():
-        print(f"   {k} : {v.numel()}")
-    print(f"{_sep}\nEstimator paramters:")
-    for k, v in estimator.named_parameters():
-        print(f"   {k} : {v.numel()}")
-    print(_sep)
+    # print(f"{_sep}\nModel paramters:")
+    # for k, v in model.named_parameters():
+    #     print(f"   {k} : {v.numel()}")
+    # print(f"{_sep}\nEstimator paramters:")
+    # for k, v in estimator.named_parameters():
+    #     print(f"   {k} : {v.numel()}")
+    # print(_sep)
 
     # data aggregator
     agg_train = Aggregator()

@@ -123,7 +123,7 @@ def spot_on_plot(logs, path, metrics, main_key, auxiliary_key, style_key=None, y
                         k = 1.5
                         ax.set_ylim([a - k * M, b + k * M])
 
-                if  i == len(metrics) - 1 and   j < len(aux_keys) - 1:
+                if  not (i == len(metrics) - 1 and  j == len(aux_keys) - 1):
                     ax.get_legend().remove()
             except:
                 warnings.warn(f">> spot-on plot: couldn't generate the axis `ax[{i}, {j}]`")
@@ -186,7 +186,7 @@ def pivot_plot(df, path, metrics, main_key, auxiliary_key, style_key=None, ylims
                     ax.set_title(f"Dataset = {dset}")
                 ax.set_ylabel(metric)
 
-                if  i == len(metrics) - 1 and   j < len(dsets) - 1:
+                if  not (i == len(metrics) - 1 and j == len(dsets) - 1):
                     ax.get_legend().remove()
             except:
                 warnings.warn(f">> pivot plot: couldn't generate the axis `ax[{i}, {j}]`")
