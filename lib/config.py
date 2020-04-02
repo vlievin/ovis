@@ -40,7 +40,8 @@ def get_config(estimator):
 
             if 'vimco' in estimator:
                 Estimator = Vimco
-                config = {**reinforce_args, **vimco_args}
+                grads_phi = '-phi' in estimator
+                config = {'score_from_phi': grads_phi, **reinforce_args, **vimco_args}
 
             elif 'covbaseline' in estimator:
                 Estimator = OptCovReinforce

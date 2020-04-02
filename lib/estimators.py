@@ -580,9 +580,14 @@ class Reinforce(VariationalInference):
 
         return score
 
-    def forward(self, model: nn.Module, x: Tensor, backward: bool = False, mc_estimate: bool = False, z_reject=0,
+    def forward(self, model: nn.Module, x: Tensor, backward: bool = False, mc_estimate: bool = False, score_from_phi:bool=None, z_reject=0,
                 **kwargs: Any) -> \
             Tuple[Tensor, Dict, Dict]:
+
+
+        # todo: hacky change of state, implement a clean version
+        if score_from_phi is not None:
+            self.score_from_phi = score_from_phi
 
         x_target = self._expand_sample(x)
         output = self.evaluate_model(model, x, x_target, mc=self.mc, iw=self.iw, **kwargs)
@@ -702,7 +707,6 @@ class Vimco(Reinforce):
         super().__init__(*args, **kwargs)
         self.control_variate_loss_weight = 0  # the control variate doesn't have any parameter
         self.log_iw_m1 = np.log(self.iw - 1)
-
     @torch.no_grad()
     def compute_control_variate(self, x: Tensor, mc_estimate: bool = True, arithmetic=False, return_raw=False,
                                 use_outer_samples=False, use_double: bool = True, **data: Dict[str, Tensor]) -> Tensor:
