@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import traceback
+import socket
 from shutil import rmtree
 
 import numpy as np
@@ -11,6 +12,7 @@ from torch.optim import Adam, Adamax, SGD
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
+
 
 from lib import VAE, Baseline, ConvVAE
 from lib import VariationalInference
@@ -82,12 +84,6 @@ parser.add_argument('--norm', default='layernorm', type=str, help='normalization
 
 opt = parser.parse_args()
 
-# opt.root = "/home/valv/code/discrete-optimization/runs"
-# opt.data_root = "/home/valv/code/discrete-optimization/data"
-#
-# print("##ROOT:", opt.root)
-# print("##DATA:", opt.data_root)
-
 if opt.deterministic:
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
@@ -113,7 +109,7 @@ run_id += f"-arch{opt.hdim}x{opt.nlayers}"
 if opt.norm is not 'none':
     run_id += f"-{opt.norm}"
 
-_exp_id = opt.exp
+_exp_id = f"{opt.exp}-{opt.dataset}-{opt.estimator}"
 
 # defining the run directory
 logdir = os.path.join(opt.root, opt.exp)
@@ -127,7 +123,9 @@ else:
 
 # save configuration
 with open(os.path.join(logdir, 'config.json'), 'w') as fp:
-    fp.write(json.dumps(vars(opt), default=lambda x: str(x), indent=4))
+    _opt = vars(opt)
+    _opt['hostname'] = socket.gethostname()
+    fp.write(json.dumps(_opt, default=lambda x: str(x), indent=4))
 
 # wrap the training loop inside a try/except so we can write potential errors to a file.
 try:
@@ -239,11 +237,11 @@ try:
             # estimate the variance of the gradients (for `opt.grad_samples` data points)
             grad_args = {'seed': opt.seed, 'batch_size': min(opt.grad_samples, opt.bs), 'key_filter': 'encoder'}
             # current model
-            summary_train["grads"], snr_dist = get_gradients_statistics(estimator, model, x_eval, **grad_args,
+            summary_train["grads"] = get_gradients_statistics(estimator, model, x_eval, **grad_args,
                                                                         **config)
-            # log distribution of SNRs
-            if len(snr_dist):
-                writer_train.add_histogram("grads/snr", snr_dist)
+
+            grad_data = summary_train["grads"]
+            train_logger.info(f"{_exp_id} | grads | snr = {grad_data.get('snr', 0.):.3E}, variance = {grad_data.get('variance', 0.):.3E}, magnitude = {grad_data.get('magnitude', 0.):.3E}")
 
             # analyse the control variate terms on the counterfactual estimators
             analyse_control_variate(x_eval, model, c_configs, c_estimators, counterfactual_estimators, writer_train, seed=opt.seed, global_step=global_step)
@@ -251,11 +249,11 @@ try:
             # counter factual estimation of other estimators
             for (c_writer, c_conf, c_est, c) in zip(counterfactual_writers, c_configs, c_estimators,
                                                     counterfactual_estimators):
-                grad_data, *_ = get_gradients_statistics(c_est, model, x_eval, **grad_args, **c_conf)
+                grad_data = get_gradients_statistics(c_est, model, x_eval, **grad_args, **c_conf)
                 summary = Diagnostic({'grads': grad_data})
                 summary.log(c_writer, global_step)
                 train_logger.info(f" | counterfactual | {c:{max(map(len, counterfactual_estimators))}s} "
-                                  f"| log_snr = {grad_data.get('log_snr', 0.):.3f}, log_variance = {grad_data.get('log_variance', 0.):.3f}")
+                                  f"| snr = {grad_data.get('snr', 0.):.3f}, variance = {grad_data.get('variance', 0.):.3f}")
 
             # valid epoch
             with torch.no_grad():
@@ -281,14 +279,15 @@ try:
         log_summary(summary_train, global_step, epoch, logger=train_logger, writer=writer_train, exp_id=_exp_id)
 
         # reduce learning rate
-        lr_freq = (epochs // (opt.lr_reduce_steps + 1))
-        if epoch % lr_freq == 0:
-            for o in optimizers:
-                for i, param_group in enumerate(o.param_groups):
-                    lr = param_group['lr']
-                    new_lr = lr / 2
-                    param_group['lr'] = new_lr
-                    base_logger.info(f"Reducing lr, group = {i} : {lr:.2E} -> {new_lr:.2E}")
+        if opt.lr_reduce_steps > 0:
+            lr_freq = (epochs // (opt.lr_reduce_steps + 1))
+            if epoch % lr_freq == 0:
+                for o in optimizers:
+                    for i, param_group in enumerate(o.param_groups):
+                        lr = param_group['lr']
+                        new_lr = lr / 2
+                        param_group['lr'] = new_lr
+                        base_logger.info(f"Reducing lr, group = {i} : {lr:.2E} -> {new_lr:.2E}")
 
 
     print("TESTING..", best_elbo)

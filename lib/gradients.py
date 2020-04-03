@@ -13,7 +13,7 @@ def covariance(x):
     return cov
 
 
-def get_gradients_statistics(estimator, model, x, batch_size=32, seed=None, key_filter='', **config):
+def get_gradients_statistics__(estimator, model, x, batch_size=32, seed=None, key_filter='', **config):
     """
     Compute the variance, magnitude and SNR of the gradients.
     """
@@ -60,7 +60,7 @@ def get_gradients_statistics(estimator, model, x, batch_size=32, seed=None, key_
 
         with torch.no_grad():
             # return reinforce l1 term
-            l1 = diagnostics.get('loss').get('control_variate_l1')
+            l1 = diagnostics.get('reinforce').get('l1')
             control_variate_l1s += [l1.mean().item() if l1 is not None else 0.]
 
             # gather grads expected value and variance of the gradients
@@ -88,7 +88,6 @@ def get_gradients_statistics(estimator, model, x, batch_size=32, seed=None, key_
     # don't use mask for now
     mask = torch.ones_like(mask)
 
-
     def _mean(x):
         return (mask * x).sum() / mask.sum()
 
@@ -101,10 +100,10 @@ def get_gradients_statistics(estimator, model, x, batch_size=32, seed=None, key_
     # print(f">> grads: iw = {estimator.iw}, elapsed time = {time() - _start:.3f}, snr = {snr.mean().log().item():.3f}, masked. snr {_mean(snr).log().item():.3f},  log_var = {_mean(variance).log().item():.3f}, Estimator = {type(estimator).__name__}")
 
     return {'log_variance': _mean(variance).log(), 'magnitude': _mean(magnitude).abs(), 'log_snr': _mean(snr).log(),
-            'reinforce_l1': avg_l1}, snr[variance>eps]
+            'reinforce_l1': avg_l1}
 
 
-def get_gradients_log_total_variance__(estimator, model, x, batch_size=32, seed=None, **config):
+def get_gradients_statistics(estimator, model, x, batch_size=32, seed=None, key_filter='', **config):
     """
     Compute the average log of the total variance
 
@@ -112,10 +111,11 @@ def get_gradients_log_total_variance__(estimator, model, x, batch_size=32, seed=
     """
 
     var_grads = []
+    mean_grads = []
     control_variate_l1s = []
 
     for x_i in x:
-        x_i = x_i[None].expand(batch_size, *x_i.size())
+        x_i = x_i[None].expand(x.size(0), *x_i.size())
 
         if seed is not None:
             _seed = int(torch.randint(1, sys.maxsize, (1,)).item())
@@ -144,6 +144,7 @@ def get_gradients_log_total_variance__(estimator, model, x, batch_size=32, seed=
             control_variate_l1 = diagnostics.get('loss').get('control_variate_l1')
             control_variate_l1s += [control_variate_l1.mean().item() if control_variate_l1 is not None else 0.]
             var_grads += [(total_variance).item()]
+            mean_grads += [(gradients.norm(p=2, dim=1)).mean().item()]
 
     if seed is not None:
         torch.manual_seed(_seed)
@@ -151,4 +152,11 @@ def get_gradients_log_total_variance__(estimator, model, x, batch_size=32, seed=
     # reinitialize grads
     model.zero_grad()
 
-    return np.log(np.sum(var_grads) / len(var_grads)), np.mean(control_variate_l1s)
+    variance = np.sum(var_grads) / len(var_grads) ** 2
+    magnitude = np.mean(mean_grads)
+    snr = magnitude / (eps + np.sqrt(variance))
+
+    avg_l1 = np.mean(control_variate_l1s)
+
+    return {'variance': variance, 'magnitude': magnitude, 'snr': snr,
+            'reinforce_l1': avg_l1}
