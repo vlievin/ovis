@@ -141,7 +141,7 @@ class OptCovReinforce(Reinforce):
             mask = 1 - torch.eye(self.iw, device=x.device, dtype=x.dtype)
 
             # compute \hat{L} \approx \log 1\k \sum_m w_m
-            L_hat, _n_nans = Vimco.compute_control_variate(self, x, mc_estimate=mc_estimate, arithmetic=arithmetic,
+            L_hat, _, _n_nans = Vimco.compute_control_variate(self, x, mc_estimate=mc_estimate, arithmetic=arithmetic,
                                                            return_raw=True, use_double=use_double,
                                                            use_outer_samples=use_outer_samples, **data)
 
@@ -216,4 +216,8 @@ class OptCovReinforce(Reinforce):
             # if any NaN, just replace with `0`
             c_opt[c_opt != c_opt] = 0
 
-        return c_opt.detach().type(x.dtype), _n_nans
+        L_hat = torch.einsum("mn, bkmnu, bkmn -> bkmu", [mask, alpha_mn, L_hat.expand_as(v_mn)])
+        v_hat = torch.einsum("mn, bkmnu, bkmn -> bkmu", [mask, alpha_mn, v_mn])
+        meta = {'L_hat': L_hat, 'v_hat': v_hat}
+
+        return c_opt.detach().type(x.dtype), meta, _n_nans

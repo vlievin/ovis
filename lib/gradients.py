@@ -98,7 +98,7 @@ def get_gradients_statistics(estimator, model, x, batch_size=32, seed=None, key_
 
     avg_l1 = np.mean(control_variate_l1s)
 
-    print(f">> grads: iw = {estimator.iw}, elapsed time = {time() - _start:.3f}, snr = {snr.mean().log().item():.3f}, masked. snr {_mean(snr).log().item():.3f},  log_var = {_mean(variance).log().item():.3f}, Estimator = {estimator}")
+    # print(f">> grads: iw = {estimator.iw}, elapsed time = {time() - _start:.3f}, snr = {snr.mean().log().item():.3f}, masked. snr {_mean(snr).log().item():.3f},  log_var = {_mean(variance).log().item():.3f}, Estimator = {type(estimator).__name__}")
 
     return {'log_variance': _mean(variance).log(), 'magnitude': _mean(magnitude).abs(), 'log_snr': _mean(snr).log(),
             'reinforce_l1': avg_l1}, snr[variance>eps]

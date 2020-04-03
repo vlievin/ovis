@@ -20,6 +20,7 @@ from lib.gradients import get_gradients_statistics
 from lib.logging import sample_model, get_loggers, log_summary, save_model, load_model
 from lib.ops import training_step, test_step
 from lib.utils import notqdm
+from lib.analysis import analyse_control_variate
 
 _sep = os.get_terminal_size().columns * "-"
 
@@ -80,6 +81,12 @@ parser.add_argument('--b_nlayers', default=1, type=int, help='number of hidden l
 parser.add_argument('--norm', default='layernorm', type=str, help='normalization layer [none | layernorm | batchnorm]')
 
 opt = parser.parse_args()
+
+# opt.root = "/home/valv/code/discrete-optimization/runs"
+# opt.data_root = "/home/valv/code/discrete-optimization/data"
+#
+# print("##ROOT:", opt.root)
+# print("##DATA:", opt.data_root)
 
 if opt.deterministic:
     torch.backends.cudnn.deterministic = True
@@ -227,21 +234,24 @@ try:
         if epoch % opt.eval_freq == 0:
 
             # batch of data for the gradients variance evaluation (at maximum of size bs)
-            x_grads_eval = next(iter(loader_train)).to(device)  # [:opt.grad_samples]
+            x_eval = next(iter(loader_train)).to(device)  # [:opt.grad_samples]
 
             # estimate the variance of the gradients (for `opt.grad_samples` data points)
             grad_args = {'seed': opt.seed, 'batch_size': min(opt.grad_samples, opt.bs), 'key_filter': 'encoder'}
             # current model
-            summary_train["grads"], snr_dist = get_gradients_statistics(estimator, model, x_grads_eval, **grad_args,
+            summary_train["grads"], snr_dist = get_gradients_statistics(estimator, model, x_eval, **grad_args,
                                                                         **config)
             # log distribution of SNRs
             if len(snr_dist):
                 writer_train.add_histogram("grads/snr", snr_dist)
 
+            # analyse the control variate terms on the counterfactual estimators
+            analyse_control_variate(x_eval, model, c_configs, c_estimators, counterfactual_estimators, writer_train, seed=opt.seed, global_step=global_step)
+
             # counter factual estimation of other estimators
             for (c_writer, c_conf, c_est, c) in zip(counterfactual_writers, c_configs, c_estimators,
                                                     counterfactual_estimators):
-                grad_data, *_ = get_gradients_statistics(c_est, model, x_grads_eval, **grad_args, **c_conf)
+                grad_data, *_ = get_gradients_statistics(c_est, model, x_eval, **grad_args, **c_conf)
                 summary = Diagnostic({'grads': grad_data})
                 summary.log(c_writer, global_step)
                 train_logger.info(f" | counterfactual | {c:{max(map(len, counterfactual_estimators))}s} "

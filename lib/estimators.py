@@ -535,8 +535,9 @@ class Reinforce(VariationalInference):
 
         baseline = self.baseline(x)
         n_nans = len(baseline[baseline != baseline])
+        meta = {}
 
-        return baseline.view((x.size(0), 1, 1, 1)), n_nans  # output of shape [bs, 1, 1, 1], Number of NaNs
+        return baseline.view((x.size(0), 1, 1, 1)), meta, n_nans  # output of shape [bs, 1, 1, 1], Number of NaNs
 
     def compute_control_variate_l1(self, score, control_variate, weights=None):
         """L1 between the score function and its estimate"""
@@ -568,9 +569,9 @@ class Reinforce(VariationalInference):
 
     def compute_score(self, iw_data, mc_estimate):
         L_k, kl, log_f_xz = [iw_data[k] for k in ('L_k', 'kl', 'log_f_xz')]
+        v = self.normalized_importance_weights(log_f_xz)
 
         if self.score_from_phi:
-            v = self.normalized_importance_weights(log_f_xz)
             score = L_k[:, :, None] - v
         else:
             score = L_k[:, :, None]
@@ -578,12 +579,14 @@ class Reinforce(VariationalInference):
         if mc_estimate:
             score = score.mean(1, keepdim=True)
 
-        return score
+        return score, {'L_k':L_k, "v": v}
 
     def forward(self, model: nn.Module, x: Tensor, backward: bool = False, mc_estimate: bool = False, score_from_phi:bool=None, z_reject=0,
                 **kwargs: Any) -> \
             Tuple[Tensor, Dict, Dict]:
 
+
+        bs = x.size(0)
 
         # todo: hacky change of state, implement a clean version
         if score_from_phi is not None:
@@ -596,10 +599,10 @@ class Reinforce(VariationalInference):
         L_k, kl, N_eff = [iw_data[k] for k in ('L_k', 'kl', 'N_eff')]
 
         # compute score l: dL(z)\dtheta = L dq(z) \ dtheta
-        score = self.compute_score(iw_data, mc_estimate=mc_estimate)
+        score, score_meta = self.compute_score(iw_data, mc_estimate=mc_estimate)
 
         # compute control variate and MSE
-        control_variate, _n_nans = self.compute_control_variate(x, mc_estimate=mc_estimate, **iw_data, **output,
+        control_variate, control_variate_meta, _n_nans = self.compute_control_variate(x, mc_estimate=mc_estimate, **iw_data, **output,
                                                                 **kwargs)
         control_variate_l1 = self.compute_control_variate_l1(score, control_variate)
 
@@ -671,6 +674,17 @@ class Reinforce(VariationalInference):
         # final loss
         loss = - _L_k - reinforce_loss + self.control_variate_loss_weight * control_variate_l1
 
+        # update output with meta data
+        output.update(**score_meta)
+        output.update(**control_variate_meta)
+
+        # compute dlogits
+        output['dqlogits'] = self._compute_dlogits(output)
+
+        # check shapes
+        assert score.shape[0] == bs
+        assert score.shape[1] == self.mc
+
         # prepare diagnostics
         diagnostics = Diagnostic({
             'loss': {
@@ -695,6 +709,27 @@ class Reinforce(VariationalInference):
             loss.mean().backward()
 
         return loss, diagnostics, output
+
+
+    def _compute_dlogits(self, output):
+
+        z, qz = [output[k] for k in ['z', 'qz']]
+
+        assert len(qz) == 1
+        z, qz = z[0], qz[0]
+
+        # compute log probs
+        qlogits = qz.logits
+        log_qz = qz.log_prob(z)
+
+        # d q(z|x) / d qlogits
+        d_qlogits, = torch.autograd.grad(
+            [log_qz], [qlogits], grad_outputs=torch.ones_like(log_qz), retain_graph=True, allow_unused=True)
+
+        # reshaping d_qlogits and qlogits
+        N, K = d_qlogits.size()[1:]
+
+        return d_qlogits.view(-1, self.mc, self.iw, N, K).detach()
 
 
 class Vimco(Reinforce):
@@ -780,10 +815,14 @@ class Vimco(Reinforce):
         if mc_estimate:
             baseline = baseline.mean(1, keepdim=True)
 
+        baseline = baseline.unsqueeze(-1) # unsqueeze over Nz
+
+        meta = {'L_hat': baseline}
+
         if return_raw:
-            return baseline.unsqueeze(-1), _n_nans
+            return baseline, meta, _n_nans
         else:
-            return baseline.unsqueeze(-1).type(_dtype), _n_nans  # output of shape [bs, mc, iw, 1]
+            return baseline.type(_dtype), meta, _n_nans  # output of shape [bs, mc, iw, 1]
 
 
 class ExactReinforce(Reinforce):
