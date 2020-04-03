@@ -1,29 +1,23 @@
 import argparse
-import json
 import logging
 import multiprocessing
 import os
 import shutil
 import socket
 import sys
+import traceback
 import warnings
-from datetime import datetime
 from multiprocessing import Pool
 
 import GPUtil
 from filelock import filelock  # pip installl git+https://github.com/dmfrey/FileLock.git
-from tinydb import TinyDB, Query  # pip install tinydb
 from tqdm import tqdm
 
-
-def open_db(logdir):
-    db = TinyDB(os.path.join(logdir, '.db.json'))
-    query = Query()
-    return db.table('experiments'), query
+from lib.manager import open_db, snapshot_dir, read_experiment, get_abs_paths, get_filelock
 
 
 def fn(job_args):
-    logdir, devices = job_args
+    opt, abs_logdir, devices = [job_args[k] for k in ["opt", "exp_root", "devices"]]
     _max_attempts = 10
     _hostname = socket.gethostname()
     _pid = os.getpid()
@@ -31,8 +25,8 @@ def fn(job_args):
 
     # retrieve the next queued experiment from the database
     # lock db file to avoid concurrency problems
-    with filelock.FileLock(os.path.join(logdir, ".db.json.lock")):
-        db, query = open_db(logdir)
+    with filelock.FileLock(get_filelock(abs_logdir)):
+        db, query = open_db(abs_logdir)
         item = db.get(query.queued == True)
         if item is not None:
             item['queued'] = False
@@ -57,8 +51,10 @@ def fn(job_args):
             command = f"python {opt.script} {args}"
         try:
             os.system(command)
-        except:
+        except Exception as ex:
             print(f"Command `{command}` failed.")
+            print("-------------------------------------------------")
+            traceback.print_exception(type(ex), ex, ex.__traceback__)
 
         print(f"{process_id} DONE. \nargs = {args}\n\n")
 
@@ -68,6 +64,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--script', default='run.py', help='script name')
     parser.add_argument('--root', default='runs/', help='experiment directory')
+    parser.add_argument('--data_root', default='data/', help='data directory')
     parser.add_argument('--exp', default='estimators-0.1', type=str, help='experiment id')
     parser.add_argument('--max_gpus', default=8, type=int, help='maximum number of gpus')
     parser.add_argument('--max_load', default=0.5, type=float, help='maximum GPU load')
@@ -88,25 +85,29 @@ if __name__ == '__main__':
     # total number of processes
     processes = opt.processes * len(deviceIDs)
 
-    # log directory
-    logdir = os.path.join(opt.root, opt.exp)
-    if os.path.exists(logdir):
-        warnings.warn(f"logging directory `{logdir}` already exists.")
+    # get absolute path to logging directories
+    exps_root, exp_root, exp_data_root = get_abs_paths(opt.root, opt.exp, opt.data_root)
+
+    if os.path.exists(exp_root):
+        warnings.warn(f"logging directory `{exp_root}` already exists.")
 
         if not opt.append:
             if opt.rf:
-                warnings.warn(f"Deleting existing logging directory `{logdir}`.")
-                shutil.rmtree(logdir)
+                warnings.warn(f"Deleting existing logging directory `{exp_root}`.")
+                shutil.rmtree(exp_root)
             else:
                 sys.exit()
 
-    # copy library # todo load the copied library within the jobs to ensure consistency between runs
-    shutil.copytree('./',
-                    os.path.join(logdir, '.lib_snapshot', f"{socket.gethostname()}:{datetime.now()}"),
-                    ignore=shutil.ignore_patterns('.*', '*.git', 'runs', 'reports', 'data'))
+    # copy library to the `snapshot` directory
+    if not opt.append:
+        shutil.copytree('./', snapshot_dir(exp_root),
+                        ignore=shutil.ignore_patterns('.*', '*.git', 'runs', 'reports', 'data'))
+
+    # move path to the snapshot directory to ensure consistency between runs (lib will be loaded from `./lib_snapshot/`)
+    os.chdir(snapshot_dir(exp_root))
 
     # init db
-    db, query = open_db(logdir)
+    db, query = open_db(exp_root)
 
     # logging
     logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler()])
@@ -116,23 +117,22 @@ if __name__ == '__main__':
     logger.info(
         f"Available devices: {deviceIDs}")
     logger.info(
-        f"Experiment id = {opt.exp}, running {opt.processes} processes/device, logdir = {logdir}")
+        f"Experiment id = {opt.exp}, running {opt.processes} processes/device, logdir = {exp_root}")
 
-    with open(f'exps/{opt.exp}.json') as json_file:
-        data = json.load(json_file)
+    experiment_args = read_experiment(opt.exp)
 
     # define the args for each run
-    args = data['args']
+    args = experiment_args['args']
 
     # dropout and others
-    args = [data['global'] + " " + a for a in args]
+    args = [experiment_args['global'] + " " + a for a in args]
 
     # append logdir to args
-    args = [f"--exp {opt.exp} --root {opt.root} " + a for a in args]
+    args = [f"--exp {opt.exp} --root {exps_root} --data_root {exp_data_root} {a}" for a in args]
 
     # parameters lists
-    if "parameters" in data.keys():
-        for _arg, values in data["parameters"].items():
+    if "parameters" in experiment_args.keys():
+        for _arg, values in experiment_args["parameters"].items():
             _args = []
             for v in values:
                 _args += [f"--{_arg} {v} " + a for a in args]
@@ -141,10 +141,10 @@ if __name__ == '__main__':
     # for i, a in enumerate(args):
     #     logger.info(f"# EXPERIMENT #{i}:  {a}")
 
-    # write all experiments to a database
-    for i, a in enumerate(args):
-        if not db.contains(query.arg == a):
-            db.insert({'arg': a, 'queued': True, "job_id": "none"})
+    # todo: write all experiments to a database
+    # for i, a in enumerate(args):
+    #     if not db.contains(query.arg == a):
+    #         db.insert({'arg': a, 'queued': True, "job_id": "none"})
 
     n_records = len(db.search(query.queued))
 
@@ -153,6 +153,6 @@ if __name__ == '__main__':
 
     # run processes in parallel
     pool = Pool(processes=processes)
-    job_args = [(logdir, deviceIDs) for _ in range(n_records)]
+    job_args = [{"opt": opt, "exp_root": exp_root, "devices": deviceIDs} for _ in range(n_records)]
     for _ in tqdm(pool.imap_unordered(fn, job_args, chunksize=1), total=n_records, desc="Job Manager"):
         pass
