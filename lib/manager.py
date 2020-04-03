@@ -2,25 +2,11 @@ import json
 import os
 
 from tinydb import TinyDB, Query  # pip install tinydb
-from filelock import filelock
 
 
 def open_db(logdir):
     _file = os.path.join(logdir, '.db.json')
-
-    # sometimes the file get corrupted with trailing null bytes (\0x00)
-    # remove them as an ugly and quick workaround
-    with filelock.FileLock(get_filelock(logdir)):
-        with open(_file, 'r') as fp:
-            s = fp.read()
-
-        if s.find('\x00'):
-            print("# manager.open_db: removing null bytes.")
-            s = s.replace('\x00', '')
-            with open(_file, 'w') as fp:
-                fp.write(s)
-
-    db = TinyDB(_file)
+    db = TinyDB(_file, indent=4)
     query = Query()
     return db.table('experiments'), query
 

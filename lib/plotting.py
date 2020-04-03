@@ -98,7 +98,7 @@ def spot_on_plot(logs, path, metrics, main_key, auxiliary_key, style_key=None, y
         for i, metric in enumerate(metrics):
 
             try:
-                ax = axes[i, j] if ncols > 1 else ax = axes[i]
+                ax = axes[i, j] if ncols > 1 else axes[i]
                 data = aux_data[aux_data["_key"] == metric]
 
                 sns.lineplot(x="step", y="_value",
@@ -177,8 +177,7 @@ def pivot_plot(df, path, metrics, main_key, auxiliary_key, style_key=None, ylims
         for i, metric in enumerate(metrics):
 
             try:
-                 ax = axes[i, j] if ncols > 1 else ax = axes[i]
-
+                ax = axes[i, j] if ncols > 1 else axes[i]
 
                 sns.pointplot(x=auxiliary_key, y=metric, hue=key_name, data=dset_data, ax=ax, hue_order=hue_order, linestyles=linestyles, color_palette=palette, markers=markers, capsize=.2)
                 plt.setp(ax.lines, alpha=.7)

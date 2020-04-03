@@ -141,10 +141,10 @@ if __name__ == '__main__':
     # for i, a in enumerate(args):
     #     logger.info(f"# EXPERIMENT #{i}:  {a}")
 
-    # todo: write all experiments to a database
-    # for i, a in enumerate(args):
-    #     if not db.contains(query.arg == a):
-    #         db.insert({'arg': a, 'queued': True, "job_id": "none"})
+    # write all experiments to a database
+    for i, a in enumerate(args):
+        if not db.contains(query.arg == a):
+            db.insert({'arg': a, 'queued': True, "job_id": "none"})
 
     n_records = len(db.search(query.queued))
 
