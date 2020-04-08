@@ -519,8 +519,8 @@ class Reinforce(VariationalInference):
         self.control_variate_loss_weight = 0 if baseline is None else 1.
         assert self.sequential_computation == False
 
-        # `score_from_phi` == True results in using case (b)
-        self.score_from_phi = False
+        # `factorize_v` == True results in using case (b)
+        self.factorize_v = False
 
         # measure distribution of L1 for rejection sampling
         self.z_score_l1 = ZScore()
@@ -571,7 +571,7 @@ class Reinforce(VariationalInference):
         L_k, kl, log_f_xz = [iw_data[k] for k in ('L_k', 'kl', 'log_f_xz')]
         v = self.normalized_importance_weights(log_f_xz)
 
-        if self.score_from_phi:
+        if self.factorize_v:
             score = L_k[:, :, None] - v
         else:
             score = L_k[:, :, None]
@@ -581,7 +581,7 @@ class Reinforce(VariationalInference):
 
         return score, {'L_k':L_k, "v": v}
 
-    def forward(self, model: nn.Module, x: Tensor, backward: bool = False, mc_estimate: bool = False, score_from_phi:bool=None, z_reject=0,
+    def forward(self, model: nn.Module, x: Tensor, backward: bool = False, mc_estimate: bool = False, factorize_v:bool=None, z_reject=0,
                 **kwargs: Any) -> \
             Tuple[Tensor, Dict, Dict]:
 
@@ -589,13 +589,13 @@ class Reinforce(VariationalInference):
         bs = x.size(0)
 
         # todo: hacky change of state, implement a clean version
-        if score_from_phi is not None:
-            self.score_from_phi = score_from_phi
+        if factorize_v is not None:
+            self.factorize_v = factorize_v
 
         x_target = self._expand_sample(x)
         output = self.evaluate_model(model, x, x_target, mc=self.mc, iw=self.iw, **kwargs)
         log_px_z, log_pz, log_qz = [output[k] for k in ('log_px_z', 'log_pz', 'log_qz')]
-        iw_data = self.compute_iw_bound(log_px_z, log_pz, log_qz, detach_qlogits=self.score_from_phi)
+        iw_data = self.compute_iw_bound(log_px_z, log_pz, log_qz, detach_qlogits=self.factorize_v)
         L_k, kl, N_eff = [iw_data[k] for k in ('L_k', 'kl', 'N_eff')]
 
         # compute score l: dL(z)\dtheta = L dq(z) \ dtheta

@@ -16,7 +16,7 @@ class OptCovReinforce(Reinforce):
         super().__init__(*args, **kwargs)
         self.control_variate_loss_weight = 0  # the control variate doesn't have any parameter
         self.log_iw_m1 = np.log(self.iw - 1)
-        self.score_from_phi = True
+        self.factorize_v = True
 
     def normalized_importance_weights(self, log_f_xz):
         v = softmax(log_f_xz, dim=2)
