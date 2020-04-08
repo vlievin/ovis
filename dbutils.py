@@ -4,17 +4,21 @@ import json
 import argparse
 import shutil
 import traceback
-from lib.manager import open_db, snapshot_dir, read_experiment, get_abs_paths
+from filelock import filelock
+from lib.manager import open_db, snapshot_dir, read_experiment, get_abs_paths, get_filelock
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--root', default='runs/', help='experiment directory')
-parser.add_argument('--exp', default='binary-images-0.2', type=str, help='experiment id')
+parser.add_argument('--root', default='/nobackup/valv/runs/copt/', help='experiment directory')
+parser.add_argument('--exp', default='binary-images-0.3', type=str, help='experiment id')
 parser.add_argument('--update', default='', help='comma separated list of args :key:value:new_value, eg `data:path:newpath,iw:10:100`')
 parser.add_argument('--delete', default='', help='pattern to be match in exp')
 parser.add_argument('--show', action='store_true', help='show all records')
 parser.add_argument('--requeue', action='store_true', help='requeue experiment without successful outcome in `success.txt`')
 parser.add_argument('--hard_requeue', action='store_true', help='also recover experiments without the `success` file. Warning: will delete runs of currently running exps.')
 opt = parser.parse_args()
+
+
+print(f"## dbutils: root = {opt.root}")
 
 _sep = os.get_terminal_size().columns * "-"
 
@@ -24,7 +28,8 @@ _success_flag = "Success"
 exps_root, exp_root, _ = get_abs_paths(opt.root, opt.exp, None)
 
 try:
-    db, query = open_db(exp_root)
+    with filelock.FileLock(get_filelock(exp_root), timeout=10):
+        db, query = open_db(exp_root)
 except Exception as ex:
     print("--------------------------------------------------------------------------------")
     traceback.print_exception(type(ex), ex, ex.__traceback__)
