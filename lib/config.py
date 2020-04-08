@@ -1,5 +1,5 @@
-from .optcov_estimator import *
-from .structured_estimators import *
+from .estimators import *
+from .estimators.structured_estimators import StructuredReinforce
 from .utils import parse_numbers
 
 
@@ -9,7 +9,7 @@ def get_config(estimator):
         config = {'tau': 0, 'zgrads': True}
 
 
-    elif any([e in estimator for e in ['reinforce', 'vimco', 'covbaseline']]):
+    elif any([e in estimator for e in ['reinforce', 'vimco', 'copt']]):
 
         # parse the pattern `estimator-z_reject{`value`}`
         z_reject_args = [arg for arg in estimator.split('-') if 'z_reject' in arg]
@@ -25,7 +25,7 @@ def get_config(estimator):
             Estimator = Reinforce
             config = reinforce_args
 
-        elif 'covbaseline' in estimator or 'vimco' in estimator:
+        elif 'copt' in estimator or 'vimco' in estimator:
 
             use_outer_samples = '-outer' in estimator
             use_double = not ('-float32' in estimator)
@@ -43,18 +43,18 @@ def get_config(estimator):
                 grads_phi = '-phi' in estimator
                 config = {'factorize_v': grads_phi, **reinforce_args, **vimco_args}
 
-            elif 'covbaseline' in estimator:
+            elif 'copt' in estimator:
                 Estimator = OptCovReinforce
                 nz_estimate = '-nz' in estimator
                 config = {**reinforce_args, **vimco_args, 'nz_estimate': nz_estimate}
 
             else:
                 raise ValueError(
-                    f"Unknown vimco-like estimator {estimator}, valid base identifiers are [vimco, covbaseline]")
+                    f"Unknown vimco-like estimator {estimator}, valid base identifiers are [vimco, copt]")
 
         else:
             raise ValueError(
-                f"Unknown reinforce-like estimator {estimator}, valid base identifiers are [reinforce, vimco, covbaseline]")
+                f"Unknown reinforce-like estimator {estimator}, valid base identifiers are [reinforce, vimco, copt]")
 
 
 

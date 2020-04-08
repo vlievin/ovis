@@ -1,6 +1,6 @@
-from .estimators import *
-from .estimators import _EPS
-from .utils import *
+from lib.utils import *
+from .base import _EPS
+from .reinforce import *
 
 
 class OptCovReinforce(Reinforce):
@@ -142,8 +142,8 @@ class OptCovReinforce(Reinforce):
 
             # compute \hat{L} \approx \log 1\k \sum_m w_m
             L_hat, _, _n_nans = Vimco.compute_control_variate(self, x, mc_estimate=mc_estimate, arithmetic=arithmetic,
-                                                           return_raw=True, use_double=use_double,
-                                                           use_outer_samples=use_outer_samples, **data)
+                                                              return_raw=True, use_double=use_double,
+                                                              use_outer_samples=use_outer_samples, **data)
 
             # compute the `v` term
             log_sum_exp_w = log_sum_exp_except_stable(log_w, dim=2, mask=mask)

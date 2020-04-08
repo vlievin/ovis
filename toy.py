@@ -11,7 +11,7 @@ import torch
 from tqdm import tqdm
 
 from lib import ToyVAE
-from lib import VariationalInference
+from lib.estimators import VariationalInference
 from lib.config import get_config
 from lib.gradients import get_gradients_statistics
 from lib.logging import get_loggers

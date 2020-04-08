@@ -6,8 +6,8 @@ work in progress
 from booster import Diagnostic
 from torch import nn, Tensor
 
-from .estimators import *
-from .utils import *
+from lib.estimators import *
+from lib.utils import *
 
 _EPS = 1e-18
 

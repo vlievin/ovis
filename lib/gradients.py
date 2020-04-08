@@ -122,7 +122,7 @@ def get_gradients_statistics(estimator, model, x, batch_size=32, n_samples=1000,
 
             while grads_mean_i.n < n_samples:
 
-                pbar.set_description(f"grad: x = {i} / {x.shape[0]}, n = {grads_mean_i.n} / {n_samples}")
+                pbar.set_description(f"gradients analysis [x = {i} / {x.shape[0]}, n = {grads_mean_i.n} / {n_samples}]")
                 pbar.update(1)
 
                 model.eval()
