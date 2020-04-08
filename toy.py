@@ -5,14 +5,16 @@ import socket
 import traceback
 from shutil import rmtree
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import seaborn as sns
 import torch
 from tqdm import tqdm
 
 from lib import ToyVAE
-from lib.estimators import VariationalInference
 from lib.config import get_config
+from lib.estimators import VariationalInference
 from lib.gradients import get_gradients_statistics
 from lib.logging import get_loggers
 from lib.utils import notqdm
@@ -36,7 +38,7 @@ parser.add_argument('--sequential_computation', action='store_true',
 
 # estimator
 parser.add_argument('--estimators',
-                    default='covbaseline-arithmetic,vimco-arithmetic,pathwise,covbaseline-geometric,vimco-geometric',
+                    default='copt-arithmetic,vimco-arithmetic,pathwise,copt-geometric,vimco-geometric',
                     help='[vi, reinforce, vimco, gs, st-gs]')
 parser.add_argument('--iws', default="1000,900,800,700,600,500,400,300,200,100,50,30,20,10,5",
                     help='number of Importance-Weighted samples')
@@ -114,10 +116,8 @@ try:
                  'key_filter': 'qlogits'}
 
     # generate the dataset
-    model.p_mu.data = torch.randn_like(model.p_mu.data)
+    model.p_mu.data = torch.randn_like(model.p_mu.data) + 10
     x = model.sample_from_prior(N=opt.npoints)['px'].sample()
-
-    print("x:", x.device)
 
     # evaluate model
     loss, diagnostics, output = estimator_valid(model, x, backward=False, **config_valid)
@@ -126,9 +126,9 @@ try:
         f"Before init. | L_{estimator_valid.iw} = {elbo:.3f}")
 
     # initizalize model using the optimal parameters
-    # model.p_mu.data = x.mean(dim=0, keepdim=True).data
-    model.q_mu.weight.data = torch.eye(x.shape[1], device=x.device)
-    model.q_mu.bias.data = x.mean(dim=0, keepdim=True).data / 2.
+    model.p_mu.data = x.mean(dim=0, keepdim=True).data  # mu^*
+    model.q_mu.weight.data = torch.eye(x.shape[1], device=x.device) / 2.  # A = I / 2
+    model.q_mu.bias.data = x.mean(dim=0, keepdim=False).data / 2.  # b = mu^* / 2
 
     # evaluate model
     loss, diagnostics, output = estimator_valid(model, x, backward=False, **config_valid)
@@ -145,18 +145,6 @@ try:
     elbo = diagnostics['loss']['elbo'].mean().item()
     base_logger.info(
         f"After perturbation | L_{estimator_valid.iw} = {elbo:.3f}")
-
-    # optimization
-    # optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
-    # for epoch in range(1, 1000):
-    #     model.zero_grad()
-    #     loss, diagnostics, output = estimator_valid(model, x, backward=False, **config_valid)
-    #     loss.mean().backward()
-    #
-    # loss, diagnostics, output = estimator_valid(model, x, backward=False, **config_valid)
-    # elbo = diagnostics['loss']['elbo'].mean().item()
-    # base_logger.info(
-    #     f"After optimization | L_{estimator_valid.iw} = {elbo:.3f}")
 
     meta = {'seed': opt.seed, 'elbo': elbo, 'noise': opt.noise, 'mc_samples': opt.mc_samples}
     data = []
@@ -176,7 +164,7 @@ try:
                 f"{estimator_id}, iw = {iw} | snr = {grad_data.get('snr', 0.):.3E}, variance = {grad_data.get('variance', 0.):.3E}, magnitude = {grad_data.get('magnitude', 0.):.3E}")
 
             data += [{
-                'estimator': type(estimator).__name__,
+                'estimator': estimator_id,
                 'iw': iw,
                 'snr': grad_data.get('snr', 0.).item(),
                 'variance': grad_data.get('variance', 0.).item(),
@@ -187,6 +175,29 @@ try:
     df = pd.DataFrame(data)
     print(df)
     df.to_csv(os.path.join(logdir, 'data.csv'))
+
+    # plotting
+    metrics = ['snr', 'variance', 'magnitude']
+    nrows = 1
+    ncols = len(metrics)
+    hue_order = list(df['estimator'].unique())
+    fig, axes = plt.subplots(ncols=ncols, nrows=nrows, figsize=(5 * ncols, 3 * nrows))
+    for k, metric in enumerate(metrics):
+        ax = axes[k]
+        sns.pointplot(x="iw", y=metric, hue="estimator", data=df, ax=ax, hue_order=hue_order, capsize=.2)
+        #ax.set(xscale="log", yscale="log")
+        ax.set(yscale="log")
+
+        legend = ax.legend()
+        if k < len(metrics) - 1 and legend is not None:
+            legend.remove()
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(logdir, "gradients.png"))
+    plt.show(block=False)
+    plt.pause(5)
+    plt.close()
+
 
 
 

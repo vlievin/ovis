@@ -1,6 +1,6 @@
 from typing import *
-import torch
 
+import torch
 from torch import Tensor
 from torch.distributions import Distribution, Normal
 from torch.nn.functional import gumbel_softmax, log_softmax
@@ -67,13 +67,13 @@ class NormalFromLogits(Distribution):
 
 
 class NormalFromLoc(NormalFromLogits):
-    def __init__(self, logits: Tensor,scale=None, dim: int = -1, **kwargs: Any):
+    def __init__(self, logits: Tensor, scale=None, dim: int = -1, **kwargs: Any):
         """hacking the Normal class so we can easily compute d p.log_prob(z) / d logits"""
         super(Distribution, self).__init__()
-        self.logits = logits.unsqueeze(-1)
+        self.logits = logits
         self.scale = torch.ones_like(logits) if scale is None else scale
         self.dim = dim
 
     @property
-    def _params(self):
-        return self.logits[:,:,0], self.scale
+    def _torch_normal(self):
+        return Normal(loc=self.logits, scale=self.scale)

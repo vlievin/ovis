@@ -83,7 +83,7 @@ class OptCovReinforce(Reinforce):
             [log_qz], [qlogits], grad_outputs=torch.ones_like(log_qz), retain_graph=True, allow_unused=True)
 
         # reshaping d_qlogits and qlogits
-        N, K = d_qlogits.size()[1:]
+        N, K = d_qlogits.shape[1:] if len(d_qlogits.shape) > 2 else  d_qlogits.shape[1], 1
 
         d_qlogits = d_qlogits.view(bs, self.mc, self.iw, N, K)
 
