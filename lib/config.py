@@ -41,7 +41,7 @@ def get_config(estimator):
             if 'vimco' in estimator:
                 Estimator = Vimco
                 grads_phi = '-phi' in estimator
-                config = {'score_from_phi': grads_phi, **reinforce_args, **vimco_args}
+                config = {'factorize_v': grads_phi, **reinforce_args, **vimco_args}
 
             elif 'covbaseline' in estimator:
                 Estimator = OptCovReinforce
