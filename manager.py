@@ -6,72 +6,96 @@ import shutil
 import socket
 import sys
 import traceback
+import time
 import warnings
 from multiprocessing import Pool
 
 import GPUtil
-from filelock import filelock  # pip installl git+https://github.com/dmfrey/FileLock.git
+from lib.filelock import FileLock  # pip installl git+https://github.com/dmfrey/FileLock.git
 from tqdm import tqdm
 
 from lib.manager import open_db, snapshot_dir, read_experiment, get_abs_paths, get_filelock
 
+"""
+NB: the scripts works fine on a single machine, on multiple machines the jobs may crash and that may be due to the shared 
+file system and file lock issues. The behaviour is quite unconsistent.
+"""
+
 
 def fn(job_args):
     opt, abs_logdir, devices = [job_args[k] for k in ["opt", "exp_root", "devices"]]
-    _max_attempts = 10
+    _max_attempts = 100
+    _attempts = 0
+    _wait_time = 10
+    _success = False
     _hostname = socket.gethostname()
     _pid = os.getpid()
     _jobid = f"{_hostname}-{_pid}"
 
-    # retrieve the next queued experiment from the database
-    # lock db file to avoid concurrency problems
-    with filelock.FileLock(get_filelock(abs_logdir)):
-        db, query = open_db(abs_logdir)
-        item = db.get(query.queued == True)
-        if item is not None:
-            item['queued'] = False
-            db.write_back([item])
-        del db
-
-    if item is None:
-        print(f"Manager: no job left.")
-        return None
-    else:
-        args = item['arg']
-
-        process_id = eval(multiprocessing.current_process().name.split('-')[-1]) - 1
-        device = devices[process_id % len(devices)]
-        print(
-            f"initializing process with PID = {os.getpid()}, process id: {process_id}, allocated device: {device}, args= {args}")
-
-        if 'cuda' in device:
-            device_id = device.split(':')[-1]
-            command = f"CUDA_VISIBLE_DEVICES={device_id} python {opt.script} {args}"
-        else:
-            command = f"python {opt.script} {args}"
+    while not _success and _attempts < _max_attempts:
         try:
-            os.system(command)
-        except Exception as ex:
-            print(f"Command `{command}` failed.")
-            print("-------------------------------------------------")
-            traceback.print_exception(type(ex), ex, ex.__traceback__)
+            # retrieve the next queued experiment from the database
+            # lock db file to avoid concurrency problems
+            with FileLock(get_filelock(abs_logdir), timeout=60):
+                db, query = open_db(abs_logdir)
+                item = db.get(query.queued == True)
+                if item is not None:
+                    item['queued'] = False
+                    db.write_back([item])
+                del db
+                time.sleep(0.2)
+            _success = True
 
-        print(f"{process_id} DONE. \nargs = {args}\n\n")
+            if item is None:
+                print(f"Manager: no job left.")
+                return None
+            else:
+                args = item['arg']
+
+                process_id = eval(multiprocessing.current_process().name.split('-')[-1]) - 1
+                device = devices[process_id % len(devices)]
+                print(
+                    f"initializing process with PID = {os.getpid()}, process id: {process_id}, allocated device: {device}, args= {args}")
+
+                if 'cuda' in device:
+                    device_id = device.split(':')[-1]
+                    command = f"CUDA_VISIBLE_DEVICES={device_id} python {opt.script} {args}"
+                else:
+                    command = f"python {opt.script} {args}"
+                try:
+                    os.system(command)
+                except:
+                    print(f"Command `{command}` failed.")
+
+                print(f"{process_id} DONE. \nargs = {args}\n\n")
+
+        except KeyboardInterrupt:
+            print(f"Manager")
+
+        except Exception as ex:
+            _attempts += 1
+            print(f"Manager: fn: attempt = {_attempts} / {_max_attempts}")
+            print("--------------------------------------------------------------------------------")
+            traceback.print_exception(type(ex), ex, ex.__traceback__)
+            print("--------------------------------------------------------------------------------")
+            time.sleep(10)
+
 
 
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--script', default='run.py', help='script name')
-    parser.add_argument('--root', default='runs/', help='experiment directory')
+    parser.add_argument('--root', default='/nobackup/valv/runs/copt/', help='experiment directory')
     parser.add_argument('--data_root', default='data/', help='data directory')
-    parser.add_argument('--exp', default='estimators-0.1', type=str, help='experiment id')
+    parser.add_argument('--exp', default='binary-images-0.3', type=str, help='experiment id')
     parser.add_argument('--max_gpus', default=8, type=int, help='maximum number of gpus')
     parser.add_argument('--max_load', default=0.5, type=float, help='maximum GPU load')
     parser.add_argument('--max_memory', default=0.01, type=float, help='maximum GPU memory')
     parser.add_argument('--processes', default=1, type=int, help='number of processes per GPU')
     parser.add_argument('--rf', action='store_true', help='force delete previous experiment')
     parser.add_argument('--append', action='store_true', help='force append new experiment')
+    parser.add_argument('--max_jobs', default=-1, type=int, help='maximum jobs per thread (stop after `max_jobs`)')
     opt = parser.parse_args()
 
     # get available devices
@@ -101,13 +125,10 @@ if __name__ == '__main__':
     # copy library to the `snapshot` directory
     if not opt.append:
         shutil.copytree('./', snapshot_dir(exp_root),
-                        ignore=shutil.ignore_patterns('.*', '*.git', 'runs', 'reports', 'data'))
+                        ignore=shutil.ignore_patterns('.*', '*.git', 'runs', 'reports', 'data', '__pycache__'))
 
     # move path to the snapshot directory to ensure consistency between runs (lib will be loaded from `./lib_snapshot/`)
     os.chdir(snapshot_dir(exp_root))
-
-    # init db
-    db, query = open_db(exp_root)
 
     # logging
     logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler()])
@@ -142,17 +163,31 @@ if __name__ == '__main__':
     #     logger.info(f"# EXPERIMENT #{i}:  {a}")
 
     # write all experiments to a database
-    for i, a in enumerate(args):
-        if not db.contains(query.arg == a):
-            db.insert({'arg': a, 'queued': True, "job_id": "none"})
+    with FileLock(get_filelock(exp_root), timeout=60):
+        # open db
+        db, query = open_db(exp_root)
 
-    n_records = len(db.search(query.queued))
+        # add missing exps
+        n_added = 0
+        for i, a in enumerate(args):
+            if not db.contains(query.arg == a):
+                db.insert({'arg': a, 'queued': True, "job_id": "none"})
+                n_added += 1
+
+        n_queued_exps = len(db.search(query.queued))
+        n_exps = len(db)
+        time.sleep(0.2)
 
     logger.info(
-        f"Database: queued experiments : {n_records}, total experiments: {len(db)}")
+        f"Database: queued experiments : {n_queued_exps} / {n_exps}. Added exps. {n_added}")
 
     # run processes in parallel
     pool = Pool(processes=processes)
-    job_args = [{"opt": opt, "exp_root": exp_root, "devices": deviceIDs} for _ in range(n_records)]
-    for _ in tqdm(pool.imap_unordered(fn, job_args, chunksize=1), total=n_records, desc="Job Manager"):
+    job_args = [{"opt": opt, "exp_root": exp_root, "devices": deviceIDs} for _ in range(n_queued_exps)]
+
+    if opt.max_jobs > 0:
+        job_args = job_args[:opt.max_jobs*processes]
+
+    print(f"## max. jobs = {len(job_args)}, processes = {processes}")
+    for _ in tqdm(pool.imap_unordered(fn, job_args, chunksize=1), total=n_queued_exps, desc="Job Manager"):
         pass
