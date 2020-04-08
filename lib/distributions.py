@@ -1,4 +1,5 @@
 from typing import *
+import torch
 
 from torch import Tensor
 from torch.distributions import Distribution, Normal
@@ -63,3 +64,16 @@ class NormalFromLogits(Distribution):
 
     def log_prob(self, x):
         return self._torch_normal.log_prob(x)
+
+
+class NormalFromLoc(NormalFromLogits):
+    def __init__(self, logits: Tensor,scale=None, dim: int = -1, **kwargs: Any):
+        """hacking the Normal class so we can easily compute d p.log_prob(z) / d logits"""
+        super(Distribution, self).__init__()
+        self.logits = logits.unsqueeze(-1)
+        self.scale = torch.ones_like(logits) if scale is None else scale
+        self.dim = dim
+
+    @property
+    def _params(self):
+        return self.logits[:,:,0], self.scale
