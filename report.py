@@ -141,6 +141,8 @@ for e in pbar:
                 # reading configuration files with run parameter
                 with open(os.path.join(exp_path, 'config.json'), 'r') as fp:
                     args = DotMap(json.load(fp))
+                    args.pop("hostname")
+                    args.pop("root") # todo
 
                 # parse estimator args: e.g.
                 # * `vimco-outer` -> estimator=vimco, outer=True
