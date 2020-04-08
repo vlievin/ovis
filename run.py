@@ -14,7 +14,7 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 
-from lib import VAE, Baseline, ConvVAE
+from lib import VAE, Baseline, ConvVAE, ToyVAE
 from lib import VariationalInference
 from lib import get_datasets
 from lib.config import get_config
@@ -36,6 +36,7 @@ parser.add_argument('--data_root', default='data/', help='directory to store the
 parser.add_argument('--exp', default='sandbox', help='experiment directory')
 parser.add_argument('--id', default='', type=str, help='run id suffix')
 parser.add_argument('--seed', default=13, type=int, help='random seed')
+parser.add_argument('--workers', default=1, type=int, help='dataloader workers')
 parser.add_argument('--rm', action='store_true', help='delete previous run')
 parser.add_argument('--silent', action='store_true', help='silence tqdm')
 parser.add_argument('--deterministic', action='store_true', help='use deterministic backend')
@@ -84,6 +85,9 @@ parser.add_argument('--norm', default='layernorm', type=str, help='normalization
 
 opt = parser.parse_args()
 
+
+print(f"## run.py: opt.root = {opt.root}")
+
 if opt.deterministic:
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
@@ -91,9 +95,26 @@ if opt.deterministic:
 if opt.silent:
     tqdm = notqdm
 
+
+# define conunterfactuals
+if len(opt.counterfactuals):
+    counterfactual_estimators_ids = opt.counterfactuals.replace(" ", "").split(",")
+
+    def _split(e):
+        if "-iw" in e:
+            arg = e.split("-")[-1]
+            iw = eval(arg.replace("iw", ""))
+            e = e.replace(f"-iw{iw}" , "")
+            return e, iw
+        else:
+            return e, opt.iw
+
+    counterfactual_estimators, counterfactual_iw = zip(*[_split(e) for e in counterfactual_estimators_ids])
+else:
+    counterfactual_estimators, counterfactual_iw, counterfactual_estimators_ids = [], [], []
+
 # defining the run identifier
-counterfactual_estimators = opt.counterfactuals.replace(" ", "").split(",") if len(opt.counterfactuals) else []
-use_baseline = any(['-baseline' in e for e in [opt.estimator] + counterfactual_estimators])
+use_baseline = any(['-baseline' in e for e in [opt.estimator] + list(counterfactual_estimators)])
 run_id = f"{opt.dataset}-{opt.optimizer}-{opt.model}-{opt.prior}-{opt.estimator}-seed{opt.seed}"
 if opt.mini:
     run_id = "mini-" + run_id
@@ -146,12 +167,12 @@ try:
     base_logger.info(f"Sample: x.shape = {x.shape}, x.min = {x.min():.1f}, x.max = {x.max():.1f}, x.dtype = {x.dtype}")
 
     # dataloaders
-    loader_train = DataLoader(dset_train, batch_size=opt.bs, shuffle=True, num_workers=1, pin_memory=True)
-    loader_valid = DataLoader(dset_valid, batch_size=2 * opt.bs, shuffle=True, num_workers=1, pin_memory=True)
+    loader_train = DataLoader(dset_train, batch_size=opt.bs, shuffle=True, num_workers=opt.workers, pin_memory=True)
+    loader_valid = DataLoader(dset_valid, batch_size=2 * opt.bs, shuffle=True, num_workers=opt.workers, pin_memory=True)
 
     # define model
     torch.manual_seed(opt.seed)
-    _MODEL = {'vae': VAE, 'conv-vae': ConvVAE}[opt.model]
+    _MODEL = {'vae': VAE, 'conv-vae': ConvVAE, 'toy-vae': ToyVAE}[opt.model]
     model = _MODEL(x.shape, opt.N, opt.K, opt.hdim, kdim=opt.kdim, nlayers=opt.nlayers, learn_prior=opt.learn_prior,
                    prior=opt.prior, normalization=opt.norm)
 
@@ -170,8 +191,8 @@ try:
     # they are use to measure the variance of the gradients given other estimator without using them for optimization
     if len(counterfactual_estimators):
         c_Estimators, c_configs = zip(*[get_config(c) for c in counterfactual_estimators])
-        c_estimators = [Est(baseline=baseline, mc=opt.mc, iw=opt.iw, N=opt.N, K=opt.K, hdim=opt.hdim) for Est in
-                        c_Estimators]
+        c_estimators = [Est(baseline=baseline, mc=opt.mc, iw=c_iw, N=opt.N, K=opt.K, hdim=opt.hdim) for Est, c_iw in
+                        zip(c_Estimators, counterfactual_iw)]
     else:
         c_configs = c_estimators = []
 
@@ -203,7 +224,7 @@ try:
     # tensorboard writers
     writer_train = SummaryWriter(os.path.join(logdir, 'train'))
     writer_valid = SummaryWriter(os.path.join(logdir, 'valid'))
-    counterfactual_writers = [SummaryWriter(os.path.join(logdir, c)) for c in counterfactual_estimators]
+    counterfactual_writers = [SummaryWriter(os.path.join(logdir, c)) for c in counterfactual_estimators_ids]
 
     # run lenght
     epochs = opt.epochs
@@ -235,7 +256,7 @@ try:
             x_eval = next(iter(loader_train)).to(device)  # [:opt.grad_samples]
 
             # estimate the variance of the gradients (for `opt.grad_samples` data points)
-            grad_args = {'seed': opt.seed, 'batch_size': min(opt.grad_samples, opt.bs), 'key_filter': 'encoder'}
+            grad_args = {'seed': opt.seed, 'batch_size': min(opt.grad_samples, opt.bs), 'key_filter': 'qlogits'}
             # current model
             summary_train["grads"] = get_gradients_statistics(estimator, model, x_eval, **grad_args,
                                                                         **config)
@@ -244,7 +265,7 @@ try:
             train_logger.info(f"{_exp_id} | grads | snr = {grad_data.get('snr', 0.):.3E}, variance = {grad_data.get('variance', 0.):.3E}, magnitude = {grad_data.get('magnitude', 0.):.3E}")
 
             # analyse the control variate terms on the counterfactual estimators
-            analyse_control_variate(x_eval, model, c_configs, c_estimators, counterfactual_estimators, writer_train, seed=opt.seed, global_step=global_step)
+            # analyse_control_variate(x_eval, model, c_configs, c_estimators, counterfactual_estimators, writer_train, seed=opt.seed, global_step=global_step)
 
             # counter factual estimation of other estimators
             for (c_writer, c_conf, c_est, c) in zip(counterfactual_writers, c_configs, c_estimators,
