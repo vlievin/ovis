@@ -1,9 +1,9 @@
 {
   "description": "compare VIMCO and Covbaseline using different number of IW samples and using different averaging (arithmetic vs geometric)",
   "args": [
-    "--estimator covbaseline-arithmetic",
+    "--estimator copt-arithmetic",
     "--estimator vimco-arithmetic",
-    "--estimator covbaseline-geometric",
+    "--estimator copt-geometric",
     "--estimator vimco-geometric"
   ],
   "global": "--silent --deterministic --epochs 1000 --lr_reduce_steps 0 --bs 32 --iw_valid 100",
