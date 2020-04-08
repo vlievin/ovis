@@ -61,10 +61,10 @@ parser.add_argument('--iw', default=1, type=int, help='number of Importance-Weig
 
 # evaluation
 parser.add_argument('--eval_freq', default=10, type=int, help='frequency for the evaluation [test set + grads]')
-parser.add_argument('--iw_valid', default=10, type=int, help='number of Importance-Weighted samples for validation')
+parser.add_argument('--iw_valid', default=100, type=int, help='number of Importance-Weighted samples for validation')
 # gradients analysis
-parser.add_argument('--grad_samples', default=10, type=int,
-                    help='number of samples used to evaluate the variance. (at maximum it is size `bs` to avoid using too much memory)')
+parser.add_argument('--grad_samples', default=100, type=int,
+                    help='number of samples used to evaluate the variance.')
 parser.add_argument('--counterfactuals', default='',
                     help='comma separated list of estimators for which the gradients will be evaluated without being used for optimization.'
                          'example: `reinforce, covbaseline-arithmetic`')
@@ -255,8 +255,8 @@ try:
             # batch of data for the gradients variance evaluation (at maximum of size bs)
             x_eval = next(iter(loader_train)).to(device)  # [:opt.grad_samples]
 
-            # estimate the variance of the gradients (for `opt.grad_samples` data points)
-            grad_args = {'seed': opt.seed, 'batch_size': min(opt.grad_samples, opt.bs), 'key_filter': 'qlogits'}
+            # estimate the variance of the gradients
+            grad_args = {'seed': opt.seed, 'batch_size': opt.bs * opt.mc * opt.iw, 'n_samples:' : opt.grad_samples, 'key_filter': 'qlogits'}
             # current model
             summary_train["grads"] = get_gradients_statistics(estimator, model, x_eval, **grad_args,
                                                                         **config)

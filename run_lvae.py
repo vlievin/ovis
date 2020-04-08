@@ -13,7 +13,7 @@ from lib import LVAE, Baseline
 from lib import VariationalInference
 from lib import get_shapes_datasets
 from lib.config import get_config
-from lib.gradients import get_gradients_log_total_variance
+from lib.gradients import get_gradients_statistics
 from lib.logging import sample_model, get_loggers, log_summary, save_model
 
 
@@ -162,7 +162,7 @@ for epoch in range(1, opt.epochs + 1):
 
     # estimate gradients variance
     x = next(iter(loader_train)).to(device)
-    summary_train["loss"]["log_grad_var"] = get_gradients_log_total_variance(estimator, model, x, **config)
+    summary_train["loss"]["log_grad_var"] = get_gradients_statistics(estimator, model, x, **config)
 
     # valid epoch
     with torch.no_grad():

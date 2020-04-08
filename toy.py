@@ -24,7 +24,7 @@ parser = argparse.ArgumentParser()
 # run directory, id and seed
 parser.add_argument('--root', default='runs/', help='directory to store training logs')
 parser.add_argument('--data_root', default='data/', help='directory to store the data')
-parser.add_argument('--exp', default='sandbox', help='experiment directory')
+parser.add_argument('--exp', default='gaussian-toy-variance-0.1', help='experiment directory')
 parser.add_argument('--id', default='', type=str, help='run id suffix')
 parser.add_argument('--seed', default=13, type=int, help='random seed')
 parser.add_argument('--workers', default=1, type=int, help='dataloader workers')
@@ -35,16 +35,20 @@ parser.add_argument('--sequential_computation', action='store_true',
                     help='compute each iw sample sequential during validation')
 
 # estimator
-parser.add_argument('--estimators', default='covbaseline-arithmetic,vimco-arithmetic,pathwise,covbaseline-geometric,vimco-geometric', help='[vi, reinforce, vimco, gs, st-gs]')
-parser.add_argument('--iws', default="1000,900,800,700,600,500,400,300,200,100,50,30,20,10,5", help='number of Importance-Weighted samples')
+parser.add_argument('--estimators',
+                    default='covbaseline-arithmetic,vimco-arithmetic,pathwise,covbaseline-geometric,vimco-geometric',
+                    help='[vi, reinforce, vimco, gs, st-gs]')
+parser.add_argument('--iws', default="1000,900,800,700,600,500,400,300,200,100,50,30,20,10,5",
+                    help='number of Importance-Weighted samples')
 parser.add_argument('--iw_valid', default=1000, type=int, help='number of iw samples for testing')
 
 # noise perturbation for the parameters
 parser.add_argument('--noise', default=0.01, type=float, help='scale of the noise added to the optimal parameters')
 
 # evaluation of the gradients
-parser.add_argument('--mc_samples', default=1024, type=int, help='number of samples for gradients evaluation')
-parser.add_argument('--batch_size', default=2048, type=int, help='batch size used during evaluation')
+parser.add_argument('--mc_samples', default=10000, type=int, help='number of samples for gradients evaluation')
+parser.add_argument('--batch_size', default=50000, type=int,
+                    help='number of samples per batch size used during evaluation')
 
 # dataset
 parser.add_argument('--npoints', default=1024, type=int, help='number of datapoints')
@@ -90,7 +94,7 @@ try:
 
     # define model
     torch.manual_seed(opt.seed)
-    model = ToyVAE((opt.D, ), None, None, None)
+    model = ToyVAE((opt.D,), None, None, None)
 
     # valid estimator (it is important that all models are evaluated using the same evaluator)
     config_valid = {'tau': 0, 'zgrads': False}
@@ -108,7 +112,6 @@ try:
     # gradients analysis args
     grad_args = {'seed': opt.seed, 'batch_size': opt.batch_size, 'n_samples': opt.mc_samples,
                  'key_filter': 'qlogits'}
-
 
     # generate the dataset
     model.p_mu.data = torch.randn_like(model.p_mu.data)
@@ -133,7 +136,6 @@ try:
     base_logger.info(
         f"After init. | L_{estimator_valid.iw} = {elbo:.3f}")
 
-
     # add perturbation
     model.p_mu.data += opt.noise * torch.randn_like(model.p_mu.data)
     model.q_mu.weight.data += opt.noise * torch.randn_like(model.q_mu.weight.data)
@@ -156,8 +158,7 @@ try:
     # base_logger.info(
     #     f"After optimization | L_{estimator_valid.iw} = {elbo:.3f}")
 
-
-
+    meta = {'seed': opt.seed, 'elbo': elbo, 'noise': opt.noise, 'mc_samples': opt.mc_samples}
     data = []
     for estimator_id in estimators:
         for iw in tqdm(iws, desc=f"{estimator_id} : iws"):
@@ -174,18 +175,18 @@ try:
             base_logger.info(
                 f"{estimator_id}, iw = {iw} | snr = {grad_data.get('snr', 0.):.3E}, variance = {grad_data.get('variance', 0.):.3E}, magnitude = {grad_data.get('magnitude', 0.):.3E}")
 
-            data += [{'seed': opt.seed,
-                      'elbo': elbo,
-                      'estimator': type(estimator).__name__,
-                      'iw': iw,
-                      'snr': grad_data.get('snr', 0.).item(),
-                      'variance': grad_data.get('variance', 0.).item(),
-                      'magnitude': grad_data.get('magnitude', 0.).item()
-                      }]
+            data += [{
+                'estimator': type(estimator).__name__,
+                'iw': iw,
+                'snr': grad_data.get('snr', 0.).item(),
+                'variance': grad_data.get('variance', 0.).item(),
+                'magnitude': grad_data.get('magnitude', 0.).item(),
+                **meta
+            }]
 
     df = pd.DataFrame(data)
     print(df)
-    df.to_csv(os.path.join(logdir, 'data.json'))
+    df.to_csv(os.path.join(logdir, 'data.csv'))
 
 
 
