@@ -1,0 +1,13 @@
+{
+  "description": "Comparing Vimco using two expressions of reinforce (c_opt style)",
+  "args": [
+    "--estimator covbaseline-arithmetic --counterfactuals=covbaseline-arithmetic,vimco-arithmetic"
+  ],
+  "global": "--silent --deterministic --nsteps 300000 --lr_reduce_steps 1 --model vae --hdim 256 --iw_valid 100 --N 32 --K 8 --kdim 4 --eval_freq 10 --grad_samples 16 --only_train_set --bs 100 --workers 0 --norm none",
+  "parameters": {
+    "iw" : [100],
+    "dataset" : ["binmnist"],
+    "seed":[13]
+  }
+}
+
