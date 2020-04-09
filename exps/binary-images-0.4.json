@@ -6,7 +6,7 @@
     "--estimator vimco-geometric",
     "--estimator copt-geometric"
   ],
-  "global": "--silent --deterministic --nsteps 300000 --lr_reduce_steps 0 --model vae --hdim 256 --iw_valid 100 --N 32 --K 8 --kdim 4 --eval_freq 10 --grad_samples 1000 --only_train_set --bs 100",
+  "global": "--silent --deterministic --nsteps 300000 --lr_reduce_steps 0 --model vae --hdim 256 --iw_valid 100 --N 32 --K 8 --kdim 4 --eval_freq 20 --grad_samples 100 --only_train_set --bs 100 --lr 1e-3",
   "parameters": {
     "iw" : [3, 5, 10, 20, 50, 100],
     "seed":[47, 45, 32, 73, 279],

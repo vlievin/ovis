@@ -1,0 +1,15 @@
+{
+  "description": "compare VIMCO and Covbaseline using different number of IW samples and using different averaging (arithmetic vs geometric) with Gaussian prior",
+  "args": [
+    "--estimator copt-arithmetic",
+    "--estimator vimco-arithmetic",
+    "--estimator copt-geometric",
+    "--estimator vimco-geometric"
+  ],
+  "global": "--silent --deterministic --nsteps 50000 --lr_reduce_steps 0 --bs 32 --lr 1e-3 --iw_valid 100 --only_train_set --prior normal",
+  "parameters": {
+    "iw" : [100, 50, 20, 10, 5, 3],
+    "seed": [13, 64, 47, 23, 78, 202, 674, 8890, 267, 562]
+  }
+
+}
