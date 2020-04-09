@@ -51,6 +51,7 @@ parser.add_argument('--float_format', default=".2f", help='float format')
 parser.add_argument('--nsamples', default=64, type=int, help='target number of points in the line plot (downsampling)')
 parser.add_argument('--non_completed', action='store_true', help='also keep runs that are not yet completed.')
 parser.add_argument('--max_records', default=-1, type=int, help='only read the first `max_records` data point (`-1` = no limit)')
+parser.add_argument('--merge_args', default='', type=str, help ='list of args to merge into one')
 opt = parser.parse_args()
 
 _sep = os.get_terminal_size().columns * "-"
@@ -215,6 +216,16 @@ df = pd.DataFrame(data)
 # *  "vimco-zreject6" is parsed into estimator = vimco, zreject=6
 # *  "vimco" is parsed into estimator = vimco, zreject=0
 df = df.fillna(0)  # todo: fill with zero when numbers else False
+
+
+# merging
+if opt.merge_args != "":
+    a, b = opt.merge_args.replace(" ", "").split(",")
+    merge_name = f"{a}-{b}"
+    df[merge_name] = [f"{x}-{y}" for x,y in zip(df[a].values, df[b].values)]
+    df = df.drop(a, 1)
+    df = df.drop(b, 1)
+
 
 # drop columns that contain the same attributes (they will be dropped from `df`)
 nunique = df.apply(pd.Series.nunique)

@@ -1,20 +1,22 @@
-import argparse
-import json
-import os
 import traceback
 import warnings
-from collections import defaultdict
-from datetime import datetime
-from shutil import rmtree
 
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 import seaborn as sns
-from dotmap import DotMap
 from tqdm import tqdm
 
-sns.set()
+line_styles = 10 * ["-", "--", ":", "-."]
+markers = 10 * ["o", "v", "^", "s", "P", "X", "D", "+", "x"]
+
+dash_styles = 10 * ["",
+                    (4, 1.5),
+                    (1, 1),
+                    (3, 1, 1.5, 1),
+                    (5, 1, 1, 1),
+                    (5, 1, 2, 1, 2, 1),
+                    (2, 2, 3, 1.5),
+                    (1, 2.5, 3, 1.2)]
 
 
 def plot_logs(logs, path, metrics, main_key, style_key=None, ylims=dict()):
@@ -50,7 +52,9 @@ def plot_logs(logs, path, metrics, main_key, style_key=None, ylims=dict()):
                      hue=main_key,
                      hue_order=hue_order,
                      style=style_key,
-                     data=logs[logs['_key'] == k], ax=ax,
+                     data=logs[logs['_key'] == k],
+                     ax=ax,
+                     dashes=dash_styles
                      # palette=sns.color_palette("mako_r", 4)
                      )
 
@@ -76,7 +80,6 @@ def plot_logs(logs, path, metrics, main_key, style_key=None, ylims=dict()):
     plt.tight_layout()
     plt.savefig(path)
     plt.close()
-
 
 
 def spot_on_plot(logs, path, metrics, main_key, auxiliary_key, style_key=None, ylims=dict()):
@@ -105,7 +108,8 @@ def spot_on_plot(logs, path, metrics, main_key, auxiliary_key, style_key=None, y
                              hue=main_key,
                              hue_order=hue_order,
                              style=style_key,
-                             data=data, ax=ax,
+                             data=data,
+                             ax=ax,
                              # palette=sns.color_palette("mako_r", 4)
                              )
 
@@ -123,7 +127,7 @@ def spot_on_plot(logs, path, metrics, main_key, auxiliary_key, style_key=None, y
                         k = 1.5
                         ax.set_ylim([a - k * M, b + k * M])
 
-                if  not (i == len(metrics) - 1 and  j == len(aux_keys) - 1):
+                if not (i == len(metrics) - 1 and j == len(aux_keys) - 1):
                     ax.get_legend().remove()
             except:
                 warnings.warn(f">> spot-on plot: couldn't generate the axis `ax[{i}, {j}]`")
@@ -136,17 +140,15 @@ def pivot_plot(df, path, metrics, main_key, auxiliary_key, style_key=None, ylims
     """make grid of pointplot [metric x dataset], where each point plot is [aux_key vs. metric] (e.g. iw vs. avg log_snr) """
 
     color_palette = sns.color_palette()
-    line_styles = ["-", "--", ":", "-."]
-    markers = ["x", "+", "v", "^", "1", "2", "*", "+"]
     dsets = df['dataset'].unique()
     ncols = len(dsets)
     nrows = len(metrics)
 
     if style_key is not None:
-        main_keys =list(df[main_key].unique())
+        main_keys = list(df[main_key].unique())
         style_keys = list(df[style_key].unique())
         key_name = f"{main_key}-{style_key}"
-        df[key_name] = [f"{x}-{y}" for (x,y) in zip(df[main_key].values, df[style_key].values)]
+        df[key_name] = [f"{x}-{y}" for (x, y) in zip(df[main_key].values, df[style_key].values)]
         df = df.drop(main_key, 1)
         df = df.drop(style_key, 1)
 
@@ -157,13 +159,11 @@ def pivot_plot(df, path, metrics, main_key, auxiliary_key, style_key=None, ylims
                 linestyles += [_linestyle]
                 palette += [hue]
 
-
     else:
         key_name = main_key
         hue_order = list(df[main_key].unique())
-        linestyles = [line_styles[0] for _ in hue_order]
+        linestyles = [line_styles[0] for h in hue_order]
         palette = color_palette
-
 
     if nrows == 0 or ncols == 0:
         return None
@@ -179,18 +179,20 @@ def pivot_plot(df, path, metrics, main_key, auxiliary_key, style_key=None, ylims
             try:
                 ax = axes[i, j] if ncols > 1 else axes[i]
 
-                sns.pointplot(x=auxiliary_key, y=metric, hue=key_name, data=dset_data, ax=ax, hue_order=hue_order, linestyles=linestyles, color_palette=palette, markers=markers, capsize=.2)
+                sns.pointplot(x=auxiliary_key, y=metric, hue=key_name, data=dset_data, ax=ax, hue_order=hue_order,
+                              color_palette=palette, linestyles=linestyles, markers=markers, capsize=.2)
                 plt.setp(ax.lines, alpha=.7)
 
                 if i == 0:
                     ax.set_title(f"Dataset = {dset}")
                 ax.set_ylabel(metric)
 
-                if  not (i == len(metrics) - 1 and j == len(dsets) - 1):
+                if not (i == len(metrics) - 1 and j == len(dsets) - 1):
                     ax.get_legend().remove()
 
             except Exception as ex:
-                print(f"## FAILED. \n >> pivot plot: couldn't generate the axis `ax[{i}, {j}]` \nax : [{nrows},{ncols}] \nException:")
+                print(
+                    f"## FAILED. \n >> pivot plot: couldn't generate the axis `ax[{i}, {j}]` \nax : [{nrows},{ncols}] \nException:")
                 print("--------------------------------------------------------------------------------")
                 traceback.print_exception(type(ex), ex, ex.__traceback__)
                 print("--------------------------------------------------------------------------------")
