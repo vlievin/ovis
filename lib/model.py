@@ -168,12 +168,13 @@ class BaseVAE(Template):
     def _get_diagnostics(self, z, qz, pz):
         Hp = batch_reduce(pz.entropy())
         if isinstance(pz, PseudoCategorical):
-            usage = (z.sum(dim=0, keepdim=True)>0).float()
-            usage = usage.mean(dim=(1,2,))
+            usage = (z.sum(dim=0, keepdim=True) > 0).float()
+            usage = usage.mean(dim=(1, 2,))
         else:
             usage = torch.zeros_like(Hp)
 
         return {'Hp': [Hp], 'usage': [usage]}
+
 
 class VAE(BaseVAE):
     """
@@ -246,7 +247,6 @@ class ConvVAE(BaseVAE):
         return self.likelihood(logits=px_logits)
 
 
-
 class ToyVAE(Template):
     """
     A simple VAE model parametrized by MLPs
@@ -259,17 +259,21 @@ class ToyVAE(Template):
         self.prior_dist = NormalFromLoc
         self.likelihood = NormalFromLoc
 
-        self.q_mu = nn.Linear(D, D)
-        self.register_buffer("q_scale", 2/3 * torch.ones((1, D,)))
-        self.p_mu = nn.Parameter(torch.zeros((1, D,)))
-
+        self.A = nn.Parameter(0.01 * torch.randn(D, D))
+        self.b = nn.Parameter(0.01 * torch.randn(D))
+        self.register_buffer("q_scale", 2 / 3 * torch.ones((1, D,)))
+        self.mu = nn.Parameter(torch.zeros((1, D,)))
 
     def generate(self, z):
         return self.likelihood(logits=z)
 
-
     def forward(self, x, tau=0, zgrads=False, mc=1, iw=1, **kwargs):
-        qlogits =  self.q_mu(x)
+
+        # retain grads in `b` instead of the qlogits for the gradients analysis
+        b = self.b[None, :].expand(x.size(0), self.b.shape[0])
+        b.retain_grad()
+
+        qlogits = x @ self.A + b
         qlogits.retain_grad()
 
         if mc > 1 or iw > 1:
@@ -286,31 +290,29 @@ class ToyVAE(Template):
         if not zgrads:
             z = z.detach()
 
-        pz = self.prior_dist(logits=self.p_mu)
+        pz = self.prior_dist(logits=self.mu)
 
         px = self.generate(z)
 
         diagnostics = self._get_diagnostics(z, qz, pz)
 
-        return {'px': px, 'z': [z], 'qz': [qz], 'pz': [pz], 'qlogits': [qlogits], **diagnostics}
+        return {'px': px, 'z': [z], 'qz': [qz], 'pz': [pz], 'qlogits': [qlogits], 'b': [b], **diagnostics}
 
     def sample_from_prior(self, N):
-        prior = self.p_mu.expand(N, *self.xdim)
+        prior = self.mu.expand(N, *self.xdim)
         z = self.prior_dist(logits=prior).sample()
         px = self.generate(z)
         return {'px': px, 'z': z}
 
-
     def _get_diagnostics(self, z, qz, pz):
         Hp = batch_reduce(pz.entropy())
         if isinstance(pz, PseudoCategorical):
-            usage = (z.sum(dim=0, keepdim=True)>0).float()
-            usage = usage.mean(dim=(1,2,))
+            usage = (z.sum(dim=0, keepdim=True) > 0).float()
+            usage = usage.mean(dim=(1, 2,))
         else:
             usage = torch.zeros_like(Hp)
 
         return {'Hp': [Hp], 'usage': [usage]}
-
 
 
 class Stage(nn.Module):

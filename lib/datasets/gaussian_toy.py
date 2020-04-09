@@ -9,12 +9,13 @@ class GaussianToyDataset(Dataset):
 
         self.mu = Normal(loc=torch.zeros((D,)), scale=torch.ones((D,))).sample()
         mus = self.mu[None].expand(N, D)
-        self.data = Normal(loc=mus, scale=torch.ones_like(mus)).sample()
+        z =  Normal(loc=mus, scale=torch.ones_like(mus)).sample()
+        self.data = Normal(loc=z, scale=torch.ones_like(z)).sample()
 
     def __len__(self):
         return self.data.shape[0]
 
     def __getitem__(self, item):
-        return self.data[0]
+        return self.data[item]
 
 
