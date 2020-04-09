@@ -25,7 +25,7 @@ class VariationalInference(Estimator):
         """
 
         # compute the effective sample size
-        N_eff = self.effective_sample_size(log_pzs, log_qzs)
+        N_eff = self.effective_sample_size(log_px_z, log_pzs, log_qzs)
 
         def cat_by_layer(log_pzs):
             """sum over the latent dimension (N_i) and concatenate stocastic layers.
@@ -54,7 +54,7 @@ class VariationalInference(Estimator):
 
         return {'L_k': L_k, 'kl': kl, 'log_f_xz': log_f_xz, 'N_eff': N_eff}
 
-    def effective_sample_size(self, log_pz, log_qz):
+    def effective_sample_size(self, log_px_z, log_pz, log_qz):
         """
         Compute the effective sample size: N_eff = (\sum_i w_i)**2 / \sum_i w_i**2
         :param log_pz: log p(z) of shape [bs * mc * iw, ...]
@@ -68,10 +68,14 @@ class VariationalInference(Estimator):
         if isinstance(log_qz, List):
             log_qz = torch.cat(log_qz, 1)
 
+        # sum over dimensions of z
+        log_pz = log_pz.sum(1)
+        log_qz = log_qz.sum(1)
+
         # compute effective sample size
         if self.iw > 1:
             # compute effective sample size
-            log_w = batch_reduce(log_pz - log_qz).view(-1, self.mc, self.iw)
+            log_w = batch_reduce(log_px_z + log_pz - log_qz).view(-1, self.mc, self.iw)
             N_eff = torch.exp(2 * torch.logsumexp(log_w, dim=2) - torch.logsumexp(2 * log_w, dim=2))
             N_eff = N_eff.mean(1)  # MC
         else:

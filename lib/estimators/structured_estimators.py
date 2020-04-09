@@ -122,7 +122,7 @@ class StructuredVariationalInference___(VariationalInference):
             log_pz_i = log_pzs[:i + 1]
             log_qz_i = log_qzs[:i + 1]
             data = self.compute_partial_elbo_(log_px_z, log_pz_i, log_qz_i)
-            N_eff_i = self.effective_sample_size(log_pz_i, log_qz_i)
+            N_eff_i = self.effective_sample_size(log_px_z, log_pz_i, log_qz_i)
             log_qz = log_qz.view(bs, self.mc, self.iw, -1)
             baseline_i = baseline[i]
             if baseline_i is None:

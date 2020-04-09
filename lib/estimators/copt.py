@@ -1,4 +1,3 @@
-from lib.utils import *
 from .base import _EPS
 from .reinforce import *
 
@@ -48,7 +47,7 @@ class OptCovReinforce(Reinforce):
                                 use_outer_samples: bool = False,
                                 nz_estimate: bool = False,
                                 use_double: bool = True,
-                                **data: Dict[str, Tensor]) -> Tensor:
+                                **data: Dict[str, Tensor]) -> Tuple[Tensor, dict, int]:
         """
         Compute the baseline that will be substracted to the score L_k,
         The output shape should be of size 4 and matching the shape [bs, mc, iw, nz]
@@ -62,8 +61,9 @@ class OptCovReinforce(Reinforce):
 
         L_k, log_f_xz, z, qz = [data[k] for k in ["L_k", "log_f_xz", "z", "qz"]]
 
-        v = self.normalized_importance_weights(log_f_xz)
-        score = L_k[:, :, None] - v
+        if self.iw == 1:
+            log_f_xz = log_f_xz.view(-1, self.mc, self.iw)
+            return torch.zeros_like(log_f_xz[:, :, 0]), {}, 0
 
         assert len(qz) == 1
         z, qz = z[0], qz[0]
@@ -83,7 +83,7 @@ class OptCovReinforce(Reinforce):
             [log_qz], [qlogits], grad_outputs=torch.ones_like(log_qz), retain_graph=True, allow_unused=True)
 
         # reshaping d_qlogits and qlogits
-        N, K = d_qlogits.shape[1:] if len(d_qlogits.shape) > 2 else  d_qlogits.shape[1], 1
+        N, K = d_qlogits.size()[1:] if len(d_qlogits.shape) > 2 else (d_qlogits.size(1), 1)
 
         d_qlogits = d_qlogits.view(bs, self.mc, self.iw, N, K)
 

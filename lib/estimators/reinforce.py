@@ -1,5 +1,5 @@
-from .vi import *
 from .base import _EPS
+from .vi import *
 
 
 class ZScore(nn.Module):
@@ -272,7 +272,7 @@ class Reinforce(VariationalInference):
             [log_qz], [qlogits], grad_outputs=torch.ones_like(log_qz), retain_graph=True, allow_unused=True)
 
         # reshaping d_qlogits and qlogits
-        N, K = d_qlogits.shape[1:] if len(d_qlogits.shape) > 2 else  d_qlogits.shape[1], 1
+        N, K = d_qlogits.size()[1:] if len(d_qlogits.shape) > 2 else (d_qlogits.size(1), 1)
 
         return d_qlogits.view(-1, self.mc, self.iw, N, K).detach()
 
@@ -290,7 +290,8 @@ class Vimco(Reinforce):
 
     @torch.no_grad()
     def compute_control_variate(self, x: Tensor, mc_estimate: bool = True, arithmetic=False, return_raw=False,
-                                use_outer_samples=False, use_double: bool = True, **data: Dict[str, Tensor]) -> Tensor:
+                                use_outer_samples=False, use_double: bool = True, **data: Dict[str, Tensor]) -> Tuple[
+        Tensor, dict, int]:
         """Compute the baseline that will be substracted to the score L_k,
         `data` contains the output of the method `compute_iw_bound`.
         The output shape should be of size 4 and matching the shape [bs, mc, iw, nz]"""
@@ -298,6 +299,10 @@ class Vimco(Reinforce):
         log_f_xz = data['log_f_xz']
         log_f_xz = log_f_xz.view(-1, self.mc, self.iw)
         _dtype = log_f_xz.dtype
+
+        if self.iw == 1:
+            return torch.zeros_like(log_f_xz[:, :, 0]), {}, 0
+
         if use_double:
             log_f_xz = log_f_xz.double()
 
