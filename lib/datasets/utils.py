@@ -5,9 +5,9 @@ from torchvision.transforms import ToTensor
 
 from .binmnist import get_binmnist_datasets
 from .fashion import get_fashion_datasets
+from .gaussian_toy import GaussianToyDataset
 from .omniglot import get_omniglot_datasets
 from .shapes import get_shapes_datasets
-from .gaussian_toy import GaussianToyDataset
 
 _train_mini = 5000
 _valid_mini = 500
@@ -49,9 +49,7 @@ def get_datasets(opt):
 
     if opt.only_train_set:
         def use_only_training(dset_train, dset_valid, dset_test):
-            dset_test = dset_train
-            dset_valid = MiniDataset(dset_train, len(dset_valid), opt.seed)
-            return dset_train, dset_valid, dset_test
+            return dset_train, dset_train, dset_train
 
         output = use_only_training(*output)
 
