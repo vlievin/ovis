@@ -1,8 +1,8 @@
 import argparse
 import json
 import os
-import traceback
 import socket
+import traceback
 from shutil import rmtree
 
 import numpy as np
@@ -13,7 +13,6 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-
 from lib import VAE, Baseline, ConvVAE, ToyVAE
 from lib import VariationalInference
 from lib import get_datasets
@@ -22,7 +21,6 @@ from lib.gradients import get_gradients_statistics
 from lib.logging import sample_model, get_loggers, log_summary, save_model, load_model
 from lib.ops import training_step, test_step
 from lib.utils import notqdm
-from lib.analysis import analyse_control_variate
 
 _sep = os.get_terminal_size().columns * "-"
 
@@ -62,6 +60,7 @@ parser.add_argument('--iw', default=1, type=int, help='number of Importance-Weig
 # evaluation
 parser.add_argument('--eval_freq', default=10, type=int, help='frequency for the evaluation [test set + grads]')
 parser.add_argument('--iw_valid', default=100, type=int, help='number of Importance-Weighted samples for validation')
+parser.add_argument('--iw_test', default=100, type=int, help='number of Importance-Weighted samples for testing')
 # gradients analysis
 parser.add_argument('--grad_samples', default=100, type=int,
                     help='number of samples used to evaluate the variance.')
@@ -85,7 +84,6 @@ parser.add_argument('--norm', default='layernorm', type=str, help='normalization
 
 opt = parser.parse_args()
 
-
 print(f"## run.py: opt.root = {opt.root}")
 
 if opt.deterministic:
@@ -95,19 +93,20 @@ if opt.deterministic:
 if opt.silent:
     tqdm = notqdm
 
-
 # define conunterfactuals
 if len(opt.counterfactuals):
     counterfactual_estimators_ids = opt.counterfactuals.replace(" ", "").split(",")
+
 
     def _split(e):
         if "-iw" in e:
             arg = e.split("-")[-1]
             iw = eval(arg.replace("iw", ""))
-            e = e.replace(f"-iw{iw}" , "")
+            e = e.replace(f"-iw{iw}", "")
             return e, iw
         else:
             return e, opt.iw
+
 
     counterfactual_estimators, counterfactual_iw = zip(*[_split(e) for e in counterfactual_estimators_ids])
 else:
@@ -256,27 +255,30 @@ try:
             x_eval = next(iter(loader_train)).to(device)  # [:opt.grad_samples]
 
             # estimate the variance of the gradients
-            grad_args = {'seed': opt.seed, 'batch_size': opt.bs * opt.mc * opt.iw, 'n_samples:' : opt.grad_samples, 'key_filter': 'qlogits'}
-            # current model
-            summary_train["grads"] = get_gradients_statistics(estimator, model, x_eval, **grad_args,
-                                                                        **config)
+            grad_args = {'seed': opt.seed, 'batch_size': opt.bs * opt.mc * opt.iw, 'n_samples': opt.grad_samples,
+                         'key_filter': 'tensor:qlogits'}
+            # for the main estimator
+            grad_data = get_gradients_statistics(estimator, model, x_eval, **grad_args, **config)
+            summary_train.update(grad_data)
+            train_logger.info(f"{_exp_id} | grads | "
+                              f"snr = {grad_data.get('grads', {}).get('snr', 0.):.3E}, "
+                              f"variance = {grad_data.get('grads', {}).get('variance', 0.):.3E}, "
+                              f"magnitude = {grad_data.get('grads', {}).get('magnitude', 0.):.3E}")
 
-            grad_data = summary_train["grads"]
-            train_logger.info(f"{_exp_id} | grads | snr = {grad_data.get('snr', 0.):.3E}, variance = {grad_data.get('variance', 0.):.3E}, magnitude = {grad_data.get('magnitude', 0.):.3E}")
-
-            # analyse the control variate terms on the counterfactual estimators
+            # analyse the control variate terms on the counter-factual estimators
             # analyse_control_variate(x_eval, model, c_configs, c_estimators, counterfactual_estimators, writer_train, seed=opt.seed, global_step=global_step)
 
-            # counter factual estimation of other estimators
+            # counter-factual estimation of the other estimators
             for (c_writer, c_conf, c_est, c) in zip(counterfactual_writers, c_configs, c_estimators,
                                                     counterfactual_estimators):
                 grad_data = get_gradients_statistics(c_est, model, x_eval, **grad_args, **c_conf)
-                summary = Diagnostic({'grads': grad_data})
+                summary = Diagnostic(grad_data)
                 summary.log(c_writer, global_step)
                 train_logger.info(f" | counterfactual | {c:{max(map(len, counterfactual_estimators))}s} "
-                                  f"| snr = {grad_data.get('snr', 0.):.3f}, variance = {grad_data.get('variance', 0.):.3f}")
+                                  f"| snr = {grad_data.get('grads', {}).get('snr', 0.):.3f}, "
+                                  f"variance = {grad_data.get('grads', {}).get('variance', 0.):.3f}")
 
-            # valid epoch
+            # validation epoch
             with torch.no_grad():
                 model.eval()
                 agg_valid.initialize()
@@ -310,12 +312,14 @@ try:
                         param_group['lr'] = new_lr
                         base_logger.info(f"Reducing lr, group = {i} : {lr:.2E} -> {new_lr:.2E}")
 
-
     print("TESTING..", best_elbo)
     # testing step
     writer_test = SummaryWriter(os.path.join(logdir, 'test'))
     loader_test = DataLoader(dset_test, batch_size=2 * opt.bs, shuffle=True, num_workers=1)
     agg_test = Aggregator()
+
+    config_test = {'tau': 0, 'zgrads': False}
+    estimator_test = VariationalInference(mc=1, iw=opt.iw_test, sequential_computation=True)
 
     # load best model and run over the test set
     load_model(model, logdir)
@@ -323,7 +327,7 @@ try:
     agg_test.initialize()
     for x in tqdm(loader_test, desc=_exp_id + "-test"):
         x = x.to(device)
-        diagnostics = test_step(x, model, estimator_valid, **config)
+        diagnostics = test_step(x, model, estimator_test, **config_test)
         agg_test.update(diagnostics)
     summary_test = agg_test.data.to('cpu')
 
@@ -340,6 +344,7 @@ except KeyboardInterrupt:
     print("## KEYBOARD INTERRUPT")
     with open(os.path.join(logdir, "success.txt"), 'w') as f:
         f.write(f"Failed. Interrupted (keyboard).")
+
 
 except Exception as ex:
     print("## FAILED. Exception:")
