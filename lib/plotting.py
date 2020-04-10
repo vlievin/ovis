@@ -18,6 +18,9 @@ dash_styles = 10 * ["",
                     (2, 2, 3, 1.5),
                     (1, 2.5, 3, 1.2)]
 
+PLOT_WIDTH = 5
+PLOT_HEIGHT = 3
+
 
 def plot_logs(logs, path, metrics, main_key, style_key=None, ylims=dict()):
     """
@@ -42,7 +45,7 @@ def plot_logs(logs, path, metrics, main_key, style_key=None, ylims=dict()):
 
     hue_order = list(logs[main_key].unique())
     step_min = np.percentile(logs['step'].values.tolist(), 10)
-    fig, axes = plt.subplots(nrows, ncols, figsize=(6 * ncols, 4 * nrows))
+    fig, axes = plt.subplots(nrows, ncols, figsize=(PLOT_WIDTH * ncols, PLOT_HEIGHT * nrows))
     for i, k in tqdm(list(enumerate(metrics)), desc="|    subplots"):
         u = i // ncols
         v = i % ncols
@@ -92,8 +95,8 @@ def spot_on_plot(logs, path, metrics, main_key, auxiliary_key, style_key=None, y
         return None
 
     hue_order = list(logs[main_key].unique())
-    step_min = np.percentile(logs['step'].values.tolist(), 1)
-    fig, axes = plt.subplots(nrows, ncols, figsize=(6 * ncols, 4 * nrows))
+    step_min = np.percentile(logs['step'].values.tolist(), 1) # used to filter first steps
+    fig, axes = plt.subplots(nrows, ncols, figsize=(PLOT_WIDTH * ncols, PLOT_HEIGHT * nrows), sharex='col', sharey='row')
 
     for j, aux_key in tqdm(list(enumerate(sorted(aux_keys))), desc="|  aux. keys"):
         aux_data = logs[logs[auxiliary_key] == aux_key]
@@ -113,24 +116,39 @@ def spot_on_plot(logs, path, metrics, main_key, auxiliary_key, style_key=None, y
                              # palette=sns.color_palette("mako_r", 4)
                              )
 
+                # define axis labels and hide x,y axis in the middle plots
                 if i == 0:
                     ax.set_title(f"{auxiliary_key} = {aux_key}")
-                ax.set_ylabel(metric)
-                # y lims
-                if metric in ylims:
-                    ax.set_ylim(ylims[metric])
+
+                if i < len(metrics) - 1:
+                    # ax.set_xticklabels([])
+                    ax.set_xlabel("")
+
+                if j == 0:
+                    ax.set_ylabel(metric)
                 else:
-                    ys = data[data['step'] > step_min]['_value'].values.tolist()
-                    if len(ys):
-                        a, b = np.percentile(ys, [25, 75])
-                        M = b - a
-                        k = 1.5
-                        ax.set_ylim([a - k * M, b + k * M])
+                    ax.set_ylabel("")
+                    # ax.set_yticklabels([])
 
                 if not (i == len(metrics) - 1 and j == len(aux_keys) - 1):
                     ax.get_legend().remove()
             except:
                 warnings.warn(f">> spot-on plot: couldn't generate the axis `ax[{i}, {j}]`")
+
+    # scale y axes
+    for i, metric in enumerate(metrics):
+        ax = axes[i, 0]
+        data = logs[logs["_key"] == metric]
+        if metric in ylims:
+            ax.set_ylim(ylims[metric])
+        else:
+            ys = data[data['step'] > step_min]['_value'].values.tolist()
+            if len(ys):
+                a, b = np.percentile(ys, [25, 75])
+                M = b - a
+                k = 1.5
+                ax.set_ylim([a - k * M, b + k * M])
+
     plt.tight_layout()
     plt.savefig(path)
     plt.close()
@@ -169,7 +187,10 @@ def pivot_plot(df, path, metrics, main_key, auxiliary_key, style_key=None, ylims
         return None
 
     hue_order = list(df[key_name].unique())
-    fig, axes = plt.subplots(nrows, ncols, figsize=(6 * ncols, 4 * nrows))
+    if len(dsets) > 1:
+        fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(PLOT_WIDTH * ncols, PLOT_HEIGHT * nrows), sharex='col')
+    else:
+        fig, axes = plt.subplots(nrows=1, ncols=nrows, figsize=(PLOT_WIDTH * nrows, PLOT_HEIGHT * 1))
 
     for j, dset in enumerate(dsets):
         dset_data = df[df["dataset"] == dset]
@@ -183,9 +204,19 @@ def pivot_plot(df, path, metrics, main_key, auxiliary_key, style_key=None, ylims
                               color_palette=palette, linestyles=linestyles, markers=markers, capsize=.2)
                 plt.setp(ax.lines, alpha=.7)
 
-                if i == 0:
-                    ax.set_title(f"Dataset = {dset}")
-                ax.set_ylabel(metric)
+                if len(dsets) > 1:
+                    if i == 0:
+                        ax.set_title(f"Dataset = {dset}")
+
+
+                    if i < len(metrics) - 1:
+                        ax.get_xaxis().set_visible(False)
+
+                    if j == 0 :
+                        ax.set_ylabel(metric)
+                    else:
+                        ax.set_ylabel("")
+
 
                 if not (i == len(metrics) - 1 and j == len(dsets) - 1):
                     ax.get_legend().remove()
