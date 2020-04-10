@@ -4,8 +4,9 @@ from torch.utils.data import Dataset
 
 
 class GaussianToyDataset(Dataset):
-    def __init__(self, N=1024, D=20):
+    def __init__(self, N=1024, D=20, seed=42):
         super().__init__()
+        torch.manual_seed(seed)
 
         self.mu = Normal(loc=torch.zeros((D,)), scale=torch.ones((D,))).sample()
         mus = self.mu[None].expand(N, D)
