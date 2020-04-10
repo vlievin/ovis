@@ -6,6 +6,7 @@ import traceback
 from shutil import rmtree
 
 import matplotlib.pyplot as plt
+import seaborn as sns
 import numpy as np
 import pandas as pd
 import torch
@@ -22,6 +23,11 @@ from lib.utils import notqdm
 _sep = os.get_terminal_size().columns * "-"
 
 parser = argparse.ArgumentParser()
+
+default_iws = np.geomspace(start=3, stop=10000, num=12)[::-1]
+default_iws = ",".join([str(int(k)) for k in default_iws])
+
+print("# default_iws:", default_iws)
 
 # run directory, id and seed
 parser.add_argument('--root', default='runs/', help='directory to store training logs')
@@ -40,19 +46,22 @@ parser.add_argument('--sequential_computation', action='store_true',
 parser.add_argument('--estimators',
                     default='copt-arithmetic,vimco-arithmetic,pathwise',
                     help='[vi, reinforce, vimco, gs, st-gs]')
-parser.add_argument('--iws', default="1000,900,800,700,600,500,400,300,200,100,50,30,20,10,5,3",
+parser.add_argument('--iws', default=default_iws,
                     help='number of Importance-Weighted samples')
 parser.add_argument('--iw_valid', default=1000, type=int, help='number of iw samples for testing')
 
 # noise perturbation for the parameters
-parser.add_argument('--noise', default=0.1, type=float, help='scale of the noise added to the optimal parameters')
+parser.add_argument('--noise', default=0.01, type=float, help='scale of the noise added to the optimal parameters')
 
 # evaluation of the gradients
 parser.add_argument('--key_filter', default='tensor:b', type=str,
                     help='identifiant of the parameters/tensor for the gradients analysis')
 parser.add_argument('--mc_samples', default=100, type=int, help='number of samples for gradients evaluation')
+parser.add_argument('--max_points', default=0, type=int, help='number of data points to evaluate the grads in')
 parser.add_argument('--batch_size', default=80000, type=int,
                     help='number of samples per batch size used during evaluation')
+parser.add_argument('--grads_dist', action='store_true', help='plot distributions of gradients for each parameter')
+parser.add_argument('--max_params', default=3, type=int, help='max number of parameters to analyze')
 
 # dataset
 parser.add_argument('--npoints', default=1024, type=int, help='number of datapoints')
@@ -69,6 +78,8 @@ if opt.silent:
 
 # defining the run identifier
 run_id = f"toy-seed{opt.seed}-noise{opt.noise}-mc{opt.mc_samples}-key{opt.key_filter}-pts{opt.npoints}-D{opt.D}"
+if opt.id != "":
+    run_id += f"-{opt.id}"
 _exp_id = f"toy-{opt.exp}-{opt.seed}"
 
 # defining the run directory
@@ -111,23 +122,23 @@ try:
 
     # parse estimators
     estimators = opt.estimators.replace(" ", "").split(",")
-    iws = [eval(k) for k in opt.iws.replace(" ", "").split(",")]
+    iws = list(sorted([eval(k) for k in opt.iws.replace(" ", "").split(",")], reverse=True))
 
     # generate the dataset
-    model.mu.data = torch.randn_like(model.mu.data)
-    x = model.sample_from_prior(N=opt.npoints)['px'].sample()
+    # model.mu.data = torch.randn_like(model.mu.data)
+    # x = model.sample_from_prior(N=opt.npoints)['px'].sample()
 
-    # from lib.datasets.gaussian_toy import GaussianToyDataset
-    # dset = GaussianToyDataset()
-    # x = dset.data
+    from lib.datasets.gaussian_toy import GaussianToyDataset
 
+    dset = GaussianToyDataset()
+    dset.data = dset.data.to(device)
+    x = dset.data
 
     # evaluate model
     torch.manual_seed(opt.seed)
     loss, diagnostics, output = estimator_valid(model, x, backward=False, **config_valid)
-    elbo = diagnostics['loss']['elbo'].mean().item()
     base_logger.info(
-        f"Before init. | L_{estimator_valid.iw} = {elbo:.6f}")
+        f"Before init. | L_{estimator_valid.iw} = {diagnostics['loss']['elbo'].mean().item():.6f}, KL = {diagnostics['loss']['kl'].mean().item():.6f}, NLL = {diagnostics['loss']['nll'].mean().item():.6f}")
 
     # initizalize model using the optimal parameters
     mu = x.mean(dim=0, keepdim=True).data
@@ -136,13 +147,13 @@ try:
     model.b.data = 0.5 * mu.view_as(model.b.data)  # b = mu^* / 2
 
     true_grads = x.mean(dim=0, keepdim=True).data - model.b.data if opt.key_filter == 'tensor:b' else None
+    _, grads_idx = true_grads[0].abs().sort(descending=True)
 
     # evaluate model
     torch.manual_seed(opt.seed)
     loss, diagnostics, output = estimator_valid(model, x, backward=False, **config_valid)
-    elbo = diagnostics['loss']['elbo'].mean().item()
     base_logger.info(
-        f"After init. | L_{estimator_valid.iw} = {elbo:.6f}")
+        f"After init. | L_{estimator_valid.iw} = {diagnostics['loss']['elbo'].mean().item():.6f}, KL = {diagnostics['loss']['kl'].mean().item():.6f}, NLL = {diagnostics['loss']['nll'].mean().item():.6f}")
 
     # add perturbation to the weights
     model.mu.data = model.mu.data + opt.noise * torch.randn_like(model.mu.data)
@@ -152,15 +163,18 @@ try:
     # evaluate model
     torch.manual_seed(opt.seed)
     loss, diagnostics, output = estimator_valid(model, x, backward=False, **config_valid)
-    elbo = diagnostics['loss']['elbo'].mean().item()
     base_logger.info(
-        f"After perturbation | L_{estimator_valid.iw} = {elbo:.6f}")
+        f"After perturbation | L_{estimator_valid.iw} = {diagnostics['loss']['elbo'].mean().item():.6f}, KL = {diagnostics['loss']['kl'].mean().item():.6f}, NLL = {diagnostics['loss']['nll'].mean().item():.6f}")
 
     # gradients analysis args and config
-    meta = {'seed': opt.seed, 'elbo': elbo, 'noise': opt.noise, 'mc_samples': opt.mc_samples}
+    meta = {'seed': opt.seed, 'noise': opt.noise, 'mc_samples': opt.mc_samples,
+            **{k: v.mean().item() for k, v in diagnostics['loss'].items()}}
     grad_args = {'seed': opt.seed, 'batch_size': opt.batch_size, 'n_samples': opt.mc_samples,
-                 'key_filter': opt.key_filter, 'true_grads':true_grads}
+                 'key_filter': opt.key_filter, 'true_grads': true_grads}
+
+    x_eval = x if opt.max_points < 1 else x[:opt.max_points]
     data = []
+    grads = []
     for estimator_id in estimators:
         for iw in tqdm(iws, desc=f"{estimator_id} : iws"):
             # create estimator
@@ -172,8 +186,9 @@ try:
             torch.manual_seed(opt.seed)
 
             # evalute variance of the gradients
-            analysis_data = get_gradients_statistics(estimator, model, x, **grad_args, **config)
+            analysis_data, grads_ = get_gradients_statistics(estimator, model, x_eval, return_grads=opt.grads_dist, **grad_args, **config)
 
+            # log grads info
             grad_data = analysis_data.get('grads', {})
             base_logger.info(
                 f"{estimator_id}, iw = {iw} | snr = {grad_data.get('snr', 0.):.3E}, variance = {grad_data.get('variance', 0.):.3E}, magnitude = {grad_data.get('magnitude', 0.):.3E}, dir = {grad_data.get('direction', 0.):.3E}")
@@ -181,6 +196,7 @@ try:
             base_logger.info(
                 f"{estimator_id}, iw = {iw} | snr | p5 = {snr_data.get('p5', 0.):.3E}, p25 = {snr_data.get('p25', 0.):.3E}, p50 = {snr_data.get('p50', 0.):.3E}, p75 = {snr_data.get('p75', 0.):.3E}, p95 = {snr_data.get('p95', 0.):.3E}")
 
+            # stor results
             data += [{
                 'estimator': estimator_id,
                 'iw': iw,
@@ -189,14 +205,27 @@ try:
                 **meta
             }]
 
+            # store grads
+            if opt.grads_dist:
+                grads_ = grads_.view(-1, grads_.shape[-1]).transpose(1, 0)
+                grads_ = grads_[grads_idx] # reindex by `true_grads` magnitude
+                for p, grads_p in enumerate(grads_): # for each parameter
+                    if p < opt.max_params:
+                        for g in grads_p:
+                            grads += [{'param': p, 'estimator': estimator_id, 'iw': iw, 'grad': g.item()}]
+
+
     df = pd.DataFrame(data)
     print(df)
     df.to_csv(os.path.join(logdir, 'data.csv'))
     base_logger.info(f"# path = {os.path.abspath(logdir)}")
 
+    if len(grads):
+        grads = pd.DataFrame(grads)
+
     # plotting
     param_name = {'tensor:b': "b", 'tensor:qlogits': "\phi"}.get(opt.key_filter, "\theta")
-    metrics = ['grads-snr', 'grads-variance', 'grads-magnitude', 'grads-direction']
+    metrics = ['snr-p50', 'grads-variance', 'grads-magnitude', 'grads-direction']
     metrics_formaters = [lambda p: f"$SNR_K({param_name}) $",
                          lambda p: f"$Var \Delta_K({param_name}) $",
                          lambda p: f"$| \Delta_K({param_name}) |$",
@@ -215,6 +244,13 @@ try:
         # legend = ax.legend()
         #         # if k < len(metrics) - 1 and legend is not None:
         #         #     legend.remove()
+
+        if k == 0:
+            iws = list(sorted(df['iw'].unique()))
+            expected_max = [1e1 / k**0.5 for k in iws]
+            expected_min = [1e-1 / k**0.5 for k in iws]
+            ax.loglog(iws, expected_min, ":", color="gray", basex=10, basey=10)
+            ax.loglog(iws, expected_max, ":", color="gray", basex=10, basey=10)
 
         for e, estimator_id in enumerate(estimators):
             sub_df = df[df['estimator'] == estimator_id]
@@ -241,6 +277,46 @@ try:
     plt.close()
 
 
+    # gradients dist
+    if len(grads):
+        print("GRADS:", len(grads))
+        def agg(s):
+            return f"{np.mean(s):.3f} +/- {np.std(s):.3f} (n={len(s)})"
+        print(grads.pivot_table(columns="estimator", index=["param","iw"], values="grad", aggfunc=agg))
+
+        # pal = sns.cubehelix_palette(10, rot=-.25, light=.7)
+        g = sns.FacetGrid(grads, row="estimator", col="param", hue="iw", aspect=1.5, height=2)
+
+        # Draw the densities in a few steps
+        g.map(sns.kdeplot, "grad", clip_on=False, shade=True, alpha=0.2)
+        #g.map(sns.kdeplot, "grad", clip_on=False, color="w", lw=2, bw=.2)
+        # g.map(plt.axhline, y=0, lw=2, clip_on=False)
+
+
+        # Define and use a simple function to label the plot in axes coordinates
+        def label(x, color, label):
+            ax = plt.gca()
+            ax.text(0, .2, f"{x} : {label}", color=color,
+                    ha="left", va="center", transform=ax.transAxes)
+        # g.map(label, "grad")
+        #
+        # # Set the subplots to overlap
+        # g.fig.subplots_adjust(hspace=-.25)
+        #
+        # # Remove axes details that don't play well with overlap
+        # g.set_titles("")
+        g.set(yticks=[])
+        #g.set_ylabels("iw")
+        # g.map(plt.set_ylabels, "iw")
+        g.despine(bottom=True, left=True)
+
+        a, b = np.percentile(grads["grad"].values, [25, 75])
+        plt.xlim([a - 2.5 * (b-a), b + 2.5 * (b-a)])
+
+        plt.legend()
+        plt.tight_layout()
+
+        plt.show()
 
 
 except KeyboardInterrupt:

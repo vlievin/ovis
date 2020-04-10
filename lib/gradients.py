@@ -97,7 +97,8 @@ def get_grads_from_parameters(model, loss, key_filter=''):
         yield grads
 
 
-def get_gradients_statistics(estimator, model, x, batch_size=32, n_samples=100, seed=None, key_filter='qlogits', true_grads=None, **config):
+def get_gradients_statistics(estimator, model, x, batch_size=32, n_samples=100, seed=None, key_filter='qlogits',
+                             true_grads=None, return_grads=False, **config):
     """
     Compute the variance, magnitude and SNR of the gradients.
     """
@@ -121,6 +122,8 @@ def get_gradients_statistics(estimator, model, x, batch_size=32, n_samples=100, 
         grads_dir = Mean()
         true_grads = true_grads / true_grads.norm(p=2)
 
+    all_grads = None
+
     with tqdm(total=x.shape[0] * iterations) as pbar:
 
         for i, x_i in enumerate(x):
@@ -129,6 +132,7 @@ def get_gradients_statistics(estimator, model, x, batch_size=32, n_samples=100, 
             grads_mean_i = Mean()
             grads_variance_i = Variance()
             grads_dir_i = Mean() if true_grads is not None else None
+            all_grads_i = None
 
             while grads_mean_i.n < n_samples:
 
@@ -157,6 +161,11 @@ def get_gradients_statistics(estimator, model, x, batch_size=32, n_samples=100, 
                 for grads in gradients:
                     with torch.no_grad():
                         grads = grads.detach()
+
+                        if return_grads:
+                            all_grads_i = grads[None] if all_grads_i is None else torch.cat([all_grads_i, grads[None]],
+                                                                                            0)
+
                         grads_mean_i.update(grads)
                         grads_variance_i.update(grads)
 
@@ -164,6 +173,10 @@ def get_gradients_statistics(estimator, model, x, batch_size=32, n_samples=100, 
                             break
 
             assert (grads_variance_i.n == n_samples) and (grads_mean_i.n == n_samples)
+
+            if return_grads:
+                all_grads = all_grads_i[None, :, :] if all_grads is None else torch.cat([all_grads, all_grads_i[None]],
+                                                                                        0)
 
             # compute statistics for each data point `x_i`
             grads_variance_i = grads_variance_i()
@@ -200,7 +213,7 @@ def get_gradients_statistics(estimator, model, x, batch_size=32, n_samples=100, 
     # reduce fn
     _reduce = _mean
 
-    return {'grads': {
+    output = {'grads': {
         'variance': _reduce(grads_variance),
         'magnitude': _reduce(grads_mean.abs()),
         'snr': _reduce(grads_snr),
@@ -212,3 +225,5 @@ def get_gradients_statistics(estimator, model, x, batch_size=32, n_samples=100, 
             'p95': _percentile(grads_snr, q=0.95), 'min': grads_snr.min(),
             'max': grads_snr.max(), 'mean': grads_snr.mean()}
     }
+
+    return output, all_grads
