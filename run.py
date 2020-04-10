@@ -258,7 +258,7 @@ try:
             grad_args = {'seed': opt.seed, 'batch_size': opt.bs * opt.mc * opt.iw, 'n_samples': opt.grad_samples,
                          'key_filter': 'tensor:qlogits'}
             # for the main estimator
-            grad_data = get_gradients_statistics(estimator, model, x_eval, **grad_args, **config)
+            grad_data, _ = get_gradients_statistics(estimator, model, x_eval, **grad_args, **config)
             summary_train.update(grad_data)
             train_logger.info(f"{_exp_id} | grads | "
                               f"snr = {grad_data.get('grads', {}).get('snr', 0.):.3E}, "
@@ -271,7 +271,7 @@ try:
             # counter-factual estimation of the other estimators
             for (c_writer, c_conf, c_est, c) in zip(counterfactual_writers, c_configs, c_estimators,
                                                     counterfactual_estimators):
-                grad_data = get_gradients_statistics(c_est, model, x_eval, **grad_args, **c_conf)
+                grad_data, _ = get_gradients_statistics(c_est, model, x_eval, **grad_args, **c_conf)
                 summary = Diagnostic(grad_data)
                 summary.log(c_writer, global_step)
                 train_logger.info(f" | counterfactual | {c:{max(map(len, counterfactual_estimators))}s} "
