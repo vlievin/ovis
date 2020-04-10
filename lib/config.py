@@ -4,7 +4,15 @@ from .utils import parse_numbers
 
 
 def get_config(estimator):
-    if estimator == 'pathwise':
+    if estimator == 'factorized-pathwise':
+        Estimator = FactorizedVariationalInference
+        config = {'tau': 0, 'zgrads': True}
+
+    elif estimator == 'controlled-pathwise':
+        Estimator = ControlledVariationalInference
+        config = {'tau': 0, 'zgrads': True}
+
+    elif estimator == 'pathwise':
         Estimator = VariationalInference
         config = {'tau': 0, 'zgrads': True}
 
