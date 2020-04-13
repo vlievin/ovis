@@ -13,6 +13,7 @@ parser.add_argument('--exp', default='binary-images-0.3', type=str, help='experi
 parser.add_argument('--update', default='', help='comma separated list of args :key:value:new_value, eg `data:path:newpath,iw:10:100`')
 parser.add_argument('--delete', default='', help='pattern to be match in exp')
 parser.add_argument('--show', action='store_true', help='show all records')
+parser.add_argument('--check', action='store_true', help='check potential failed experiments')
 parser.add_argument('--requeue', action='store_true', help='requeue experiment without successful outcome in `success.txt`')
 parser.add_argument('--hard_requeue', action='store_true', help='also recover experiments without the `success` file. Warning: will delete runs of currently running exps.')
 opt = parser.parse_args()
@@ -74,7 +75,7 @@ if len(opt.delete) > 0:
     db.remove(query.arg.test(lambda x: opt.delete in x))
 
 
-if opt.requeue:
+if opt.check or opt.requeue:
     """Find the jobs that have failed (they were aborted by user of the server crashed), delete the actual records and requeue them in the database"""
 
     success_flag = "Success"
@@ -162,14 +163,18 @@ if opt.requeue:
                     r['queued'] = True
                     n_requeued += 1
 
-                db.write_back(results)
+                if opt.requeue:
 
-                # delete experiment run
-                print("Deleting:", exp_path)
-                shutil.rmtree(exp_path)
+                    db.write_back(results)
+                    # delete experiment run
+                    print("Deleting:", exp_path)
+                    shutil.rmtree(exp_path)
 
     print(_sep)
-    print(f"Requeued {n_requeued} experiments.")
+    if opt.requeue:
+        print(f"Requeued {n_requeued} experiments.")
+    else:
+        print(f"{n_requeued} experiments requeuable experiments.")
     queued_exps = db.search(query.queued == True)
     print(_sep)
     print(f"Queued exps = {len(queued_exps)} / {len(db)}")
