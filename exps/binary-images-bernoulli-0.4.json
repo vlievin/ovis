@@ -1,0 +1,13 @@
+{
+  "description": "Comparing c_opt vs. Vimco using a basic MLP VAE on 3 binary images datasets.",
+  "args": [
+    "--estimator vimco-arithmetic",
+    "--estimator copt-arithmetic"
+  ],
+  "global": "--silent --deterministic --nsteps 300000 --lr_reduce_steps 0 --model vae --hdim 256 --iw_valid 100 --N 200 --K 2 --kdim 0 --eval_freq 20 --grad_samples 100 --only_train_set --bs 100 --lr 1e-4",
+  "parameters": {
+    "iw" : [5, 10, 20, 50, 100],
+    "seed":[47, 45, 32, 73, 279],
+    "dataset" : ["binmnist", "omniglot", "fashion"]
+  }
+}

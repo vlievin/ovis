@@ -5,15 +5,15 @@ import os
 import shutil
 import socket
 import sys
-import traceback
 import time
+import traceback
 import warnings
 from multiprocessing import Pool
 
 import GPUtil
-from lib.filelock import FileLock  # pip installl git+https://github.com/dmfrey/FileLock.git
 from tqdm import tqdm
 
+from lib.filelock import FileLock  # pip installl git+https://github.com/dmfrey/FileLock.git
 from lib.manager import open_db, snapshot_dir, read_experiment, get_abs_paths, get_filelock
 
 """
@@ -81,7 +81,6 @@ def fn(job_args):
             time.sleep(10)
 
 
-
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
@@ -95,6 +94,7 @@ if __name__ == '__main__':
     parser.add_argument('--processes', default=1, type=int, help='number of processes per GPU')
     parser.add_argument('--rf', action='store_true', help='force delete previous experiment')
     parser.add_argument('--append', action='store_true', help='force append new experiment')
+    parser.add_argument('--update_exp', action='store_true', help='update experiment file in the snapshot')
     parser.add_argument('--max_jobs', default=-1, type=int, help='maximum jobs per thread (stop after `max_jobs`)')
     opt = parser.parse_args()
 
@@ -126,6 +126,11 @@ if __name__ == '__main__':
     if not opt.append:
         shutil.copytree('./', snapshot_dir(exp_root),
                         ignore=shutil.ignore_patterns('.*', '*.git', 'runs', 'reports', 'data', '__pycache__'))
+
+    # udpate experiment file
+    if opt.update_exp:
+        _exp_file = f'exps/{opt.exp}.json'
+        shutil.copyfile(_exp_file, os.path.join(snapshot_dir(exp_root), _exp_file))
 
     # move path to the snapshot directory to ensure consistency between runs (lib will be loaded from `./lib_snapshot/`)
     os.chdir(snapshot_dir(exp_root))
@@ -186,7 +191,7 @@ if __name__ == '__main__':
     job_args = [{"opt": opt, "exp_root": exp_root, "devices": deviceIDs} for _ in range(n_queued_exps)]
 
     if opt.max_jobs > 0:
-        job_args = job_args[:opt.max_jobs*processes]
+        job_args = job_args[:opt.max_jobs * processes]
 
     print(f"## max. jobs = {len(job_args)}, processes = {processes}")
     for _ in tqdm(pool.imap_unordered(fn, job_args, chunksize=1), total=n_queued_exps, desc="Job Manager"):
