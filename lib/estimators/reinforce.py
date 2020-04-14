@@ -127,7 +127,7 @@ class Reinforce(VariationalInference):
         return score, {'L_k': L_k, "v": v}
 
     def forward(self, model: nn.Module, x: Tensor, backward: bool = False, mc_estimate: bool = False,
-                factorize_v: bool = None, z_reject=0,
+                factorize_v: bool = None, z_reject=0, debug: bool = False,
                 **kwargs: Any) -> \
             Tuple[Tensor, Dict, Dict]:
 
@@ -225,7 +225,9 @@ class Reinforce(VariationalInference):
         output.update(**control_variate_meta)
 
         # compute dlogits
-        output['dqlogits'] = self._compute_dlogits(output)
+        if debug:
+            output['dqlogits'] = self._compute_dlogits(output)
+            output.update(**iw_data)
 
         # check shapes
         assert score.shape[0] == bs

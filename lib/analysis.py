@@ -197,7 +197,7 @@ def analyse_control_variate(x, model, c_configs, c_estimators, c_names, writer_t
             torch.manual_seed(seed)
 
         bs, mc, iw = x.size(0), c_est.mc, c_est.iw
-        loss, diagnostics, output = c_est(model, x, **c_onf)
+        loss, diagnostics, output = c_est(model, x, return_meta=True, **c_onf)
 
         # comute the estimate of the grads using both estimators
 

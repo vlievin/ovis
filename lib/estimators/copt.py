@@ -47,6 +47,7 @@ class OptCovReinforce(Reinforce):
                                 use_outer_samples: bool = False,
                                 nz_estimate: bool = False,
                                 use_double: bool = True,
+                                return_meta: bool = False,
                                 **data: Dict[str, Tensor]) -> Tuple[Tensor, dict, int]:
         """
         Compute the baseline that will be substracted to the score L_k,
@@ -198,10 +199,6 @@ class OptCovReinforce(Reinforce):
             # f_{k,m'}^{-m}
             f_mn = L_hat - v_mn
 
-            # __nan_block(L_hat, "L_hat")
-            # __nan_block(v_mn, "v_mn")
-            # __nan_block(f_mn, "f_mn")
-
             # control variate
             c_opt = torch.einsum("mn, bkmnu, bkmn -> bkmu", [mask, alpha_mn, f_mn])
 
@@ -216,8 +213,11 @@ class OptCovReinforce(Reinforce):
             # if any NaN, just replace with `0`
             c_opt[c_opt != c_opt] = 0
 
-        L_hat = torch.einsum("mn, bkmnu, bkmn -> bkmu", [mask, alpha_mn, L_hat.expand_as(v_mn)])
-        v_hat = torch.einsum("mn, bkmnu, bkmn -> bkmu", [mask, alpha_mn, v_mn])
-        meta = {'L_hat': L_hat, 'v_hat': v_hat}
+        if return_meta:
+            L_hat = torch.einsum("mn, bkmnu, bkmn -> bkmu", [mask, alpha_mn, L_hat.expand_as(v_mn)])
+            v_hat = torch.einsum("mn, bkmnu, bkmn -> bkmu", [mask, alpha_mn, v_mn])
+            meta = {'L_hat': L_hat, 'v_hat': v_hat}
+        else:
+            meta = {}
 
         return c_opt.detach().type(x.dtype), meta, _n_nans

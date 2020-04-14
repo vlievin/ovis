@@ -81,6 +81,7 @@ parser.add_argument('--hdim', default=64, type=int, help='number of hidden units
 parser.add_argument('--nlayers', default=3, type=int, help='number of hidden layers for the encoder and decoder')
 parser.add_argument('--b_nlayers', default=1, type=int, help='number of hidden layers for the baseline')
 parser.add_argument('--norm', default='layernorm', type=str, help='normalization layer [none | layernorm | batchnorm]')
+parser.add_argument('--dropout', default=0, type=float, help='dropout value')
 
 opt = parser.parse_args()
 
@@ -128,8 +129,11 @@ if opt.learn_prior:
 run_id += f"-arch{opt.hdim}x{opt.nlayers}"
 if opt.norm is not 'none':
     run_id += f"-{opt.norm}"
+if opt.dropout > 0:
+    run_id += f"-drp{opt.dropout}"
 
-_exp_id = f"{opt.exp}-{opt.dataset}-{opt.estimator}"
+#_exp_id = f"{opt.exp}-{opt.dataset}-{opt.estimator}"
+_exp_id = f"{opt.exp}-{opt.estimator}"
 
 # defining the run directory
 logdir = os.path.join(opt.root, opt.exp)
@@ -173,7 +177,7 @@ try:
     torch.manual_seed(opt.seed)
     _MODEL = {'vae': VAE, 'conv-vae': ConvVAE, 'toy-vae': ToyVAE}[opt.model]
     model = _MODEL(x.shape, opt.N, opt.K, opt.hdim, kdim=opt.kdim, nlayers=opt.nlayers, learn_prior=opt.learn_prior,
-                   prior=opt.prior, normalization=opt.norm)
+                   prior=opt.prior, normalization=opt.norm, dropout=opt.dropout)
 
     # define baseline
     baseline = Baseline(x.shape, opt.b_nlayers, opt.hdim) if use_baseline else None
