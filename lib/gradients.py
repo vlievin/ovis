@@ -14,15 +14,17 @@ def covariance(x):
 
 
 def _percentile(x, q=0.5):
-    assert q < 1
-    x = x.view(-1)
-    k = int(q * x.shape[0]) + 1
-    v, idx = x.kthvalue(k)  # indexing from 1..
-    return v
+    if x is not None:
+        assert q < 1
+        x = x.view(-1)
+        k = int(q * x.shape[0]) + 1
+        v, idx = x.kthvalue(k)  # indexing from 1..
+        return v
 
 
 def _mean(x):
-    return x.mean()
+    if x is not None:
+        return x.mean()
 
 
 class Mean():
@@ -98,7 +100,7 @@ def get_grads_from_parameters(model, loss, key_filter=''):
 
 
 def get_gradients_statistics(estimator, model, x, batch_size=32, n_samples=100, seed=None, key_filter='qlogits',
-                             true_grads=None, return_grads=False, **config):
+                             true_grads=None, return_grads=False, use_dsnr=False, **config):
     """
     Compute the variance, magnitude and SNR of the gradients.
     """
@@ -116,6 +118,7 @@ def get_gradients_statistics(estimator, model, x, batch_size=32, n_samples=100, 
 
     # init statistics for each datapoint
     grads_snr = Mean()
+    grads_dsnr = Mean()
     grads_mean = Mean()
     grads_variance = Mean()
     if true_grads is not None:
@@ -131,7 +134,6 @@ def get_gradients_statistics(estimator, model, x, batch_size=32, n_samples=100, 
 
             grads_mean_i = Mean()
             grads_variance_i = Variance()
-            grads_dir_i = Mean() if true_grads is not None else None
             all_grads_i = None
 
             while grads_mean_i.n < n_samples:
@@ -162,7 +164,7 @@ def get_gradients_statistics(estimator, model, x, batch_size=32, n_samples=100, 
                     with torch.no_grad():
                         grads = grads.detach()
 
-                        if return_grads:
+                        if return_grads or use_dsnr:
                             all_grads_i = grads[None] if all_grads_i is None else torch.cat([all_grads_i, grads[None]],
                                                                                             0)
 
@@ -174,26 +176,39 @@ def get_gradients_statistics(estimator, model, x, batch_size=32, n_samples=100, 
 
             assert (grads_variance_i.n == n_samples) and (grads_mean_i.n == n_samples)
 
-            if return_grads:
-                all_grads = all_grads_i[None, :, :] if all_grads is None else torch.cat([all_grads, all_grads_i[None]],
-                                                                                        0)
+            with torch.no_grad():
+                if return_grads:
+                    all_grads = all_grads_i[None, :, :] if all_grads is None else torch.cat(
+                        [all_grads, all_grads_i[None]],
+                        0)
+                # compute statistics for each data point `x_i`
+                grads_variance_i = grads_variance_i()
+                grads_mean_i = grads_mean_i()
 
-            # compute statistics for each data point `x_i`
-            grads_variance_i = grads_variance_i()
-            grads_mean_i = grads_mean_i()
+                # compute signal-to-noise ratio. see `tighter variational bounds are not necessarily better` (eq. 4)
+                grads_snr_i = grads_mean_i.abs() / (eps + grads_variance_i ** 0.5)
 
-            # compute signal-to-noise ratio. see `tighter variational bounds are not necessarily better` (eq. 4)
-            grads_snr_i = grads_mean_i.abs() / (eps + grads_variance_i ** 0.5)
+                # compute DSNR,  see `tighter variational bounds are not necessarily better` (eq. 12)
+                if use_dsnr:
+                    u = all_grads_i.mean(0, keepdim=True)
+                    u /= u.norm(dim=1, keepdim=True, p=2)
 
-            # update global statistics
-            grads_mean.update(grads_mean_i)
-            grads_variance.update(grads_variance_i)
-            grads_snr.update(grads_snr_i)
-            if true_grads is not None:
-                cosine_grads_i = (grads_mean_i * true_grads).sum() / grads_mean_i.norm(p=2)
-                grads_dir.update(cosine_grads_i)
+                    g_parallel = u * (u * grads).sum(1, keepdim=True)
+                    g_perpendicular = grads - g_parallel
 
-    print(f">>> elapsed time = {time() - _start:.3f}")
+                    dsnr_i = g_parallel.norm(dim=1, p=2) / g_perpendicular.norm(dim=1, p=2)
+
+                    grads_dsnr.update(dsnr_i)
+
+                # update global statistics
+                grads_mean.update(grads_mean_i)
+                grads_variance.update(grads_variance_i)
+                grads_snr.update(grads_snr_i)
+                if true_grads is not None:
+                    cosine_grads_i = (grads_mean_i * true_grads).sum() / grads_mean_i.norm(p=2)
+                    grads_dir.update(cosine_grads_i)
+
+    print(f">>> elapsed time = {time() - _start:.3f}, estimator = {type(estimator).__name__}")
 
     # reinitialize grads
     model.zero_grad()
@@ -202,6 +217,7 @@ def get_gradients_statistics(estimator, model, x, batch_size=32, n_samples=100, 
     grads_mean = grads_mean()
     grads_variance = grads_variance()
     grads_snr = grads_snr()
+    grads_dsnr = grads_dsnr()
     if true_grads is not None:
         grads_dir = grads_dir()
 
@@ -217,6 +233,7 @@ def get_gradients_statistics(estimator, model, x, batch_size=32, n_samples=100, 
         'variance': _reduce(grads_variance),
         'magnitude': _reduce(grads_mean.abs()),
         'snr': _reduce(grads_snr),
+        'dsnr':_reduce(grads_dsnr),
         'direction': _reduce(grads_dir) if true_grads is not None else 0.
     },
         'snr': {
