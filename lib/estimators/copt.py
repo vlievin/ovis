@@ -46,6 +46,9 @@ class OptCovReinforce(Reinforce):
     def compute_control_variate(self, x: Tensor, mc_estimate: bool = False, arithmetic: bool = True,
                                 use_outer_samples: bool = False,
                                 nz_estimate: bool = False,
+                                uniform_v: bool = False,
+                                no_v: bool = False,
+                                old: bool = False,
                                 use_double: bool = True,
                                 return_meta: bool = False,
                                 **data: Dict[str, Tensor]) -> Tuple[Tensor, dict, int]:
@@ -58,6 +61,7 @@ class OptCovReinforce(Reinforce):
         :param nz_estimate: compute independent estimates for each latent variable
         :param data: additional data
         """
+
         bs, *dims = x.size()
 
         L_k, log_f_xz, z, qz = [data[k] for k in ["L_k", "log_f_xz", "z", "qz"]]
@@ -138,6 +142,9 @@ class OptCovReinforce(Reinforce):
             # log ratios
             log_w = log_f_xz.view(-1, self.mc, self.iw)
 
+            # TODO remove
+            # log_w.retain_grad()
+
             # msk
             mask = 1 - torch.eye(self.iw, device=x.device, dtype=x.dtype)
 
@@ -149,16 +156,6 @@ class OptCovReinforce(Reinforce):
             # compute the `v` term
             log_sum_exp_w = log_sum_exp_except_stable(log_w, dim=2, mask=mask)
 
-            log_sum_exp_w_nans = len(log_sum_exp_w[log_sum_exp_w != log_sum_exp_w])
-            _n_nans += log_sum_exp_w_nans
-            if log_sum_exp_w_nans > 0:
-
-                if torch.isnan(log_sum_exp_w).all():
-                    log_sum_exp_w[log_sum_exp_w != log_sum_exp_w] = 0
-                else:
-                    log_sum_exp_w[log_sum_exp_w != log_sum_exp_w] = log_sum_exp_w[log_sum_exp_w == log_sum_exp_w].mean()
-                print(">>> c*: log sum exp NAN, N =", _n_nans)
-
             log_v_mn = log_w[:, :, :, None] - log_sum_exp_w[:, :, None, :]
 
             # mask `m` samples to avoid getting `inf` and then 'NaN'
@@ -167,9 +164,12 @@ class OptCovReinforce(Reinforce):
 
             v_mn = _masked_log_vmn.exp()
 
+            if not old:
+                v_mn = v_mn.permute(0, 1, 3, 2)  # added this:
+
             # check if v_m < 1
             # todo: check if it sums to one
-            v_mn = self.catch_error(mask[None, None, :, :] * v_mn)
+            # v_mn = self.catch_error(mask[None, None, :, :] * v_mn)
 
             h_m = h_m.view(bs, self.mc, self.iw, _n, -1)
             v_mn = v_mn.view(bs, self.mc, self.iw, self.iw)
@@ -179,28 +179,56 @@ class OptCovReinforce(Reinforce):
             #       = [bs, k, m, n, u, h]
             # with notation: m = m, m' = n, m'' = p, m''' = q, nz = u, kz = h
 
-            # computing the weights: alpha_mn
-            # Denominator (k is ignored in this notation as we can simply sum over it at the end)
-            spsq_h_p_T_h_q = torch.einsum("bkpuh, bkquh -> bku", [h_m, h_m])
-            sp_h_p_T_h_m = torch.einsum("bkpuh, bkmuh -> bkmu", [h_m, h_m])
-            h_m_T_h_m = torch.einsum("bkmuh, bkmuh -> bkmu", [h_m, h_m])
-            den = spsq_h_p_T_h_q[:, :, None, :] - 2 * sp_h_p_T_h_m + h_m_T_h_m
-            if mc_estimate:
-                den = den.sum(1, keepdims=True)
+            if uniform_v:
+                c_opt = L_hat - 1 / self.iw * torch.ones_like(L_hat)
+            elif no_v:
+                c_opt = L_hat - log_f_xz.softmax(dim=2)[..., None]
+            else:
+                # computing the weights: alpha_mn
+                # Denominator (k is ignored in this notation as we can simply sum over it at the end)
+                spsq_h_p_T_h_q = torch.einsum("bkpuh, bkquh -> bku", [h_m, h_m])
+                sp_h_p_T_h_m = torch.einsum("bkpuh, bkmuh -> bkmu", [h_m, h_m])
+                h_m_T_h_m = torch.einsum("bkmuh, bkmuh -> bkmu", [h_m, h_m])
+                den = spsq_h_p_T_h_q[:, :, None, :] - 2 * sp_h_p_T_h_m + h_m_T_h_m
+                if mc_estimate:
+                    den = den.sum(1, keepdims=True)
 
-            # Numerator
-            sp_h_p_T_h_n = torch.einsum("bkpuh, bknuh -> bknu", [h_m, h_m])
-            h_m_T_h_n = torch.einsum("bkmuh, bknuh -> bkmnu", [h_m, h_m])
-            num = sp_h_p_T_h_n[:, :, None, :, :] - h_m_T_h_n
+                # Numerator
+                sp_h_p_T_h_n = torch.einsum("bkpuh, bknuh -> bknu", [h_m, h_m])
+                h_m_T_h_n = torch.einsum("bkmuh, bknuh -> bkmnu", [h_m, h_m])
+                num = sp_h_p_T_h_n[:, :, None, :, :] - h_m_T_h_n
 
-            # weights alpha_mn: sum_{n != m} alpha_mn = 1
-            alpha_mn = num / (_EPS + den[:, :, :, None, :])
+                # weights alpha_mn: sum_{n != m} alpha_mn = 1
+                alpha_mn = num / (_EPS + den[:, :, :, None, :])
 
-            # f_{k,m'}^{-m}
-            f_mn = L_hat - v_mn
+                # f_{k,m'}^{-m}
+                f_mn = L_hat - v_mn
 
-            # control variate
-            c_opt = torch.einsum("mn, bkmnu, bkmn -> bkmu", [mask, alpha_mn, f_mn])
+                # todo:
+                # v_hat = torch.einsum("mn, bkmnu, bkmn -> bkmu", [mask, alpha_mn, v_mn])
+                # v_k = log_f_xz.softmax(dim=2)[..., None]
+                #
+                #
+                # v_hat[0, 0,  2].sum().backward()
+                #
+                # print(f">>> w_k grads:  {log_w.grad[0,0,:]}")
+                #
+                #
+                # print(f">>> diff = {(v_hat - v_k).abs().mean().item():.3f}")
+                #
+                # import matplotlib.pyplot as plt
+                # fig, axes = plt.subplots(nrows=3, ncols=1, figsize=(4, 8))
+                # for k in range(3):
+                #     axes[k].plot(v_hat[k, 0 ,:, 0].data, marker="v", label="vhat")
+                #     axes[k].plot(v_k[k,0,:,0].data, label="v", marker=".")
+                # # for i in range(self.iw):
+                # #     plt.plot(v_mn[0,0,:,i].data, label=f"vm_{i}", linestyle="--")
+                # plt.legend()
+                # plt.show()
+                # exit()
+
+                # control variate
+                c_opt = torch.einsum("mn, bkmnu, bkmn -> bkmu", [mask, alpha_mn, f_mn])
 
             if mc_estimate:
                 c_opt = c_opt.sum(1, keepdims=True)
