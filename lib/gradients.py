@@ -102,7 +102,7 @@ def get_grads_from_parameters(model, loss, key_filter=''):
 def get_gradients_statistics(estimator, model, x, batch_size=32, n_samples=100, seed=None, key_filter='qlogits',
                              true_grads=None, return_grads=False, use_dsnr=False, **config):
     """
-    Compute the variance, magnitude and SNR of the gradients.
+    Compute the variance, magnitude and SNR of the gradients for each data point. Each statistics is averaged on the values given by each point.
     """
 
     n_individual_samples = n_samples * estimator.mc * estimator.iw
@@ -193,8 +193,8 @@ def get_gradients_statistics(estimator, model, x, batch_size=32, n_samples=100, 
                     u = all_grads_i.mean(0, keepdim=True)
                     u /= u.norm(dim=1, keepdim=True, p=2)
 
-                    g_parallel = u * (u * grads).sum(1, keepdim=True)
-                    g_perpendicular = grads - g_parallel
+                    g_parallel = u * (u * all_grads_i).sum(1, keepdim=True)
+                    g_perpendicular = all_grads_i - g_parallel
 
                     dsnr_i = g_parallel.norm(dim=1, p=2) / g_perpendicular.norm(dim=1, p=2)
 
@@ -229,11 +229,12 @@ def get_gradients_statistics(estimator, model, x, batch_size=32, n_samples=100, 
     # reduce fn
     _reduce = _mean
 
+    _dsnr = _reduce(grads_dsnr)
     output = {'grads': {
         'variance': _reduce(grads_variance),
         'magnitude': _reduce(grads_mean.abs()),
         'snr': _reduce(grads_snr),
-        'dsnr':_reduce(grads_dsnr),
+        'dsnr': _dsnr if _dsnr is not None else 0.,
         'direction': _reduce(grads_dir) if true_grads is not None else 0.
     },
         'snr': {
@@ -243,4 +244,156 @@ def get_gradients_statistics(estimator, model, x, batch_size=32, n_samples=100, 
             'max': grads_snr.max(), 'mean': grads_snr.mean()}
     }
 
-    return output, all_grads
+    # additional data: raw grads, and mean,var,snr for each parameter separately
+    meta = {
+        'grads' : all_grads,
+        'magnitude' : grads_mean.abs(),
+        'var': grads_variance,
+        'snr' : grads_snr,
+    }
+
+    return output, meta
+
+
+"""Version for gradients averaged over an entire batch"""
+
+def get_batch_grads_from_tensor(model, loss, output, tensor_id):
+    assert tensor_id in output.keys(), f"Tensor_id = `{tensor_id}` not in model's output"
+
+    model.zero_grad()
+    loss.sum().backward(create_graph=True, retain_graph=True)
+
+    # get the tensor of interest
+    tensors = output[tensor_id] if isinstance(output[tensor_id], list) else output[tensor_id]
+    bs = tensors[0].shape[0]
+    # get the gradients, flatten and concat across the feature dimension
+    gradients = [p.grad for p in tensors]
+    assert not any(
+        [g is None for g in gradients]), f"{sum([int(g is None) for g in gradients])} tensors have no gradients." \
+                                         f"Use `tensor.retain_graph()` in your model to enable gradients."
+    gradients = torch.cat([g.view(bs, -1) for g in gradients], 1)
+
+    # return each MC average of the grads
+    return gradients.mean(0)
+
+
+def get_batch_grads_from_parameters(model, loss, key_filter=''):
+    params = [p for k, p in model.named_parameters() if key_filter in k]
+    assert len(params) > 0, f"`No parameter matching the filter `{key_filter}`"
+    model.zero_grad()
+    # backward individual gradients \nabla L[i]
+    loss.mean().backward(create_graph=True, retain_graph=True)
+    # gather gradients for each parameter and concat such that each element across the dim 1 is a parameter
+    grads = [p.grad.view(-1) for p in params if p.grad is not None]
+    return torch.cat(grads, 0)
+
+def get_batch_gradients_statistics(estimator, model, x, n_samples=100, seed=None, key_filter='qlogits',
+                             true_grads=None, return_grads=False, use_dsnr=False, **config):
+    """
+    Compute the variance, magnitude and SNR of the gradients averaged over a batch of data.
+    """
+
+    _start = time()
+
+    # set specific seed
+    if seed is not None:
+        _seed = int(torch.randint(1, sys.maxsize, (1,)).item())
+        torch.manual_seed(seed)
+
+    # init statistics for each datapoint
+    grads_dsnr = Mean()
+    grads_mean = Mean()
+    grads_variance = Variance()
+    if true_grads is not None:
+        grads_dir = Mean()
+        true_grads = true_grads / true_grads.norm(p=2)
+
+    all_grads = None
+
+    for i in tqdm(range(n_samples), desc="Batch Gradients Analysis"):
+
+        model.eval()
+        model.zero_grad()
+
+        # forward, backward to compute the gradients
+        loss, diagnostics, output = estimator(model, x, backward=False, **config)
+
+        # gather individual gradients
+        if 'tensor:' in key_filter:
+            tensor_id = key_filter.replace("tensor:", "")
+            gradients = get_batch_grads_from_tensor(model, loss, output, tensor_id)
+        else:
+            gradients = get_batch_grads_from_parameters(model, loss, key_filter=key_filter)
+
+        # gather statistics
+        with torch.no_grad():
+            gradients = gradients.detach()
+
+            if return_grads or use_dsnr:
+                all_grads = gradients[None] if all_grads is None else torch.cat([all_grads, gradients[None]],0)
+
+            grads_mean.update(gradients)
+            grads_variance.update(gradients)
+
+
+    # compute statistics
+    with torch.no_grad():
+
+        # compute statistics for each data point `x_i`
+        grads_variance = grads_variance()
+        grads_mean = grads_mean()
+
+        # compute signal-to-noise ratio. see `tighter variational bounds are not necessarily better` (eq. 4)
+        grads_snr = grads_mean.abs() / (eps + grads_variance ** 0.5)
+
+        # compute DSNR,  see `tighter variational bounds are not necessarily better` (eq. 12)
+        if use_dsnr:
+            u = all_grads.mean(0, keepdim=True)
+            u /= u.norm(dim=1, keepdim=True, p=2)
+
+            g_parallel = u * (u * all_grads).sum(1, keepdim=True)
+            g_perpendicular = all_grads - g_parallel
+
+            grads_dsnr = g_parallel.norm(dim=1, p=2) / g_perpendicular.norm(dim=1, p=2)
+
+        # compute grd direction
+        if true_grads is not None:
+            grads_dir = (grads_mean * true_grads).sum() / grads_mean.norm(p=2)
+
+    print(f">>> elapsed time = {time() - _start:.3f}, estimator = {type(estimator).__name__}")
+
+    # reinitialize grads
+    model.zero_grad()
+
+    # print(f">> grads: iw = {estimator.iw}, elapsed time = {time() - _start:.3f}, snr = {snr.mean().log().item():.3f}, masked. snr {_mean(snr).log().item():.3f},  log_var = {_mean(variance).log().item():.3f}, Estimator = {type(estimator).__name__}")
+
+    if seed is not None:
+        torch.manual_seed(_seed)
+
+    # reduce fn
+    _reduce = _mean
+
+    _dsnr = _reduce(grads_dsnr)
+    output = {'grads': {
+        'variance': _reduce(grads_variance),
+        'magnitude': _reduce(grads_mean.abs()),
+        'snr': _reduce(grads_snr),
+        'dsnr': _dsnr if _dsnr is not None else 0.,
+        'direction': _reduce(grads_dir) if true_grads is not None else 0.
+    },
+        'snr': {
+            'p25': _percentile(grads_snr, q=0.25), 'p50': _percentile(grads_snr, q=0.50),
+            'p75': _percentile(grads_snr, q=0.75), 'p5': _percentile(grads_snr, q=0.05),
+            'p95': _percentile(grads_snr, q=0.95), 'min': grads_snr.min(),
+            'max': grads_snr.max(), 'mean': grads_snr.mean()}
+    }
+
+    # additional data: raw grads, and mean,var,snr for each parameter separately
+    meta = {
+        'grads': all_grads,
+        'magnitude': grads_mean.abs(),
+        'var': grads_variance,
+        'snr': grads_snr,
+    }
+
+    return output, meta

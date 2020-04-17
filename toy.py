@@ -15,10 +15,12 @@ from tqdm import tqdm
 from lib import ToyVAE
 from lib.config import get_config
 from lib.estimators import VariationalInference
-from lib.gradients import get_gradients_statistics
+from lib.gradients import get_gradients_statistics, get_batch_gradients_statistics
 from lib.logging import get_loggers
-from lib.plotting import markers, PLOT_WIDTH, PLOT_HEIGHT
+from lib.plotting import PLOT_WIDTH, PLOT_HEIGHT
 from lib.utils import notqdm
+
+sns.set_context("paper", font_scale=1.2)
 
 colors = sns.color_palette()
 _sep = os.get_terminal_size().columns * "-"
@@ -52,7 +54,7 @@ parser.add_argument('--iws', default=default_iws,
 parser.add_argument('--iw_valid', default=1000, type=int, help='number of iw samples for testing')
 
 # noise perturbation for the parameters
-parser.add_argument('--noise', default=0.05, type=str, help='scale of the noise added to the optimal parameters')
+parser.add_argument('--noise', default='0.01', type=str, help='scale of the noise added to the optimal parameters')
 
 # evaluation of the gradients
 parser.add_argument('--key_filter', default='tensor:b', type=str,
@@ -63,6 +65,8 @@ parser.add_argument('--batch_size', default=80000, type=int,
                     help='number of samples per batch size used during evaluation')
 parser.add_argument('--grads_dist', action='store_true', help='plot distributions of gradients for each parameter')
 parser.add_argument('--use_all_params', action='store_true', help='look a the aggregated dist of grads')
+parser.add_argument('--batch_grads', action='store_true', help='analyse batch gradients instead of the gradients for each individual x')
+parser.add_argument('--draw_inidividual', action='store_true', help='draw statistics independently for each parameters')
 
 # dataset
 parser.add_argument('--npoints', default=1024, type=int, help='number of datapoints')
@@ -78,9 +82,13 @@ if opt.silent:
     tqdm = notqdm
 
 # defining the run identifier
-run_id = f"toy-seed{opt.seed}-noise{opt.noise}-mc{opt.mc_samples}-key{opt.key_filter}-pts{opt.npoints}-D{opt.D}"
+run_id = f"toy-{opt.estimators}-iw{opt.iws}-seed{opt.seed}-noise{opt.noise}-mc{opt.mc_samples}-key{opt.key_filter}-pts{opt.npoints}-D{opt.D}"
 if opt.id != "":
     run_id += f"-{opt.id}"
+if opt.batch_grads:
+    run_id += f"-batch_grads"
+if opt.use_all_params:
+    run_id += f"-allp"
 _exp_id = f"toy-{opt.exp}-{opt.seed}"
 
 # defining the run directory
@@ -131,7 +139,7 @@ try:
 
     from lib.datasets.gaussian_toy import GaussianToyDataset
 
-    dset = GaussianToyDataset()
+    dset = GaussianToyDataset(D=opt.D, N=opt.npoints)
     dset.data = dset.data.to(device)
     x = dset.data
 
@@ -186,6 +194,7 @@ try:
                      'key_filter': opt.key_filter, 'true_grads': true_grads}
 
         for estimator_id in estimators:
+            base_logger.info(f">> Analysis for {estimator_id}")
             for iw in tqdm(iws, desc=f"{estimator_id} : iws"):
 
                 # create estimator
@@ -204,8 +213,13 @@ try:
                 torch.manual_seed(opt.seed)
 
                 # evalute variance of the gradients
-                analysis_data, grads_ = get_gradients_statistics(estimator, model, x_eval, return_grads=opt.grads_dist,
-                                                                 use_dsnr=True, **grad_args, **config)
+                if opt.batch_grads:
+                    analysis_data, grads_meta = get_batch_gradients_statistics(estimator, model, x, return_grads=opt.grads_dist,
+                                                                     use_dsnr=True, **grad_args, **config)
+                else:
+                    analysis_data, grads_meta = get_gradients_statistics(estimator, model, x_eval,
+                                                                     return_grads=opt.grads_dist,
+                                                                     use_dsnr=True, **grad_args, **config)
 
                 # log grads info
                 grad_data = analysis_data.get('grads', {})
@@ -215,17 +229,22 @@ try:
                 base_logger.info(
                     f"{estimator_id}, iw = {iw} | snr | p5 = {snr_data.get('p5', 0.):.3E}, p25 = {snr_data.get('p25', 0.):.3E}, p50 = {snr_data.get('p50', 0.):.3E}, p75 = {snr_data.get('p75', 0.):.3E}, p95 = {snr_data.get('p95', 0.):.3E}")
 
-                # stor results
+                # get statistics for each parameter separately
+                individual_stats = {f"{k}-{i}" : v_i for k, v in grads_meta.items() for i,v_i in enumerate(v) if k in ['magnitude', 'var', 'snr']}
+
+                # store results
                 data += [{
                     'estimator': estimator_id,
                     'iw': iw,
                     **{f"grads-{k}": v.item() if isinstance(v, torch.Tensor) else v for k, v in grad_data.items()},
+                    **{f"individual-{k}": v.item() for k, v in individual_stats.items()},
                     **{f"snr-{k}": v.item() for k, v in snr_data.items()},
                     **meta
                 }]
 
                 # store grads
                 if opt.grads_dist:
+                    grads_ = grads_meta.get('grads')
                     grads_ = grads_.view(-1, grads_.shape[-1]).transpose(1, 0)
 
                     # take the grads with the maximum expected value
@@ -235,9 +254,10 @@ try:
                     grads_ = grads_[grads_idx]  # reindex by `true_grads` magnitude
 
                     # get only positive biases
-                    u = grads_.mean(1, keepdim=True)
-                    dir = 2 * (u > 0).float() - 1.
-                    grads_ = grads_ * dir
+                    if opt.use_all_params:
+                        u = grads_.mean(1, keepdim=True)
+                        dir = 2 * (u > 0).float() - 1.
+                        grads_ = grads_ * dir
 
                     if opt.use_all_params:
                         # return gradients for all parameters
@@ -258,7 +278,10 @@ try:
 
     # plotting
     param_name = {'tensor:b': "b", 'tensor:qlogits': "\phi"}.get(opt.key_filter, "\theta")
-    metrics = ['grads-snr', 'grads-dsnr', 'grads-variance', 'grads-magnitude'] #, 'grads-direction'
+    if opt.draw_inidividual:
+        metrics = ['individual-snr', 'grads-dsnr', 'individual-var', 'individual-magnitude'] #, 'grads-direction'
+    else:
+        metrics = ['grads-snr', 'grads-dsnr', 'grads-variance', 'grads-magnitude']
     metrics_formaters = [lambda p: f"$SNR_K({param_name}) $",
                          lambda p: f"$DSNR_K({param_name}) $",
                          lambda p: f"$Var \Delta_K({param_name}) $",
@@ -286,20 +309,28 @@ try:
                 iws = list(sorted(df['iw'].unique()))
                 expected_max = [1e1 / k ** 0.5 for k in iws]
                 expected_min = [1e-1 / k ** 0.5 for k in iws]
-                ax.loglog(iws, expected_min, ":", color="gray", basex=10, basey=10)
-                ax.loglog(iws, expected_max, ":", color="gray", basex=10, basey=10)
+                ax.loglog(iws, expected_min, ":", color="#333333", basex=10, basey=10)
+                ax.loglog(iws, expected_max, ":", color="#333333", basex=10, basey=10)
 
             for e, estimator_id in enumerate(estimators):
                 sub_df = noise_df[noise_df['estimator'] == estimator_id]
                 iws = sub_df['iw'].values
-                values = sub_df[metric].values
 
-                if "direction" in metric:
-                    ax.plot(iws, values, linestyle="-", marker=markers[e], markersize=10, label=estimator_id)
-                    ax.set_xscale('log')
+                if "individual-" in metric:
+                    _metrics = [m for m in sub_df.keys() if metric in m]
                 else:
-                    ax.loglog(iws, values, linestyle="-", marker=markers[e], markersize=10, label=estimator_id, basex=10,
-                              basey=10)
+                    _metrics = [metric]
+
+                for i ,_metric in enumerate(_metrics):
+
+                    values = sub_df[_metric].values
+                    _label = estimator_id if i == 0 else None
+                    if "direction" in _metric:
+                        ax.plot(iws, values, linestyle="-", label=_label, color=colors[e], alpha=0.9)
+                        ax.set_xscale('log')
+                    else:
+                        ax.loglog(iws, values, linestyle="-", label=_label, basex=10,
+                                  basey=10, color=colors[e], alpha=0.9) # marker=markers[e], markersize=5
 
             if n == nrows - 1:
                 ax.set_xlabel("$K$")
