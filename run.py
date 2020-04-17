@@ -48,7 +48,7 @@ parser.add_argument('--optimizer', default='adam', help='[sgd | adam | adamax]')
 parser.add_argument('--lr', default=2e-3, type=float, help='learning rate')
 parser.add_argument('--baseline_lr', default=5e-3, type=float, help='learning rate for the weight of the baseline')
 parser.add_argument('--bs', default=32, type=int, help='batch size')
-parser.add_argument('--lr_reduce_steps', default=3, type=int, help='number of learning rate reduce steps')
+parser.add_argument('--lr_reduce_steps', default=0, type=int, help='number of learning rate reduce steps')
 parser.add_argument('--only_train_set', action='store_true',
                     help='only use the training dataset: useful to study optimization behaviour.')
 
@@ -132,7 +132,7 @@ if opt.norm is not 'none':
 if opt.dropout > 0:
     run_id += f"-drp{opt.dropout}"
 
-#_exp_id = f"{opt.exp}-{opt.dataset}-{opt.estimator}"
+# _exp_id = f"{opt.exp}-{opt.dataset}-{opt.estimator}"
 _exp_id = f"{opt.exp}-{opt.estimator}"
 
 # defining the run directory
@@ -329,11 +329,12 @@ try:
     load_model(model, logdir)
     model.eval()
     agg_test.initialize()
-    for x in tqdm(loader_test, desc=_exp_id + "-test"):
-        x = x.to(device)
-        diagnostics = test_step(x, model, estimator_test, **config_test)
-        agg_test.update(diagnostics)
-    summary_test = agg_test.data.to('cpu')
+    with torch.no_grad():
+        for x in tqdm(loader_test, desc=_exp_id + "-test"):
+            x = x.to(device)
+            diagnostics = test_step(x, model, estimator_test, **config_test)
+            agg_test.update(diagnostics)
+        summary_test = agg_test.data.to('cpu')
 
     # log
     _, global_step, epoch = best_elbo
