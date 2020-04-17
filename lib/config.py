@@ -12,6 +12,14 @@ def get_config(estimator):
         Estimator = VariationalInference
         config = {'tau': 0, 'zgrads': True}
 
+    elif estimator == 'pathwise-vae':
+        Estimator = PathwiseVAE
+        config = {'tau': 0, 'zgrads': True}
+
+
+    elif estimator == 'pathwise-iwae':
+        Estimator = PathwiseIWAE
+        config = {'tau': 0, 'zgrads': True}
 
     elif any([e in estimator for e in ['reinforce', 'vimco', 'copt']]):
 
@@ -50,7 +58,11 @@ def get_config(estimator):
             elif 'copt' in estimator:
                 Estimator = OptCovReinforce
                 nz_estimate = '-nz' in estimator
-                config = {**reinforce_args, **vimco_args, 'nz_estimate': nz_estimate}
+                uniform_v = '-uniform' in estimator
+                no_v = '-no_v' in estimator
+                old = '-old' in estimator
+                config = {**reinforce_args, **vimco_args, 'nz_estimate': nz_estimate, 'uniform_v': uniform_v,
+                          'no_v': no_v, 'old': old}
 
             else:
                 raise ValueError(

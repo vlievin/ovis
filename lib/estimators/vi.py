@@ -1,5 +1,4 @@
 from .base import *
-from .base import _EPS
 
 
 class VariationalInference(Estimator):
@@ -164,3 +163,15 @@ class VariationalInference(Estimator):
     def prior_diagnostics(self, output):
         Hp, usage = [output[k] for k in ('Hp', 'usage')]
         return {'Hp': torch.sum(torch.cat(Hp)), 'usage': torch.mean(torch.cat(usage))}
+
+
+class PathwiseVAE(VariationalInference):
+
+    def __init__(self, beta: float = 1, mc: int = 1, iw: int = 1, **kwargs):
+        super().__init__(beta=beta, mc=iw * mc, iw=1, **kwargs)
+
+
+class PathwiseIWAE(VariationalInference):
+
+    def __init__(self, beta: float = 1, mc: int = 1, iw: int = 1, **kwargs):
+        super().__init__(beta=beta, mc=1, iw=iw * mc, **kwargs)
