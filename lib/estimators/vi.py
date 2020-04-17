@@ -39,7 +39,8 @@ class VariationalInference(Estimator):
         kl = log_qz - log_pz
         # freebits is ditributed equally over the last dimension
         # (meaning L layers result in a total of L * freebits budget)
-        kl = self.freebits(kl.unsqueeze(-1))
+        if self.freebits is not None:
+            kl = self.freebits(kl.unsqueeze(-1))
         kl = batch_reduce(kl)
 
         # compute log f(x, z) = log p(x, z) - log q(z | x) (ELBO)
@@ -175,3 +176,58 @@ class PathwiseIWAE(VariationalInference):
 
     def __init__(self, beta: float = 1, mc: int = 1, iw: int = 1, **kwargs):
         super().__init__(beta=beta, mc=1, iw=iw * mc, **kwargs)
+
+
+class SafeVariationalInference(VariationalInference):
+    """A Variational Inference class without bells and whistles for debugging purposes"""
+
+    def _expand_sample(self, x):
+        bs, *dims = x.size()
+        self.bs = bs  # added for TVO - perhaps a more elegant fix is possible.
+        x = x[:, None, None].repeat(1, self.mc, self.iw, *(1 for _ in dims))
+        # flatten everything into the batch dimension
+        return x.view(-1, *dims)
+
+    def _reduce_sample(self, x):
+        _, *dims = x.size()
+        x = x.view(-1, self.mc, self.iw, *dims)
+        return x.mean((1, 2,))
+
+    def forward(self, model: nn.Module, x: Tensor, backward: bool = False, **kwargs: Any) -> Tuple[
+        Tensor, Dict, Dict]:
+        bs = x.size(0)
+        x_target = self._expand_sample(x)
+        output = self.evaluate_model(model, x, x_target, mc=self.mc, iw=self.iw, **kwargs)
+        log_px_z, log_pz, log_qz = [output[k] for k in ('log_px_z', 'log_pz', 'log_qz')]
+
+        assert len(log_pz) == 1
+        log_pz = batch_reduce(log_pz[0])
+        log_qz = batch_reduce(log_qz[0])
+
+        log_wk = log_px_z + log_pz - log_qz
+        log_wk = log_wk.view(bs, self.mc, self.iw)
+
+        # compute IW-bound
+        L_k = torch.logsumexp(log_wk, dim=2).mean(1)
+
+        # compute stats
+        N_eff =  (log_wk.exp().sum(2) ** 2 / (log_wk.exp()**2).sum(2)).mean(1)
+        kl = (log_pz - log_qz).view(bs, self.mc, self.iw).mean(dim=(1, 2))
+        log_px_z = log_px_z.view(bs, self.mc, self.iw).mean(dim=(1, 2))
+
+        # loss
+        loss = - L_k
+
+        # prepare diagnostics
+        diagnostics = Diagnostic({
+            'loss': {'loss': loss,
+                     'elbo': L_k,
+                     'nll': - log_px_z,
+                     'kl': kl,
+                     'r_eff': N_eff / self.iw},
+        })
+
+        if backward:
+            loss.mean().backward()
+
+        return loss, diagnostics, output
