@@ -11,7 +11,7 @@ _EPS = 1e-18
 
 
 class Estimator(nn.Module):
-    def __init__(self, beta: float = 1, mc: int = 1, iw: int = 1, sequential_computation=False, freebits=0, **kwargs):
+    def __init__(self, beta: float = 1, mc: int = 1, iw: int = 1, sequential_computation=False, freebits=0, partition=0, **kwargs):
         super().__init__()
         self.beta = beta
         self.mc = mc
@@ -20,6 +20,7 @@ class Estimator(nn.Module):
         self.log_mc = np.log(mc)
         self.log_mc_iw_m1 = np.log(mc * iw - 1)
         self.freebits = FreeBits(freebits)
+        self.partition = partition
         self.detach_qlogits = False
         self.sequential_computation = sequential_computation
 
