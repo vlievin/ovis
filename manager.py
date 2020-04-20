@@ -59,7 +59,11 @@ def fn(job_args):
 
                 if 'cuda' in device:
                     device_id = device.split(':')[-1]
-                    command = f"CUDA_VISIBLE_DEVICES={device_id} python {opt.script} {args}"
+                    # ANDERS added "set" for it to work on Windows
+                    if os.name == 'nt':
+                        command = f"set CUDA_VISIBLE_DEVICES={device_id} python {opt.script} {args}"
+                    else:
+                        command = f"CUDA_VISIBLE_DEVICES={device_id} python {opt.script} {args}"
                 else:
                     command = f"python {opt.script} {args}"
                 try:
@@ -85,13 +89,13 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--script', default='run.py', help='script name')
-    parser.add_argument('--root', default='/nobackup/valv/runs/copt/', help='experiment directory')
+    parser.add_argument('--root', default='./exps', help='experiment directory')
     parser.add_argument('--data_root', default='data/', help='data directory')
-    parser.add_argument('--exp', default='binary-images-0.3', type=str, help='experiment id')
+    parser.add_argument('--exp', default='tvo_partition_test', type=str, help='experiment id')
     parser.add_argument('--max_gpus', default=8, type=int, help='maximum number of gpus')
-    parser.add_argument('--max_load', default=0.5, type=float, help='maximum GPU load')
-    parser.add_argument('--max_memory', default=0.01, type=float, help='maximum GPU memory')
-    parser.add_argument('--processes', default=1, type=int, help='number of processes per GPU')
+    parser.add_argument('--max_load', default=0.8, type=float, help='maximum GPU load')
+    parser.add_argument('--max_memory', default=0.8, type=float, help='maximum GPU memory')
+    parser.add_argument('--processes', default=5, type=int, help='number of processes per GPU')
     parser.add_argument('--rf', action='store_true', help='force delete previous experiment')
     parser.add_argument('--append', action='store_true', help='force append new experiment')
     parser.add_argument('--update_exp', action='store_true', help='update experiment file in the snapshot')
@@ -105,6 +109,7 @@ if __name__ == '__main__':
         deviceIDs = [f"cuda:{d}" for d in deviceIDs]
     else:
         deviceIDs = ['cpu']
+    print("DEV IDS", deviceIDs)
 
     # total number of processes
     processes = opt.processes * len(deviceIDs)
