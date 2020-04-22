@@ -94,9 +94,11 @@ def get_config(estimator):
         Estimator = StructuredReinforce
         config = {'tau': 0, 'zgrads': False}
 
-    elif estimator == 'tvo':
+    elif 'tvo' in estimator:
+        partition_args = [arg for arg in estimator.split('-') if 'part' in arg]
+        partition = parse_numbers(partition_args[0])[0] if len(partition_args) else 21
         Estimator = ThermoVariationalObjective
-        config = {'tau': 0, 'zgrads': False}
+        config = {'tau': 0, 'zgrads': False, 'partition': partition}
 
     else:
         raise ValueError(f"Unknown estimator {estimator}.")

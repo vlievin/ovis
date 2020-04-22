@@ -7,8 +7,40 @@ class ThermoVariationalObjective(VariationalInference):
 
     TODO: Continuous VAEs?
     """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
-    def compute_loss(self, log_px_z: Tensor, log_pzs: List[Tensor], log_qzs: List[Tensor], integration: str = 'left') -> Dict[str, Tensor]:
+        # Partitions of unit interval
+        partitions = [[0.0000e+00, 1.0000e-10, 1.0000e+00],  # 0 (Poor)
+                     [0.0000e+00, 3.0000e-10, 1.0000e+00],  # 1 (Poor)
+                     [0.0000e+00, 1.0000e-9, 1.0000e+00],  # 2 (Poor)
+                     [0.0000e+00, 3.0000e-9, 1.0000e+00],  # 3 (Poor)
+                     [0.0000e+00, 1.0000e-8, 1.0000e+00],  # 4 (Poor)
+                     [0.0000e+00, 3.0000e-8, 1.0000e+00],  # 5 (Poor)
+                     [0.0000e+00, 1.0000e-7, 1.0000e+00],  # 6 (Poor)
+                     [0.0000e+00, 3.0000e-7, 1.0000e+00],  # 7 (Poor)
+                     [0.0000e+00, 1.0000e-6, 1.0000e+00],  # 8 (Poor)
+                     [0.0000e+00, 3.0000e-6, 1.0000e+00],  # 9 (Poor)
+                     [0.0000e+00, 1.0000e-5, 1.0000e+00],  # 10 (Poor)
+                     [0.0000e+00, 3.0000e-5, 1.0000e+00],  # 11 (Poor)
+                     [0.0000e+00, 1.0000e-4, 1.0000e+00],  # 12 (Poor)
+                     [0.0000e+00, 3.0000e-4, 1.0000e+00],  # 13 (Poor)
+                     [0.0000e+00, 1.0000e-3, 1.0000e+00],  # 14 (Poor)
+                     [0.0000e+00, 3.0000e-3, 1.0000e+00],  # 15 (Poor)
+                     [0.0000e+00, 1.0000e-2, 1.0000e+00],  # 16 (Poor)
+                     [0.0000e+00, 5.0000e-2, 1.0000e+00],  # 17 (Maybe useful)
+                     [0.0000e+00, 1.0000e-1, 1.0000e+00],  # 18 (Recommended)
+                     [0.0000e+00, 2.0000e-1, 1.0000e+00],  # 19 (Recommended)
+                     [0.0000e+00, 2.5000e-1, 1.0000e+00],  # 20 (Recommended)
+                     [0.0000e+00, 3.0000e-1, 1.0000e+00],  # 21 (Recommended)
+                     [0.0000e+00, 3.5000e-1, 1.0000e+00],  # 22 (Maybe useful)
+                     [0.0000e+00, 4.0000e-1, 1.0000e+00],  # 23 (Maybe useful)
+                     # [0.0000e+00, 1.0000e-1, 3.0000e-1, 1.0000e+00]  # 24 (Test) # todo: is it used somewhere? commenting out for now
+                     ]
+
+        self.register_buffer("partitions", torch.tensor(partitions, dtype=torch.float))
+
+    def compute_loss(self, log_px_z: Tensor, log_pzs: List[Tensor], log_qzs: List[Tensor], integration: str = 'left', partition=21) -> Dict[str, Tensor]:
         """
         Computes the covariance gradient estimator for the TVO bound.
 
@@ -32,34 +64,8 @@ class ThermoVariationalObjective(VariationalInference):
         :return: dictionary with outputs [tvo, elbo, kl, log_f_x,z, N_eff]
         """
 
-        # Partitions of unit interval
-        partition = [[0.0000e+00, 1.0000e-10, 1.0000e+00], # 0 (Poor)
-                     [0.0000e+00, 3.0000e-10, 1.0000e+00], # 1 (Poor)
-                     [0.0000e+00, 1.0000e-9, 1.0000e+00], # 2 (Poor)
-                     [0.0000e+00, 3.0000e-9, 1.0000e+00], # 3 (Poor)
-                     [0.0000e+00, 1.0000e-8, 1.0000e+00], # 4 (Poor)
-                     [0.0000e+00, 3.0000e-8, 1.0000e+00], # 5 (Poor)
-                     [0.0000e+00, 1.0000e-7, 1.0000e+00], # 6 (Poor)
-                     [0.0000e+00, 3.0000e-7, 1.0000e+00], # 7 (Poor)
-                     [0.0000e+00, 1.0000e-6, 1.0000e+00], # 8 (Poor)
-                     [0.0000e+00, 3.0000e-6, 1.0000e+00], # 9 (Poor)
-                     [0.0000e+00, 1.0000e-5, 1.0000e+00], # 10 (Poor)
-                     [0.0000e+00, 3.0000e-5, 1.0000e+00], # 11 (Poor)
-                     [0.0000e+00, 1.0000e-4, 1.0000e+00], # 12 (Poor)
-                     [0.0000e+00, 3.0000e-4, 1.0000e+00], # 13 (Poor)
-                     [0.0000e+00, 1.0000e-3, 1.0000e+00], # 14 (Poor)
-                     [0.0000e+00, 3.0000e-3, 1.0000e+00], # 15 (Poor)
-                     [0.0000e+00, 1.0000e-2, 1.0000e+00], # 16 (Poor)
-                     [0.0000e+00, 5.0000e-2, 1.0000e+00], # 17 (Maybe useful)
-                     [0.0000e+00, 1.0000e-1, 1.0000e+00], # 18 (Recommended)
-                     [0.0000e+00, 2.0000e-1, 1.0000e+00], # 19 (Recommended)
-                     [0.0000e+00, 2.5000e-1, 1.0000e+00], # 20 (Recommended)
-                     [0.0000e+00, 3.0000e-1, 1.0000e+00], # 21 (Recommended)
-                     [0.0000e+00, 3.5000e-1, 1.0000e+00], # 22 (Maybe useful)
-                     [0.0000e+00, 4.0000e-1, 1.0000e+00], # 23 (Maybe useful)
-                     [0.0000e+00, 1.0000e-1, 3.0000e-1, 1.0000e+00] # 24 (Test)
-                     ][self.partition]
-        partition = torch.FloatTensor(partition).cuda()
+
+        partition = self.partitions[partition]
 
         num_particles = self.iw
 
@@ -80,7 +86,8 @@ class ThermoVariationalObjective(VariationalInference):
 
         # freebits is ditributed equally over the last dimension
         # (meaning L layers result in a total of L * freebits budget)
-        kl = self.freebits(kl.unsqueeze(-1))
+        if self.freebits is not None:
+            kl = self.freebits(kl.unsqueeze(-1))
         kl = batch_reduce(kl)
 
         # compute log f(x, z) = log p(x, z) - log q(z | x) (ELBO)
@@ -142,7 +149,7 @@ class ThermoVariationalObjective(VariationalInference):
 
         return {'tvo': tvo, 'elbo': elbo, 'kl': kl, 'log_f_xz': log_f_xz, 'N_eff': N_eff}
 
-    def forward(self, model: nn.Module, x: Tensor, backward: bool = False, **kwargs: Any) -> Tuple[Tensor, Dict, Dict]:
+    def forward(self, model: nn.Module, x: Tensor, backward: bool = False, partition:int = 21, **kwargs: Any) -> Tuple[Tensor, Dict, Dict]:
         # From VariationalInference estimator.
         # Removed '.mean(1)'s and changed namings for TVO
 
@@ -154,7 +161,7 @@ class ThermoVariationalObjective(VariationalInference):
             output = self.evaluate_model(model, x, x_target, mc=self.mc, iw=self.iw, **kwargs)
 
         log_px_z, log_pz, log_qz = [output[k] for k in ('log_px_z', 'log_pz', 'log_qz')]
-        tvo_data = self.compute_loss(log_px_z, log_pz, log_qz)
+        tvo_data = self.compute_loss(log_px_z, log_pz, log_qz, partition=partition)
 
         # loss
         tvo = tvo_data.get('tvo')
