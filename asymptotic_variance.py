@@ -37,12 +37,12 @@ parser.add_argument('--estimators',
 parser.add_argument('--iw_min', default=5, type=float, help='min umber of Importance-Weighted samples')
 parser.add_argument('--iw_max', default=1e3, type=float, help='max number of Importance-Weighted samples')
 parser.add_argument('--iw_steps', default=5, type=float, help='number of Importance-Weighted samples samples')
-
-# numer of samples for validation
 parser.add_argument('--iw_valid', default=1000, type=int, help='number of iw samples for testing')
-parser.add_argument('--iw_dir', default=32, type=int, help='number of iw samples to find the true gradients')
-parser.add_argument('--true_grads_mc', default=10000, type=int,
-                    help='number of mc samples used to compute the estimae of the True gradients')
+
+parser.add_argument('--oracle', default='pathwise-iwae', type=str, help='oracle estimator id')
+parser.add_argument('--iw_oracle', default=1000, type=int, help='number of iw samples to find the true gradients')
+parser.add_argument('--mc_oracle', default=10000, type=int,
+                    help='number of mc samples used to compute the estimae of the oracle gradients')
 
 # noise perturbation for the parameters
 parser.add_argument('--noise', default='0.01', type=str, help='scale of the noise added to the optimal parameters')
@@ -76,7 +76,7 @@ if opt.silent:
     tqdm = notqdm
 
 # defining the run identifier
-run_id = f"toy-{opt.estimators}-iw{opt.iw_min}-{opt.iw_max}-{opt.iw_steps}-seed{opt.seed}-noise{opt.noise}-mc{opt.mc_samples}-key{opt.key_filter}-pts{opt.npoints}-D{opt.D}"
+run_id = f"toy-{opt.estimators}-iw{opt.iw_min}-{opt.iw_max}-{opt.iw_steps}-oracle={opt.oracle}-seed{opt.seed}-noise{opt.noise}-mc{opt.mc_samples}-key{opt.key_filter}-pts{opt.npoints}-D{opt.D}"
 if opt.id != "":
     run_id += f"-{opt.id}"
 if opt.batch_grads:
@@ -117,8 +117,8 @@ try:
     # valid estimator (it is important that all models are evaluated using the same evaluator)
     Estimator, config_ref = get_config("pathwise-iwae")
     estimator_ref = Estimator(mc=1, iw=opt.iw_valid)
-    Estimator, config_dir = get_config("pathwise-iwae")
-    estimator_dir = Estimator(mc=1, iw=opt.iw_dir)
+    Estimator, config_oracle = get_config(opt.oracle)
+    oracle = Estimator(mc=1, iw=opt.iw_oracle)
 
     # get device and move models
     device = "cuda:0" if torch.cuda.device_count() else "cpu"
@@ -152,7 +152,7 @@ try:
         perturbate_weights(model, noise)
 
         # compute the true direction of the gradients
-        true_grads = compute_true_grads(estimator_dir, model, x, opt.true_grads_mc, **global_grad_args, **config_dir)
+        true_grads = compute_true_grads(oracle, model, x, opt.mc_oracle, **global_grad_args, **config_oracle)
         # order gradients by magnitude
         _, grads_idx = true_grads.abs().sort(descending=True)
 

@@ -89,7 +89,7 @@ def plot_statistics(df, opt, logdir):
     else:
         metrics = ['grads-snr', 'grads-dsnr', 'grads-variance', 'grads-magnitude', 'grads-direction']
 
-    _true_grads_name = "\Delta_{" + f"{opt.iw_dir}" + "}^{iwae}"
+    _true_grads_name = "\Delta_{" + f"{opt.iw_oracle}" + "}^{"+ f"{str(opt.oracle).replace('pathwise-', '')}" + "}"
     metrics_formaters = [lambda p: f"$SNR_K({param_name}) $",
                          lambda p: f"$DSNR_K({param_name}) $",
                          lambda p: f"$Var \Delta_K({param_name}) $",
