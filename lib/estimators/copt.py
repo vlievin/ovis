@@ -17,8 +17,8 @@ class OptCovReinforce(Reinforce):
         self.log_iw_m1 = np.log(self.iw - 1)
         self.factorize_v = True
 
-    def normalized_importance_weights(self, log_f_xz):
-        v = softmax(log_f_xz, dim=2)
+    def normalized_importance_weights(self, log_w_k):
+        v = softmax(log_w_k, dim=2)
         if v[v > 1 + _EPS].sum() > 0:
             print(f"~~~~ warning | in:normalized_importance_weights: v> 1 {v[v > 1 + _EPS]}")
         return v
@@ -43,20 +43,19 @@ class OptCovReinforce(Reinforce):
 
         return v_kmn
 
-    def compute_control_variate(self, x: Tensor, mc_estimate: bool = False, arithmetic: bool = True,
+    def compute_control_variate(self, x: Tensor, arithmetic: bool = True,
                                 use_outer_samples: bool = False,
-                                nz_estimate: bool = False,
                                 uniform_v: bool = False,
-                                no_v: bool = False,
+                                zero_v: bool = False,
                                 old: bool = False,
                                 use_double: bool = True,
                                 return_meta: bool = False,
+                                nz_estimate: bool = False,
                                 **data: Dict[str, Tensor]) -> Tuple[Tensor, dict, int]:
         """
         Compute the baseline that will be substracted to the score L_k,
         The output shape should be of size 4 and matching the shape [bs, mc, iw, nz]
         :param x: input tensor
-        :param mc_estimate: compute independent estimates for each MC sample
         :param vimco_estimate: estimate the current sample given the geometric average of the others: \hat{L}(z_m | z_{-m})
         :param nz_estimate: compute independent estimates for each latent variable
         :param data: additional data
@@ -64,11 +63,11 @@ class OptCovReinforce(Reinforce):
 
         bs, *dims = x.size()
 
-        L_k, log_f_xz, z, qz = [data[k] for k in ["L_k", "log_f_xz", "z", "qz"]]
+        L_k, log_wk, z, qz = [data[k] for k in ["L_k", "log_wk", "z", "qz"]]
 
         if self.iw == 1:
-            log_f_xz = log_f_xz.view(-1, self.mc, self.iw)
-            return torch.zeros_like(log_f_xz[:, :, 0]), {}, 0
+            log_wk = log_wk.view(-1, self.mc, self.iw)
+            return torch.zeros_like(log_wk[:, :, 0]), {}, 0
 
         assert len(qz) == 1
         z, qz = z[0], qz[0]
@@ -77,7 +76,7 @@ class OptCovReinforce(Reinforce):
         if use_double:
             qz.logits = qz.logits.double()
             z = z.double()
-            log_f_xz = log_f_xz.double()
+            log_wk = log_wk.double()
 
         # compute log probs
         qlogits = qz.logits
@@ -140,16 +139,13 @@ class OptCovReinforce(Reinforce):
                     raise ValueError(f"# NANS found in the computation of {key}, and that shouldn't happen")
 
             # log ratios
-            log_w = log_f_xz.view(-1, self.mc, self.iw)
-
-            # TODO remove
-            # log_w.retain_grad()
+            log_w = log_wk.view(-1, self.mc, self.iw)
 
             # msk
             mask = 1 - torch.eye(self.iw, device=x.device, dtype=x.dtype)
 
             # compute \hat{L} \approx \log 1\k \sum_m w_m
-            L_hat, _, _n_nans = Vimco.compute_control_variate(self, x, mc_estimate=mc_estimate, arithmetic=arithmetic,
+            L_hat, _, _n_nans = Vimco.compute_control_variate(self, x, arithmetic=arithmetic,
                                                               return_raw=True, use_double=use_double,
                                                               use_outer_samples=use_outer_samples, **data)
 
@@ -181,8 +177,8 @@ class OptCovReinforce(Reinforce):
 
             if uniform_v:
                 c_opt = L_hat - 1 / self.iw * torch.ones_like(L_hat)
-            elif no_v:
-                c_opt = L_hat - log_f_xz.softmax(dim=2)[..., None]
+            elif zero_v:
+                c_opt = L_hat - log_wk.softmax(dim=2)[..., None]
             else:
                 # computing the weights: alpha_mn
                 # Denominator (k is ignored in this notation as we can simply sum over it at the end)
@@ -190,8 +186,6 @@ class OptCovReinforce(Reinforce):
                 sp_h_p_T_h_m = torch.einsum("bkpuh, bkmuh -> bkmu", [h_m, h_m])
                 h_m_T_h_m = torch.einsum("bkmuh, bkmuh -> bkmu", [h_m, h_m])
                 den = spsq_h_p_T_h_q[:, :, None, :] - 2 * sp_h_p_T_h_m + h_m_T_h_m
-                if mc_estimate:
-                    den = den.sum(1, keepdims=True)
 
                 # Numerator
                 sp_h_p_T_h_n = torch.einsum("bkpuh, bknuh -> bknu", [h_m, h_m])
@@ -204,34 +198,8 @@ class OptCovReinforce(Reinforce):
                 # f_{k,m'}^{-m}
                 f_mn = L_hat - v_mn
 
-                # todo:
-                # v_hat = torch.einsum("mn, bkmnu, bkmn -> bkmu", [mask, alpha_mn, v_mn])
-                # v_k = log_f_xz.softmax(dim=2)[..., None]
-                #
-                #
-                # v_hat[0, 0,  2].sum().backward()
-                #
-                # print(f">>> w_k grads:  {log_w.grad[0,0,:]}")
-                #
-                #
-                # print(f">>> diff = {(v_hat - v_k).abs().mean().item():.3f}")
-                #
-                # import matplotlib.pyplot as plt
-                # fig, axes = plt.subplots(nrows=3, ncols=1, figsize=(4, 8))
-                # for k in range(3):
-                #     axes[k].plot(v_hat[k, 0 ,:, 0].data, marker="v", label="vhat")
-                #     axes[k].plot(v_k[k,0,:,0].data, label="v", marker=".")
-                # # for i in range(self.iw):
-                # #     plt.plot(v_mn[0,0,:,i].data, label=f"vm_{i}", linestyle="--")
-                # plt.legend()
-                # plt.show()
-                # exit()
-
                 # control variate
                 c_opt = torch.einsum("mn, bkmnu, bkmn -> bkmu", [mask, alpha_mn, f_mn])
-
-            if mc_estimate:
-                c_opt = c_opt.sum(1, keepdims=True)
 
             c_opt_nans = len(c_opt[c_opt != c_opt])
             _n_nans += c_opt_nans
@@ -244,7 +212,7 @@ class OptCovReinforce(Reinforce):
         if return_meta:
             if uniform_v:
                 v_hat = 1 / self.iw * torch.ones_like(L_hat)
-            elif no_v:
+            elif zero_v:
                 v_hat = torch.zeros_like(L_hat)
             else:
                 v_hat = torch.einsum("mn, bkmnu, bkmn -> bkmu", [mask, alpha_mn, v_mn])

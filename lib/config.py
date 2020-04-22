@@ -26,23 +26,14 @@ def get_config(estimator):
         config = {'tau': 0, 'zgrads': True}
 
     elif any([e in estimator for e in ['reinforce', 'vimco', 'copt']]):
-
-        # parse the pattern `estimator-z_reject{`value`}`
-        z_reject_args = [arg for arg in estimator.split('-') if 'z_reject' in arg]
-
-        z_reject = parse_numbers(z_reject_args[0])[0] if len(z_reject_args) else 0
-
         reinforce_args = {'tau': 0,
-                          'zgrads': False,
-                          'mc_estimate': '-mc' in estimator,
-                          'z_reject': z_reject}
+                          'zgrads': False}
 
         if 'reinforce' in estimator:
             Estimator = Reinforce
             config = reinforce_args
 
         elif 'copt' in estimator or 'vimco' in estimator:
-
             use_outer_samples = '-outer' in estimator
             use_double = not ('-float32' in estimator)
             if '-arithmetic' in estimator:
@@ -56,17 +47,15 @@ def get_config(estimator):
 
             if 'vimco' in estimator:
                 Estimator = Vimco
-                grads_phi = '-phi' in estimator
-                config = {'factorize_v': grads_phi, **reinforce_args, **vimco_args}
+                config = {**reinforce_args, **vimco_args}
 
             elif 'copt' in estimator:
                 Estimator = OptCovReinforce
-                nz_estimate = '-nz' in estimator
                 uniform_v = '-uniform' in estimator
-                no_v = '-no_v' in estimator
+                zero_v = '-zero' in estimator
                 old = '-old' in estimator
-                config = {**reinforce_args, **vimco_args, 'nz_estimate': nz_estimate, 'uniform_v': uniform_v,
-                          'no_v': no_v, 'old': old}
+                config = {**reinforce_args, **vimco_args, 'uniform_v': uniform_v,
+                          'zero_v': zero_v, 'old': old}
 
             else:
                 raise ValueError(

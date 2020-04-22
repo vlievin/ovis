@@ -4,7 +4,7 @@
     "--estimator copt-arithmetic",
     "--estimator vimco-arithmetic",
     "--estimator copt-arithmetic-uniform",
-    "--estimator copt-arithmetic-no_v",
+    "--estimator copt-arithmetic-zero",
     "--estimator copt-arithmetic-old",
     "--estimator pathwise-vae",
     "--estimator pathwise-iwae"

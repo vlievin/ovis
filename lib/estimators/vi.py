@@ -12,7 +12,7 @@ class VariationalInference(Estimator):
         """
         Compute the importance weighted bound:
 
-         L_k = E_{q(z_{1..K} | x)} [ log 1/K \sum_{i=1..K} f(x, z_i)], f(x, z) = p(x,z) / q(z|x)
+         L_k = E_{q(z^1...z^K | x)} [ log 1/K \sum_{i=1..K} w_k], w_k  = p(x,z^k) / q(z^k|x)
 
          In this expression the KLs are concatenated by stochastic layer so the freebits can be applied to each of them.
 
@@ -20,7 +20,7 @@ class VariationalInference(Estimator):
         :param log_pzs: [log p(z_i | *) l=1..L], each of of shape [bs * mc * iw, N_i]
         :param log_qzs: [log q(z_i | *) l=1..L], each of of shape [bs * mc * iw, N_i]
         :param detach_qlogits: detach the logits of q(z|x)
-        :return: dictionary with outputs [L_k, kl, log_f_x,z]
+        :return: dictionary with outputs [L_k, kl, log_wk]
         """
 
         # compute the effective sample size
@@ -43,16 +43,16 @@ class VariationalInference(Estimator):
             kl = self.freebits(kl.unsqueeze(-1))
         kl = batch_reduce(kl)
 
-        # compute log f(x, z) = log p(x, z) - log q(z | x) (ELBO)
-        log_f_xz = log_px_z - kl
+        # compute log w_k = log p(x, z^k) - log q(z^k | x) (ELBO)
+        log_wk = log_px_z - kl
 
-        # view log f as shape [bs, mc, iw]
-        log_f_xz = log_f_xz.view(-1, self.mc, self.iw)
+        # view log_wk as shape [bs, mc, iw]
+        log_wk = log_wk.view(-1, self.mc, self.iw)
 
         # IW-ELBO: L_k
-        L_k = torch.logsumexp(log_f_xz, dim=2) - self.log_iw  # if self.iw > 1 else log_f_xz.squeeze(2)
+        L_k = torch.logsumexp(log_wk, dim=2) - self.log_iw  # if self.iw > 1 else log_f_xz.squeeze(2)
 
-        return {'L_k': L_k, 'kl': kl, 'log_f_xz': log_f_xz, 'N_eff': N_eff}
+        return {'L_k': L_k, 'kl': kl, 'log_wk': log_wk, 'N_eff': N_eff}
 
     @torch.no_grad()
     def effective_sample_size(self, log_px_z, log_pz, log_qz):
