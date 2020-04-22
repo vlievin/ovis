@@ -128,8 +128,14 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-exps/sandbox.json
+exps/uniform.json
 
 .tmp_plot.png
 
 sandbox.ipynb
+
+exps/uniform-mnist.json
+
+trend.py
+
+*.ipynb

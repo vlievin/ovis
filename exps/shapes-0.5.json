@@ -1,0 +1,18 @@
+{
+  "description": "compare VIMCO and Covbaseline using different number of IW samples and using different averaging (arithmetic vs geometric)",
+  "args": [
+    "--estimator copt-arithmetic",
+    "--estimator vimco-arithmetic",
+    "--estimator copt-arithmetic-uniform",
+    "--estimator copt-arithmetic-no_v",
+    "--estimator copt-arithmetic-old",
+    "--estimator pathwise-vae",
+    "--estimator pathwise-iwae"
+  ],
+  "global": "--silent --deterministic --nsteps 50000 --lr_reduce_steps 0 --bs 32 --lr 1e-3 --iw_valid 100 --iw_test 1000 --only_train_set --prior normal",
+  "parameters": {
+    "iw" : [100, 50, 20, 10, 5, 3],
+    "seed": [13, 64, 47, 23, 78, 202, 674, 8890, 267, 562]
+  }
+
+}

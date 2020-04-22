@@ -1,13 +1,15 @@
 {
   "description": "Comparing c_opt vs. Vimco vs. pathwise on the gaussian toy dataset",
   "args": [
-    "--estimator pathwise",
+    "--estimator pathwise-vae",
+    "--estimator pathwise-iwae",
     "--estimator vimco-arithmetic",
-    "--estimator copt-arithmetic"
+    "--estimator copt-arithmetic-uniform",
+    "--estimator copt-arithmetic-no_v"
   ],
-  "global": "--silent --deterministic --nsteps 30000 --lr_reduce_steps 0 --model toy-vae --iw_valid 100 --N 32 --K 8 --eval_freq 100 --grad_samples 100 --only_train_set --bs 100 --lr 1e-4",
+  "global": "--silent --deterministic --nsteps 30000 --lr_reduce_steps 0 --model toy-vae --iw_valid 1000 --iw_test 1000 --N 32 --K 8 --eval_freq 100 --grad_samples 1000 --only_train_set --bs 100 --lr 1e-4 --valid_bs 10 --test_bs 10 --iw_test 5000",
   "parameters": {
-    "iw" : [1000, 700, 400, 200, 100, 50, 20, 10, 5, 3],
+    "iw" : [1000, 400, 100, 20, 8, 3],
     "seed":[47, 45, 32, 73, 279],
     "dataset" : ["gaussian-toy"]
   }
