@@ -47,14 +47,27 @@ def update_labels(axes, metric_dict):
         return label.split(':')[-1]
 
     for ax in axes.reshape(-1):
+
         xlabel = _parse(ax.get_xlabel())
         ylabel = _parse(ax.get_ylabel())
 
         if xlabel in metric_dict.keys():
-            ax.set_xlabel(metric_dict[xlabel])
+            label = metric_dict[xlabel]
+            ax.set_xlabel(label)
 
         if ylabel in metric_dict.keys():
-            ax.set_ylabel(metric_dict[ylabel])
+            label = metric_dict[ylabel]
+
+            # append `^{header}$` to `$\mathcal{L}`
+            if 'loss/elbo' in ylabel:
+                if 'train:' in ax.get_ylabel():
+                    label = label[:-1] + "^{train}$"
+                elif 'valid:' in ax.get_ylabel():
+                    label = label[:-1] + "^{valid}$"
+                elif 'test:' in ax.get_ylabel():
+                    label = label[:-1] + "^{test}$"
+
+            ax.set_ylabel(label)
 
 
 def percentile(n):
@@ -243,7 +256,7 @@ def pivot_plot(df, path, metrics, cat_key, hue_key, x_key, style_key=None, ylims
     if nrows == 0 or ncols == 0:
         return None
 
-    hue_order = list(df[key_name].unique())
+    hue_order = { l:i for i,l in enumerate(sorted(df[key_name].unique())) }
     if len(categories) > 1:
         fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(PLOT_WIDTH * ncols, PLOT_HEIGHT * nrows),
                                  sharex='col', sharey='row' if cat_key != 'dataset' else False)
@@ -260,7 +273,7 @@ def pivot_plot(df, path, metrics, cat_key, hue_key, x_key, style_key=None, ylims
 
                 for c, _key in enumerate(cat_data[key_name].unique()):
                     sub_data = cat_data[cat_data[key_name] == _key]
-                    color = palette[c]
+                    color = palette[hue_order[_key]]
 
                     # extract mean and 90 percentiles
                     series = sub_data[[x_key, metric]].groupby(x_key).agg(['mean', percentile(5), percentile(95)])
@@ -269,7 +282,7 @@ def pivot_plot(df, path, metrics, cat_key, hue_key, x_key, style_key=None, ylims
                     # area plot for CI + mean
                     ax.fill_between(series[x_key], series[metric]['p_5'], series[metric]['p_95'], color=color,
                                     alpha=0.2)
-                    ax.plot(series[x_key], series[metric]['mean'], color=palette[c], label=_key, marker=markers[c])
+                    ax.plot(series[x_key], series[metric]['mean'], color=color, label=_key, marker=markers[c])
 
                 ax.set_xlabel(x_key)
                 ax.set_ylabel(metric)
