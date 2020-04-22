@@ -8,6 +8,10 @@ def get_config(estimator):
         Estimator = FactorizedVariationalInference
         config = {'tau': 0, 'zgrads': True}
 
+    elif estimator == 'safe-vi':
+        Estimator = SafeVariationalInference
+        config = {'tau': 0, 'zgrads': True}
+
     elif estimator == 'pathwise':
         Estimator = VariationalInference
         config = {'tau': 0, 'zgrads': True}

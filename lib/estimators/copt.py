@@ -242,8 +242,14 @@ class OptCovReinforce(Reinforce):
             c_opt[c_opt != c_opt] = 0
 
         if return_meta:
-            L_hat = torch.einsum("mn, bkmnu, bkmn -> bkmu", [mask, alpha_mn, L_hat.expand_as(v_mn)])
-            v_hat = torch.einsum("mn, bkmnu, bkmn -> bkmu", [mask, alpha_mn, v_mn])
+            if uniform_v:
+                v_hat = 1 / self.iw * torch.ones_like(L_hat)
+            elif no_v:
+                v_hat = torch.zeros_like(L_hat)
+            else:
+                v_hat = torch.einsum("mn, bkmnu, bkmn -> bkmu", [mask, alpha_mn, v_mn])
+                L_hat = torch.einsum("mn, bkmnu, bkmn -> bkmu", [mask, alpha_mn, L_hat.expand_as(v_mn)])
+
             meta = {'L_hat': L_hat, 'v_hat': v_hat}
         else:
             meta = {}

@@ -1,0 +1,29 @@
+{
+  "description": "Comparing c_opt vs. Vimco using a basic MLP VAE on 3 binary images datasets using a Gaussian prior.",
+  "args": [
+    "--estimator pathwise-iwae --oracle copt-arithmetic-no_v",
+    "--estimator pathwise-iwae --oracle copt-arithmetic-uniform",
+    "--estimator pathwise-iwae --oracle vimco-arithmetic",
+    "--estimator pathwise-iwae --oracle pathwise-iwae",
+    "--estimator pathwise-vae --oracle pathwise-vae"
+  ],
+  "global": "--silent --deterministic --nsteps 1000000 --lr_reduce_steps 3 --model vae --hdim 256 --N 32 --K 8 --prior normal --only_train_set --lr 1e-3",
+  "parameters": {
+    "counterfactuals" : ["copt-arithmetic-uniform,copt-arithmetic-no_v,pathwise-vae,pathwise-iwae"],
+    "counterfactuals_iw" : ["1000,300,100,30,10"],
+    "grad_samples" : [1000],
+    "oracle_mc_samples" : [10000],
+    "oracle_iw_samples": [1000],
+    "iw" : [64],
+    "iw_valid" : [1000],
+    "iw_test" : [5000],
+    "eval_freq": [25],
+    "batch_grads" : [true],
+    "bs": [100],
+    "valid_bs": [10],
+    "test_bs": [5],
+    "grad_bs": [20],
+    "seed":[47, 45, 32, 73, 279],
+    "dataset" : ["binmnist"]
+  }
+}

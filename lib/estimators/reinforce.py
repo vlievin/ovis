@@ -292,7 +292,7 @@ class Vimco(Reinforce):
 
     @torch.no_grad()
     def compute_control_variate(self, x: Tensor, mc_estimate: bool = True, arithmetic=False, return_raw=False,
-                                use_outer_samples=False, use_double: bool = True, **data: Dict[str, Tensor]) -> Tuple[
+                                use_outer_samples=False, use_double: bool = True, return_meta:bool = False, **data: Dict[str, Tensor]) -> Tuple[
         Tensor, dict, int]:
         """Compute the baseline that will be substracted to the score L_k,
         `data` contains the output of the method `compute_iw_bound`.
@@ -370,7 +370,10 @@ class Vimco(Reinforce):
 
         baseline = baseline.unsqueeze(-1)  # unsqueeze over Nz
 
-        meta = {'L_hat': baseline}
+        if return_meta:
+            meta = {'L_hat': baseline}
+        else:
+            meta = {}
 
         if return_raw:
             return baseline, meta, _n_nans
