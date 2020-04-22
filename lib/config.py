@@ -94,6 +94,10 @@ def get_config(estimator):
         Estimator = StructuredReinforce
         config = {'tau': 0, 'zgrads': False}
 
+    elif estimator == 'tvo':
+        Estimator = ThermoVariationalObjective
+        config = {'tau': 0, 'zgrads': False}
+
     else:
         raise ValueError(f"Unknown estimator {estimator}.")
 

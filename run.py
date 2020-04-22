@@ -287,6 +287,7 @@ try:
             x = x.to(device)
             diagnostics = training_step(x, model, estimator, optimizers, **config)
             agg_train.update(diagnostics)
+            
             global_step += 1
         summary_train = agg_train.data.to('cpu')
 
