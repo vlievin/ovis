@@ -54,6 +54,7 @@ class VariationalInference(Estimator):
 
         return {'L_k': L_k, 'kl': kl, 'log_f_xz': log_f_xz, 'N_eff': N_eff}
 
+    @torch.no_grad()
     def effective_sample_size(self, log_px_z, log_pz, log_qz):
         """
         Compute the effective sample size: N_eff = (\sum_i w_i)**2 / \sum_i w_i**2
@@ -211,7 +212,7 @@ class SafeVariationalInference(VariationalInference):
         L_k = torch.logsumexp(log_wk, dim=2).mean(1)
 
         # compute stats
-        N_eff =  (log_wk.exp().sum(2) ** 2 / (log_wk.exp()**2).sum(2)).mean(1)
+        N_eff = (log_wk.exp().sum(2) ** 2 / (log_wk.exp() ** 2).sum(2)).mean(1)
         kl = (log_pz - log_qz).view(bs, self.mc, self.iw).mean(dim=(1, 2))
         log_px_z = log_px_z.view(bs, self.mc, self.iw).mean(dim=(1, 2))
 

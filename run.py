@@ -3,6 +3,7 @@ import json
 import os
 import socket
 import traceback
+from copy import copy
 from shutil import rmtree
 
 import numpy as np
@@ -40,6 +41,8 @@ parser.add_argument('--silent', action='store_true', help='silence tqdm')
 parser.add_argument('--deterministic', action='store_true', help='use deterministic backend')
 parser.add_argument('--sequential_computation', action='store_true',
                     help='compute each iw sample sequential during validation')
+parser.add_argument('--test_sequential_computation', action='store_true',
+                    help='compute each iw sample sequential during validation')
 
 # epochs, batch size, MC samples, lr
 parser.add_argument('--epochs', default=-1, type=int, help='number of epochs (use n_steps if `epochs` < 0)')
@@ -48,6 +51,9 @@ parser.add_argument('--optimizer', default='adam', help='[sgd | adam | adamax]')
 parser.add_argument('--lr', default=2e-3, type=float, help='learning rate')
 parser.add_argument('--baseline_lr', default=5e-3, type=float, help='learning rate for the weight of the baseline')
 parser.add_argument('--bs', default=32, type=int, help='batch size')
+parser.add_argument('--valid_bs', default=50, type=int, help='evaluation batch size')
+parser.add_argument('--test_bs', default=1, type=int, help='evaluation batch size')
+parser.add_argument('--grad_bs', default=10, type=int, help='grads evaluation batch size')
 parser.add_argument('--lr_reduce_steps', default=0, type=int, help='number of learning rate reduce steps')
 parser.add_argument('--only_train_set', action='store_true',
                     help='only use the training dataset: useful to study optimization behaviour.')
@@ -60,13 +66,23 @@ parser.add_argument('--iw', default=1, type=int, help='number of Importance-Weig
 # evaluation
 parser.add_argument('--eval_freq', default=10, type=int, help='frequency for the evaluation [test set + grads]')
 parser.add_argument('--iw_valid', default=100, type=int, help='number of Importance-Weighted samples for validation')
-parser.add_argument('--iw_test', default=100, type=int, help='number of Importance-Weighted samples for testing')
+parser.add_argument('--iw_test', default=1000, type=int, help='number of Importance-Weighted samples for testing')
+
 # gradients analysis
 parser.add_argument('--grad_samples', default=100, type=int,
                     help='number of samples used to evaluate the variance.')
+parser.add_argument('--batch_grads', action='store_true',
+                    help='Compute expected gradients over mini-batch instead of grads for single datapoints.')
 parser.add_argument('--counterfactuals', default='',
                     help='comma separated list of estimators for which the gradients will be evaluated without being used for optimization.'
                          'example: `reinforce, covbaseline-arithmetic`')
+parser.add_argument('--counterfactuals_iw', default='',
+                    help='comma separated list of number of samples.'
+                         'example: `8,16,32`')
+parser.add_argument("--oracle", default="", type=str,
+                    help="oracle estimator to find the `true` gradients direction (estimator id)")
+parser.add_argument("--oracle_iw_samples", default=32, type=int, help="IW samples")
+parser.add_argument("--oracle_mc_samples", default=1000, type=int, help="MC samples")
 
 # latent space
 parser.add_argument('--prior', default='categorical', help='family of the prior distribution : [categorcial | normal]')
@@ -98,10 +114,22 @@ if opt.silent:
 if len(opt.counterfactuals):
     counterfactual_estimators_ids = opt.counterfactuals.replace(" ", "").split(",")
 
+    # construct product with the number of samples
+    if len(opt.counterfactuals_iw):
+        c_iws = opt.counterfactuals_iw.replace(" ", "").split(",")
+        counterfactual_estimators_ids = [f"{e}-iw{k}" for e in counterfactual_estimators_ids for k in c_iws]
+
+
+        print(">>> counterfactual_estimators_ids")
+        print(counterfactual_estimators_ids)
+        print("--------------------------------")
 
     def _split(e):
+        """parse estimator name with key `-iw` else use opt.iw"""
         if "-iw" in e:
             arg = e.split("-")[-1]
+            if arg == "iwae":  # catch special case
+                return e, opt.iw
             iw = eval(arg.replace("iw", ""))
             e = e.replace(f"-iw{iw}", "")
             return e, iw
@@ -131,6 +159,8 @@ if opt.norm is not 'none':
     run_id += f"-{opt.norm}"
 if opt.dropout > 0:
     run_id += f"-drp{opt.dropout}"
+if opt.oracle != "":
+    run_id += f"-oracle={opt.oracle}"
 
 # _exp_id = f"{opt.exp}-{opt.dataset}-{opt.estimator}"
 _exp_id = f"{opt.exp}-{opt.estimator}"
@@ -171,7 +201,7 @@ try:
 
     # dataloaders
     loader_train = DataLoader(dset_train, batch_size=opt.bs, shuffle=True, num_workers=opt.workers, pin_memory=True)
-    loader_valid = DataLoader(dset_valid, batch_size=2 * opt.bs, shuffle=True, num_workers=opt.workers, pin_memory=True)
+    loader_valid = DataLoader(dset_valid, batch_size=opt.valid_bs, shuffle=True, num_workers=opt.workers, pin_memory=True)
 
     # define model
     torch.manual_seed(opt.seed)
@@ -189,6 +219,13 @@ try:
     # valid estimator (it is important that all models are evaluated using the same evaluator)
     config_valid = {'tau': 0, 'zgrads': False}
     estimator_valid = VariationalInference(mc=1, iw=opt.iw_valid, sequential_computation=opt.sequential_computation)
+
+    # oracle estimator to find the true gradients direction
+    if len(opt.oracle):
+        Estimator, config_oracle = get_config(opt.oracle)
+        estimator_oracle = Estimator(mc=1, iw=opt.oracle_iw_samples)
+    else:
+        estimator_oracle = None
 
     # counterfactual estimators:
     # they are use to measure the variance of the gradients given other estimator without using them for optimization
@@ -256,18 +293,36 @@ try:
         if epoch % opt.eval_freq == 0:
 
             # batch of data for the gradients variance evaluation (at maximum of size bs)
-            x_eval = next(iter(loader_train)).to(device)  # [:opt.grad_samples]
+            x_eval = next(iter(loader_train)).to(device)[:opt.grad_bs]
 
             # estimate the variance of the gradients
             grad_args = {'seed': opt.seed, 'batch_size': opt.bs * opt.mc * opt.iw, 'n_samples': opt.grad_samples,
-                         'key_filter': 'tensor:qlogits'}
+                         'key_filter': 'tensor:qlogits', 'use_batch_grads': opt.batch_grads, 'use_dsnr': True}
+
+            # compute oracle gradients (the true gradients direction)
+            if estimator_oracle is not None:
+                print(
+                    f">> evaluating oracle `{opt.oracle}`, K = {opt.oracle_iw_samples} using {opt.oracle_mc_samples} MC samples (batch_grads = {opt.batch_grads})")
+                # define args
+                oracle_args = copy(grad_args)
+                seed = oracle_args.pop('seed', 13) + 1
+                oracle_args.update({'seed': seed, 'n_samples': opt.oracle_mc_samples})
+
+                _, oracle_grads = get_gradients_statistics(estimator_oracle, model, x_eval, **oracle_args, **config_oracle)
+                oracle_grads = oracle_grads['expected']
+                oracle_grads = oracle_grads / oracle_grads.norm(p=2, dim=-1, keepdim=True)
+                grad_args.update({'true_grads': oracle_grads})
+
             # for the main estimator
             grad_data, _ = get_gradients_statistics(estimator, model, x_eval, **grad_args, **config)
-            summary_train.update(grad_data)
-            train_logger.info(f"{_exp_id} | grads | "
-                              f"snr = {grad_data.get('grads', {}).get('snr', 0.):.3E}, "
-                              f"variance = {grad_data.get('grads', {}).get('variance', 0.):.3E}, "
-                              f"magnitude = {grad_data.get('grads', {}).get('magnitude', 0.):.3E}")
+            with torch.no_grad():
+                summary_train.update(grad_data)
+                train_logger.info(f"{_exp_id} | grads | "
+                                  f"snr = {grad_data.get('grads', {}).get('snr', 0.):.3E}, "
+                                  f"variance = {grad_data.get('grads', {}).get('variance', 0.):.3E}, "
+                                  f"magnitude = {grad_data.get('grads', {}).get('magnitude', 0.):.3E}, "
+                                  f"dsnr = {grad_data.get('grads', {}).get('dsnr', -1):.3E}, "
+                                  f"direction = {grad_data.get('grads', {}).get('direction', -1):.3E}")
 
             # analyse the control variate terms on the counter-factual estimators
             # analyse_control_variate(x_eval, model, c_configs, c_estimators, counterfactual_estimators, writer_train, seed=opt.seed, global_step=global_step)
@@ -276,11 +331,15 @@ try:
             for (c_writer, c_conf, c_est, c) in zip(counterfactual_writers, c_configs, c_estimators,
                                                     counterfactual_estimators):
                 grad_data, _ = get_gradients_statistics(c_est, model, x_eval, **grad_args, **c_conf)
-                summary = Diagnostic(grad_data)
-                summary.log(c_writer, global_step)
-                train_logger.info(f" | counterfactual | {c:{max(map(len, counterfactual_estimators))}s} "
-                                  f"| snr = {grad_data.get('grads', {}).get('snr', 0.):.3f}, "
-                                  f"variance = {grad_data.get('grads', {}).get('variance', 0.):.3f}")
+                with torch.no_grad():
+                    summary = Diagnostic(grad_data)
+                    summary.log(c_writer, global_step)
+                    train_logger.info(f" | counterfactual | {c:{max(map(len, counterfactual_estimators))}s} "
+                                      f"| snr = {grad_data.get('grads', {}).get('snr', 0.):.3f}, "
+                                      f"variance = {grad_data.get('grads', {}).get('variance', 0.):.3f}, "
+                                      f"dsnr = {grad_data.get('grads', {}).get('dsnr', -1):.3E}, "
+                                      f"direction = {grad_data.get('grads', {}).get('direction', -1):.3E}"
+                                      )
 
             # validation epoch
             with torch.no_grad():
@@ -319,11 +378,11 @@ try:
     print("TESTING..", best_elbo)
     # testing step
     writer_test = SummaryWriter(os.path.join(logdir, 'test'))
-    loader_test = DataLoader(dset_test, batch_size=2 * opt.bs, shuffle=True, num_workers=1)
+    loader_test = DataLoader(dset_test, batch_size=opt.test_bs, shuffle=True, num_workers=1)
     agg_test = Aggregator()
 
     config_test = {'tau': 0, 'zgrads': False}
-    estimator_test = VariationalInference(mc=1, iw=opt.iw_test, sequential_computation=True)
+    estimator_test = VariationalInference(mc=1, iw=opt.iw_test, sequential_computation=opt.test_sequential_computation)
 
     # load best model and run over the test set
     load_model(model, logdir)
