@@ -281,8 +281,9 @@ def get_batch_grads_from_tensor(model, loss, output, tensor_id):
     # get the gradients, flatten and concat across the feature dimension
     gradients = [p.grad for p in tensors]
     assert not any(
-        [g is None for g in gradients]), f"{sum([int(g is None) for g in gradients])} tensors have no gradients." \
-                                         f"Use `tensor.retain_graph()` in your model to enable gradients."
+        [g is None for g in gradients]), f"{sum([int(g is None) for g in gradients])} tensors have no gradients. " \
+                                         f"Use `tensor.retain_graph()` in your model to enable gradients. " \
+                                         f"tensor_id = `{tensor_id}`"
     gradients = torch.cat([g.view(bs, -1) for g in gradients], 1)
 
     # return each MC average of the grads

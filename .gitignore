@@ -139,3 +139,5 @@ exps/uniform-mnist.json
 trend.py
 
 *.ipynb
+
+exps/alpha-eta-0.1.json

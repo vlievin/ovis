@@ -151,13 +151,13 @@ try:
         # add perturbation to the weights
         perturbate_weights(model, noise)
 
+        # evaluate model
+        diagnostics = evaluate(estimator_ref, model, x, config_ref, opt.seed, base_logger, "After perturbation")
+
         # compute the true direction of the gradients
         true_grads = compute_true_grads(oracle, model, x, opt.mc_oracle, **global_grad_args, **config_oracle)
         # order gradients by magnitude
         _, grads_idx = true_grads.abs().sort(descending=True)
-
-        # evaluate model
-        diagnostics = evaluate(estimator_ref, model, x, config_ref, opt.seed, base_logger, "After perturbation")
 
         # gradients analysis args and config
         meta = {'seed': opt.seed, 'noise': noise, 'mc_samples': opt.mc_samples,
@@ -176,9 +176,9 @@ try:
 
                 # evalute variance of the gradients
                 analysis_data, grads_meta = get_batch_gradients_statistics(estimator, model, x,
-                                                                        use_batch_grads=opt.batch_grads,
-                                                                         return_grads=opt.grads_dist,
-                                                                         use_dsnr=True, **grad_args, **config)
+                                                                           use_batch_grads=opt.batch_grads,
+                                                                           return_grads=opt.grads_dist,
+                                                                           use_dsnr=True, **grad_args, **config)
 
                 # log grads info
                 log_grads_data(analysis_data, base_logger, estimator_id, iw)

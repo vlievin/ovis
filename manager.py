@@ -88,7 +88,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--script', default='run.py', help='script name')
-    parser.add_argument('--root', default='./exps', help='experiment directory')
+    parser.add_argument('--root', default='runs/', help='experiment directory')
     parser.add_argument('--data_root', default='data/', help='data directory')
     parser.add_argument('--exp', default='tvo_partition_test', type=str, help='experiment id')
     parser.add_argument('--max_gpus', default=8, type=int, help='maximum number of gpus')
