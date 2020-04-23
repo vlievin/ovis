@@ -33,7 +33,30 @@ def get_config(estimator):
             Estimator = Reinforce
             config = reinforce_args
 
-        elif 'copt' in estimator or 'vimco' in estimator:
+        if not 'old' in estimator and ('copt' in estimator or 'vimco' in estimator):
+
+            if 'copt' in estimator:
+                v_k_hat = 'copt'
+            if 'vimco' in estimator:
+                v_k_hat = 'vimco'
+
+            # parse `-alphaX`
+            if "-alpha" in estimator:
+                alpha = eval([s for s in estimator.split("-") if 'alpha' in s][0].replace("alpha", ""))
+            else:
+                alpha = 1.
+
+            # parse `-etaX`
+            if "-eta" in estimator:
+                eta = eval([s for s in estimator.split("-") if 'eta' in s][0].replace("eta", ""))
+            else:
+                eta = 1.
+
+            Estimator = VimcoPlus
+            config = {'v_k_hat': v_k_hat, 'alpha': alpha, 'eta': eta, **reinforce_args}
+
+        # keep legacy test if other tests are needed
+        elif 'old-copt' in estimator or 'old-vimco' in estimator:
             use_outer_samples = '-outer' in estimator
             use_double = not ('-float32' in estimator)
             if '-arithmetic' in estimator:
@@ -64,7 +87,6 @@ def get_config(estimator):
         else:
             raise ValueError(
                 f"Unknown reinforce-like estimator {estimator}, valid base identifiers are [reinforce, vimco, copt]")
-
 
 
     elif estimator == 'gs':

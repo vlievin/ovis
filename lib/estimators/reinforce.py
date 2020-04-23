@@ -246,3 +246,81 @@ class Vimco(Reinforce):
             return baseline, meta, _n_nans
         else:
             return baseline.type(_dtype), meta, _n_nans  # output of shape [bs, mc, iw, 1]
+
+
+class VimcoPlus(Reinforce):
+    """
+    \nabla_phi L_K = E_q(z^1 .. z^K | x) [ \sum_k  (\eta * \log \gamma^K(v_k)) - \alpha v_k + v^{-k}) \nabla_phi log q(z^k | x) ]
+
+    where:
+    * w_k = p(x, z^k) / q(z^k | x)
+    * v_k = w_k / \sum_l w_l
+    * \alpha = 1 (ubiased) or \alpha < 1 (biased)
+    * \eta = 1 : parameter to experiment with
+    * \gamma^K(v_k) = (1 - 1/K) / (1 - v_k)
+    * v^{-k} =
+        * 0 : vimco
+        * 1/K : copt/vimco++
+    """
+
+    def __init__(self, baseline: Optional[nn.Module] = None, **kwargs: Any):
+        super().__init__(**kwargs)
+        self.baseline = baseline
+        self.log_1_m_uniform = np.log(1. - 1. / self.iw)
+
+    def forward(self, model: nn.Module, x: Tensor, backward: bool = False, debug: bool = False, alpha=1.0, eta=1.0,
+                v_k_hat='vimco', **kwargs: Any) -> Tuple[Tensor, Dict, Dict]:
+
+        bs = x.size(0)
+        x_target = self._expand_sample(x)
+        output = self.evaluate_model(model, x, x_target, mc=self.mc, iw=self.iw, **kwargs)
+        log_px_z, log_pz, log_qz = [output[k] for k in ('log_px_z', 'log_pz', 'log_qz')]
+        iw_data = self.compute_iw_bound(log_px_z, log_pz, log_qz, detach_qlogits=True)
+        L_k, kl, N_eff, log_wk = [iw_data[k] for k in ('L_k', 'kl', 'N_eff', 'log_wk')]
+        # concatenate all q(z_l| *, x)
+        log_qz = torch.cat(log_qz, 1).view(bs, self.mc, self.iw, -1)
+
+        # compute v_k = w_k / \sum_l w_l
+        v_k = self.normalized_importance_weights(log_wk)
+
+        # compute \log \gamma^K(v_k)
+        v_k_safe = torch.min((1 - 1e-6) * torch.ones_like(v_k), v_k)
+        log_gamma_K = self.log_1_m_uniform - torch.log1p(- v_k_safe)
+
+        v_k_hat = {'vimco': 0., 'copt': 1. / self.iw}[v_k_hat]
+
+        # compute loss
+        prefactor_k = (eta * log_gamma_K - alpha * v_k + v_k_hat)
+        reinforce_loss = torch.sum(prefactor_k[..., None].detach() * log_qz, dim=(2, 3))  # sum over IW and Nz
+
+        # MC averaging
+        L_k = L_k.mean(1)
+        reinforce_loss = reinforce_loss.mean(1)
+
+        # final loss
+        loss = - L_k - reinforce_loss
+
+        # compute dlogits
+        if debug:
+            output['dqlogits'] = self._compute_dlogits(output)
+            output.update(**iw_data)
+
+        # prepare diagnostics
+        diagnostics = Diagnostic({
+            'loss': {
+                'loss': loss,
+                'elbo': L_k,
+                'nll': - self._reduce_sample(log_px_z),
+                'kl': self._reduce_sample(kl),
+                'r_eff': N_eff / self.iw
+            },
+            'reinforce': {
+                'loss': reinforce_loss,
+            },
+            'prior': self.prior_diagnostics(output)
+        })
+
+        if backward:
+            loss.mean().backward()
+
+        return loss, diagnostics, output
