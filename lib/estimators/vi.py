@@ -8,7 +8,7 @@ class VariationalInference(Estimator):
     """
 
     def compute_iw_bound(self, log_px_z: Tensor, log_pzs: List[Tensor], log_qzs: List[Tensor],
-                         detach_qlogits: bool = False) -> Dict[str, Tensor]:
+                         detach_qlogits: bool = False, request:List[str]=list()) -> Dict[str, Tensor]:
         """
         Compute the importance weighted bound:
 
@@ -20,6 +20,7 @@ class VariationalInference(Estimator):
         :param log_pzs: [log p(z_i | *) l=1..L], each of of shape [bs * mc * iw, N_i]
         :param log_qzs: [log q(z_i | *) l=1..L], each of of shape [bs * mc * iw, N_i]
         :param detach_qlogits: detach the logits of q(z|x)
+        :param request: list of variables to return
         :return: dictionary with outputs [L_k, kl, log_wk]
         """
 
@@ -52,7 +53,15 @@ class VariationalInference(Estimator):
         # IW-ELBO: L_k
         L_k = torch.logsumexp(log_wk, dim=2) - self.log_iw  # if self.iw > 1 else log_f_xz.squeeze(2)
 
-        return {'L_k': L_k, 'kl': kl, 'log_wk': log_wk, 'N_eff': N_eff}
+        output = {'L_k': L_k, 'kl': kl, 'log_wk': log_wk, 'N_eff': N_eff}
+
+        if len(request):
+            # append additional data to the output
+            meta = {'log_pz': log_pz, 'log_qz': log_qz, 'log_px_z':log_px_z}
+            for key in request:
+                output[key] = batch_reduce(meta[key]).view(-1, self.mc, self.iw)
+
+        return output
 
     @torch.no_grad()
     def effective_sample_size(self, log_px_z, log_pz, log_qz):

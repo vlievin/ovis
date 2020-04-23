@@ -108,8 +108,11 @@ def get_config(estimator):
     elif 'tvo' in estimator:
         partition_args = [arg for arg in estimator.split('-') if 'part' in arg]
         partition = parse_numbers(partition_args[0])[0] if len(partition_args) else 21
+        _integrations = ['left', 'right', 'trapz']
+        integration = [x for x in _integrations if x in estimator.split("-")]
+        integration = integration[0] if len(integration) else "left"
         Estimator = ThermoVariationalObjective
-        config = {'tau': 0, 'zgrads': False, 'partition': partition}
+        config = {'tau': 0, 'zgrads': False, 'partition': partition, 'integration': integration}
 
     else:
         raise ValueError(f"Unknown estimator {estimator}.")
