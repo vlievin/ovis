@@ -3,4 +3,5 @@ from .binmnist import get_binmnist_datasets
 from .fashion import get_fashion_datasets
 from .omniglot import get_omniglot_datasets
 from .gaussian_toy import GaussianToyDataset
+from .gmm import GaussianMixtureDataset
 from .utils import get_datasets, MiniDataset

@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-from lib import VAE, Baseline, ConvVAE, ToyVAE
+from lib import VAE, Baseline, ConvVAE, ToyVAE, GaussianMixture
 from lib import VariationalInference
 from lib import get_datasets
 from lib.config import get_config
@@ -153,7 +153,7 @@ if __name__ == '__main__':
         run_id = "mini-" + run_id
     if len(opt.id) > 0:
         run_id += f"-{opt.id}"
-    run_id += f"-lr{opt.lr:.1E}-bs{opt.bs}-mc{opt.mc}-iw{opt.iw}+{opt.iw_valid}"
+    run_id += f"-lr{opt.lr:.1E}-bs{opt.bs}-mc{opt.mc}-iw{opt.iw}+{opt.iw_valid}+{opt.iw_test}"
     if use_baseline:
         run_id += f"-b{opt.b_nlayers}"
     run_id += f"-N{opt.N}-K{opt.K}-kdim{opt.kdim}"
@@ -165,7 +165,7 @@ if __name__ == '__main__':
     if opt.dropout > 0:
         run_id += f"-drp{opt.dropout}"
     if opt.oracle != "":
-        run_id += f"-oracle={opt.oracle}"
+        run_id += f"-oracle={opt.oracle}-iw{opt.oracle_iw_samples}"
 
     # _exp_id = f"{opt.exp}-{opt.dataset}-{opt.estimator}"
     _exp_id = f"{opt.exp}-{opt.estimator}"
@@ -212,7 +212,8 @@ if __name__ == '__main__':
 
         # define model
         torch.manual_seed(opt.seed)
-        _MODEL = {'vae': VAE, 'conv-vae': ConvVAE, 'toy-vae': ToyVAE}[opt.model]
+        model_id = {'gmm' : 'gmm', 'gaussian-toy': 'toy-vae'}.get(opt.dataset, opt.model)
+        _MODEL = {'vae': VAE, 'conv-vae': ConvVAE, 'toy-vae': ToyVAE, 'gmm': GaussianMixture}[model_id]
         model = _MODEL(x.shape, opt.N, opt.K, opt.hdim, kdim=opt.kdim, nlayers=opt.nlayers, learn_prior=opt.learn_prior,
                        prior=opt.prior, normalization=opt.norm, dropout=opt.dropout)
 

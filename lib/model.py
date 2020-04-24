@@ -184,7 +184,7 @@ class VAE(BaseVAE):
     def __init__(self, xdim, N, K, hdim, nlayers=0, bias=True, dropout=0, normalization='layernorm', **kwargs):
         super().__init__(xdim, N, K, hdim, **kwargs)
 
-        args = {'nlayers': nlayers, 'bias': bias, 'normalization': normalization, 'dropout':dropout}
+        args = {'nlayers': nlayers, 'bias': bias, 'normalization': normalization, 'dropout': dropout}
 
         # encoder
         self.encoder = MLP(prod(xdim), hdim, prod(self.qdim), **args)
@@ -313,6 +313,96 @@ class ToyVAE(Template):
             usage = torch.zeros_like(Hp)
 
         return {'Hp': [Hp], 'usage': [usage]}
+
+
+class GaussianMixture(Template):
+    """
+    A simple VAE model parametrized by MLPs
+    """
+
+    def __init__(self, xdim, C, K, hdim=16, **kwargs):
+        super().__init__()
+        act = nn.Tanh
+        xdim = 1
+        self.C = C
+        self.register_buffer('log_theta_opt', torch.log(5 + torch.arange(0, C, dtype=torch.float)).view(1, 1, C))
+        self.log_theta = nn.Parameter(torch.zeros(1, 1, C))
+        self.prior_dist = PseudoCategorical
+        self.likelihood = NormalFromLoc
+        self.register_buffer('p_mu', 10. * torch.arange(0, C))
+        self.register_buffer('p_scale', torch.tensor(5.))
+
+        self.phi = nn.Sequential(
+            nn.Linear(xdim, hdim),
+            act(),
+            nn.Linear(hdim, C)
+        )
+
+    def true_posterior(self, x):
+        M, C = x.size(0), self.C
+        x = x.view(M, 1, 1).expand(M, C, 1)
+        z = torch.eye(C, device=x.device)[None, :, None, :]
+        p_x_z = self.generate(z)
+        log_p_x_z = p_x_z.log_prob(x)
+        log_posterior = self.log_theta_opt.sum(1) + log_p_x_z.sum(-1)
+        return self.prior_dist(log_posterior.log_softmax(dim=-1))
+
+    def generate(self, z):
+        z = z.argmax(dim=-1)
+        mu = self.p_mu[z]
+        return self.likelihood(logits=mu, scale=self.p_scale)
+
+    def forward(self, x, tau=0, zgrads=False, mc=1, iw=1, **kwargs):
+
+        # retain grads in `b` instead of the qlogits for the gradients analysis
+        qlogits = self.phi(x.view(-1, 1)).view(-1, 1, self.C)
+        qlogits.retain_grad()
+
+        if mc > 1 or iw > 1:
+
+            bs, *dims = qlogits.shape
+            qlogits_expanded = qlogits[:, None, None, :].expand(x.size(0), mc, iw, *dims).contiguous()
+            qlogits_expanded = qlogits_expanded.view(-1, *dims)
+
+        else:
+            qlogits_expanded = qlogits
+
+        qz = self.prior_dist(logits=qlogits_expanded)
+        z = qz.rsample()
+
+        if not zgrads:
+            z = z.detach()
+
+        pz = self.prior_dist(logits=self.log_theta)
+
+        px = self.generate(z)
+
+        diagnostics = self._get_diagnostics(x, self.prior_dist(logits=qlogits))
+
+        return {'px': px, 'z': [z], 'qz': [qz], 'pz': [pz], 'qlogits': [qlogits], **diagnostics}
+
+    def sample_from_prior(self, N, from_optimal=False):
+        if from_optimal:
+            prior = self.log_theta_opt.expand(N, 1, self.C)
+        else:
+            prior = self.log_theta.expand(N, 1, self.C)
+        z = self.prior_dist(logits=prior).sample()
+        px = self.generate(z)
+        return {'px': px, 'z': z}
+
+    @torch.no_grad()
+    def _get_diagnostics(self, x, qz):
+
+        # compute prior mse
+        prior_mse = (self.log_theta.softmax(-1) - self.log_theta_opt.softmax(-1)).norm(p=2, dim=-1).mean()
+
+        # compute the posterior MSE
+        true_posterior = self.true_posterior(x).logits.softmax(-1)
+        posterior = qz.logits.sum(1).softmax(-1)
+
+        posterior_mse = (posterior - true_posterior).norm(p=2, dim=-1).mean()
+
+        return {'prior_mse': prior_mse, 'posterior_mse': posterior_mse}
 
 
 class Stage(nn.Module):

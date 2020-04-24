@@ -8,6 +8,7 @@ from .fashion import get_fashion_datasets
 from .gaussian_toy import GaussianToyDataset
 from .omniglot import get_omniglot_datasets
 from .shapes import get_shapes_datasets
+from .gmm import GaussianMixtureDataset
 
 _train_mini = 5000
 _valid_mini = 500
@@ -38,6 +39,8 @@ def get_datasets(opt):
         output = get_shapes_datasets(transform=transform)
     elif "gaussian-toy" in opt.dataset:
         output = GaussianToyDataset(), GaussianToyDataset(), GaussianToyDataset()
+    elif "gmm" in opt.dataset:
+        output = GaussianMixtureDataset(N=10000, C=opt.N), GaussianMixtureDataset(N=100, C=opt.N), GaussianMixtureDataset(N=100, C=opt.N)
     elif "binmnist" in opt.dataset:
         output = get_binmnist_datasets(opt.data_root, transform=transform)
     elif "omniglot" in opt.dataset:
