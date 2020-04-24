@@ -118,25 +118,25 @@ class BaseVAE(Template):
     def generate(self, z):
         raise NotImplementedError
 
-    def infer(self, x):
+    def get_logits(self, x):
         logits = self.encode(x)
 
         if self.keys is not None:
             keys = self.keys / (1e-8 + self.keys.norm(dim=-1, p=2, keepdim=True) ** 2)
             logits = torch.einsum("bnh, nkh -> bnk", [logits, keys])
 
+        # important: this is required for the gradients analysis
+        logits.retain_grad()
+
         return logits
 
-    def lipschitz(self):
-        l = 1
-        for w in self.parameters():
-            l *= w.abs().max()
-        return l
+    def infer(self, x, tau=0, mc=1, iw=1):
 
-    def forward(self, x, tau=0, zgrads=False, mc=1, iw=1, **kwargs):
-        qlogits = self.infer(x)
-        qlogits.retain_grad()
+        qlogits = self.get_logits(x)
 
+        # we need this here so qz has the attribute .logits as `qlogits_expanded`
+        # this easier for evaluation, at least for now.
+        # todo: refactor to do the expansion in the sample() method
         if mc > 1 or iw > 1:
             bs, *dims = qlogits.shape
             qlogits_expanded = qlogits[:, None, None, :].expand(x.size(0), mc, iw, *dims).contiguous()
@@ -146,6 +146,12 @@ class BaseVAE(Template):
             qlogits_expanded = qlogits
 
         qz = self.prior_dist(logits=qlogits_expanded, tau=tau)
+
+        return qz, qlogits
+
+    def forward(self, x, tau=0, zgrads=False, mc=1, iw=1, **kwargs):
+        qz, qlogits = self.infer(x, tau=tau, mc=mc, iw=iw)
+
         z = qz.rsample()
 
         if not zgrads:
@@ -315,13 +321,13 @@ class ToyVAE(Template):
         return {'Hp': [Hp], 'usage': [usage]}
 
 
-class GaussianMixture(Template):
+class GaussianMixture(BaseVAE):
     """
     A simple VAE model parametrized by MLPs
     """
 
     def __init__(self, xdim, C, K, hdim=16, **kwargs):
-        super().__init__()
+        super(Template, self).__init__()
         act = nn.Tanh
         xdim = 1
         self.C = C
@@ -352,22 +358,18 @@ class GaussianMixture(Template):
         mu = self.p_mu[z]
         return self.likelihood(logits=mu, scale=self.p_scale)
 
+
+    def get_logits(self, x):
+        logits = self.phi(x.view(-1, 1)).view(-1, 1, self.C)
+
+        logits.retain_grad()
+
+        return logits
+
     def forward(self, x, tau=0, zgrads=False, mc=1, iw=1, **kwargs):
 
-        # retain grads in `b` instead of the qlogits for the gradients analysis
-        qlogits = self.phi(x.view(-1, 1)).view(-1, 1, self.C)
-        qlogits.retain_grad()
+        qz, qlogits = self.infer(x, tau=tau, mc=mc, iw=iw)
 
-        if mc > 1 or iw > 1:
-
-            bs, *dims = qlogits.shape
-            qlogits_expanded = qlogits[:, None, None, :].expand(x.size(0), mc, iw, *dims).contiguous()
-            qlogits_expanded = qlogits_expanded.view(-1, *dims)
-
-        else:
-            qlogits_expanded = qlogits
-
-        qz = self.prior_dist(logits=qlogits_expanded)
         z = qz.rsample()
 
         if not zgrads:

@@ -25,6 +25,11 @@ def get_config(estimator):
         Estimator = PathwiseIWAE
         config = {'tau': 0, 'zgrads': True}
 
+
+    elif estimator == 'wake-sleep' or estimator == 'wake-wake':
+        Estimator = {'wake-sleep': WakeSleep, 'wake-wake': WakeWake}[estimator]
+        config = {'tau': 0, 'zgrads': False}
+
     elif any([e in estimator for e in ['reinforce', 'vimco', 'copt']]):
         reinforce_args = {'tau': 0,
                           'zgrads': False}
