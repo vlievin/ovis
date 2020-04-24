@@ -146,11 +146,12 @@ class BaseVAE(Template):
             qlogits_expanded = qlogits
 
         qz = self.prior_dist(logits=qlogits_expanded, tau=tau)
+        meta = {'qlogits': [qlogits]}
 
-        return qz, qlogits
+        return qz, meta
 
     def forward(self, x, tau=0, zgrads=False, mc=1, iw=1, **kwargs):
-        qz, qlogits = self.infer(x, tau=tau, mc=mc, iw=iw)
+        qz, meta = self.infer(x, tau=tau, mc=mc, iw=iw)
 
         z = qz.rsample()
 
@@ -163,7 +164,7 @@ class BaseVAE(Template):
 
         diagnostics = self._get_diagnostics(z, qz, pz)
 
-        return {'px': px, 'z': [z], 'qz': [qz], 'pz': [pz], 'qlogits': [qlogits], **diagnostics}
+        return {'px': px, 'z': [z], 'qz': [qz], 'pz': [pz], **meta, **diagnostics}
 
     def sample_from_prior(self, N):
         prior = self.prior.expand(N, *self.prior_dim)
@@ -273,8 +274,7 @@ class ToyVAE(Template):
     def generate(self, z):
         return self.likelihood(logits=z)
 
-    def forward(self, x, tau=0, zgrads=False, mc=1, iw=1, **kwargs):
-
+    def infer(self, x, tau=0, mc=1, iw=1):
         # retain grads in `b` instead of the qlogits for the gradients analysis
         b = self.b[None, :].expand(x.size(0), self.b.shape[0])
         b.retain_grad()
@@ -291,6 +291,13 @@ class ToyVAE(Template):
             qlogits_expanded = qlogits
 
         qz = self.prior_dist(logits=qlogits_expanded, scale=self.q_scale)
+        meta = {'qlogits': [qlogits], 'b': [b]}
+
+        return qz, meta
+
+    def forward(self, x, tau=0, zgrads=False, mc=1, iw=1, **kwargs):
+
+        qz, meta = self.infer(x, tau=tau, mc=mc, iw=iw)
         z = qz.rsample()
 
         if not zgrads:
@@ -302,7 +309,7 @@ class ToyVAE(Template):
 
         diagnostics = self._get_diagnostics(z, qz, pz)
 
-        return {'px': px, 'z': [z], 'qz': [qz], 'pz': [pz], 'qlogits': [qlogits], 'b': [b], **diagnostics}
+        return {'px': px, 'z': [z], 'qz': [qz], 'pz': [pz], **meta, **diagnostics}
 
     def sample_from_prior(self, N):
         prior = self.mu.expand(N, *self.xdim)
@@ -358,7 +365,6 @@ class GaussianMixture(BaseVAE):
         mu = self.p_mu[z]
         return self.likelihood(logits=mu, scale=self.p_scale)
 
-
     def get_logits(self, x):
         logits = self.phi(x.view(-1, 1)).view(-1, 1, self.C)
 
@@ -368,7 +374,7 @@ class GaussianMixture(BaseVAE):
 
     def forward(self, x, tau=0, zgrads=False, mc=1, iw=1, **kwargs):
 
-        qz, qlogits = self.infer(x, tau=tau, mc=mc, iw=iw)
+        qz, meta = self.infer(x, tau=tau, mc=mc, iw=iw)
 
         z = qz.rsample()
 
@@ -379,9 +385,9 @@ class GaussianMixture(BaseVAE):
 
         px = self.generate(z)
 
-        diagnostics = self._get_diagnostics(x, self.prior_dist(logits=qlogits))
+        diagnostics = self._get_diagnostics(x, self.prior_dist(logits=meta['qlogits'][0]))
 
-        return {'px': px, 'z': [z], 'qz': [qz], 'pz': [pz], 'qlogits': [qlogits], **diagnostics}
+        return {'px': px, 'z': [z], 'qz': [qz], 'pz': [pz], **meta, **diagnostics}
 
     def sample_from_prior(self, N, from_optimal=False):
         if from_optimal:
