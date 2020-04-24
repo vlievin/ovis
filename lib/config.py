@@ -33,7 +33,7 @@ def get_config(estimator):
             Estimator = Reinforce
             config = reinforce_args
 
-        if not 'old' in estimator and ('copt' in estimator or 'vimco' in estimator):
+        elif not 'old' in estimator and ('copt' in estimator or 'vimco' in estimator):
 
             if 'copt' in estimator:
                 v_k_hat = 'copt'

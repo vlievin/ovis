@@ -35,7 +35,7 @@ metric_dict = {
     'c_iw' : "$K$",
     'loss/elbo': "$\mathcal{L}_K$",
     'loss/kl': "$KL(q_{\phi}(z | x) | p(z))$",
-    'loss/nll': "$- p_\theta(\mathbf{z} | \mathbf{x})$",
+    'loss/nll': "$- \log p_{\theta}(z | x)$",
     'grads/variance': "$Var(\Delta_K(\phi))$",
     'grads/snr': "$SNR(\Delta_K(\phi))$",
     'grads/dsnr': "$DSNR(\Delta_K(\phi))$",

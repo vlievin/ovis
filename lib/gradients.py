@@ -206,7 +206,7 @@ def get_individual_gradients_statistics(estimator, model, x, batch_size=32, n_sa
                 g_parallel = u * (u * all_grads_i).sum(1, keepdim=True)
                 g_perpendicular = all_grads_i - g_parallel
 
-                dsnr_i = g_parallel.norm(dim=1, p=2) / g_perpendicular.norm(dim=1, p=2)
+                dsnr_i = g_parallel.norm(dim=1, p=2) / (eps + g_perpendicular.norm(dim=1, p=2))
 
                 grads_dsnr.update(dsnr_i)
 
@@ -366,7 +366,7 @@ def get_batch_gradients_statistics(estimator, model, x, n_samples=100, seed=None
             g_parallel = u * (u * all_grads).sum(1, keepdim=True)
             g_perpendicular = all_grads - g_parallel
 
-            grads_dsnr = g_parallel.norm(dim=1, p=2) / g_perpendicular.norm(dim=1, p=2)
+            grads_dsnr = g_parallel.norm(dim=1, p=2) / (eps + g_perpendicular.norm(dim=1, p=2))
 
         # compute grd direction
         if true_grads is not None:

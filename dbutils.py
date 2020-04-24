@@ -8,7 +8,7 @@ from filelock import filelock
 from lib.manager import open_db, snapshot_dir, read_experiment, get_abs_paths, get_filelock
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--root', default='/nobackup/valv/runs/copt/', help='experiment directory')
+parser.add_argument('--root', default='runs/', help='experiment directory')
 parser.add_argument('--exp', default='binary-images-0.3', type=str, help='experiment id')
 parser.add_argument('--update', default='', help='comma separated list of args :key:value:new_value, eg `data:path:newpath,iw:10:100`')
 parser.add_argument('--delete', default='', help='pattern to be match in exp')
