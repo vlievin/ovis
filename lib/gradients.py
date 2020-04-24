@@ -201,14 +201,14 @@ def get_individual_gradients_statistics(estimator, model, x, batch_size=32, n_sa
                 # compute DSNR,  see `tighter variational bounds are not necessarily better` (eq. 12)
                 if use_dsnr:
                     u = all_grads_i.mean(0, keepdim=True)
-                u /= u.norm(dim=1, keepdim=True, p=2)
+                    u /= u.norm(dim=1, keepdim=True, p=2)
 
-                g_parallel = u * (u * all_grads_i).sum(1, keepdim=True)
-                g_perpendicular = all_grads_i - g_parallel
+                    g_parallel = u * (u * all_grads_i).sum(1, keepdim=True)
+                    g_perpendicular = all_grads_i - g_parallel
 
-                dsnr_i = g_parallel.norm(dim=1, p=2) / (eps + g_perpendicular.norm(dim=1, p=2))
+                    dsnr_i = g_parallel.norm(dim=1, p=2) / (eps + g_perpendicular.norm(dim=1, p=2))
 
-                grads_dsnr.update(dsnr_i)
+                    grads_dsnr.update(dsnr_i)
 
                 # update global statistics
                 grads_mean.update(grads_mean_i)
