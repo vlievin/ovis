@@ -125,8 +125,9 @@ class Reinforce(VariationalInference):
                 'l1': control_variate_l1,
                 'NaNs': _n_nans,
             },
-            'prior': self.prior_diagnostics(output)
         })
+
+        diagnostics.update(self._diagnostics(output))
 
         if backward:
             loss.mean().backward()
@@ -277,6 +278,7 @@ class VimcoPlus(Reinforce):
         log_px_z, log_pz, log_qz = [output[k] for k in ('log_px_z', 'log_pz', 'log_qz')]
         iw_data = self.compute_iw_bound(log_px_z, log_pz, log_qz, detach_qlogits=True)
         L_k, kl, N_eff, log_wk = [iw_data[k] for k in ('L_k', 'kl', 'N_eff', 'log_wk')]
+
         # concatenate all q(z_l| *, x)
         log_qz = torch.cat(log_qz, 1).view(bs, self.mc, self.iw, -1)
 
@@ -317,8 +319,9 @@ class VimcoPlus(Reinforce):
             'reinforce': {
                 'loss': reinforce_loss,
             },
-            'prior': self.prior_diagnostics(output)
         })
+
+        diagnostics.update(self._diagnostics(output))
 
         if backward:
             loss.mean().backward()

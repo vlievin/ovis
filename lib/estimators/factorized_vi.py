@@ -58,7 +58,7 @@ class FactorizedVariationalInference(Reinforce):
                 'kl': self._reduce_sample(kl),
                 'r_eff': N_eff / self.iw
             },
-            'prior': self.prior_diagnostics(output)
+            'prior': self._diagnostics(output)
         })
 
         if backward:

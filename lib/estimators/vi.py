@@ -8,7 +8,7 @@ class VariationalInference(Estimator):
     """
 
     def compute_iw_bound(self, log_px_z: Tensor, log_pzs: List[Tensor], log_qzs: List[Tensor],
-                         detach_qlogits: bool = False, request:List[str]=list()) -> Dict[str, Tensor]:
+                         detach_qlogits: bool = False, request: List[str] = list()) -> Dict[str, Tensor]:
         """
         Compute the importance weighted bound:
 
@@ -57,7 +57,7 @@ class VariationalInference(Estimator):
 
         if len(request):
             # append additional data to the output
-            meta = {'log_pz': log_pz, 'log_qz': log_qz, 'log_px_z':log_px_z}
+            meta = {'log_pz': log_pz, 'log_qz': log_qz, 'log_px_z': log_px_z}
             for key in request:
                 output[key] = batch_reduce(meta[key]).view(-1, self.mc, self.iw)
 
@@ -163,17 +163,31 @@ class VariationalInference(Estimator):
                      'nll': - self._reduce_sample(log_px_z),
                      'kl': self._reduce_sample(iw_data.get('kl')),
                      'r_eff': iw_data.get('N_eff') / self.iw},
-            'prior': self.prior_diagnostics(output)
         })
+
+        diagnostics.update(self._diagnostics(output))
 
         if backward:
             loss.mean().backward()
 
         return loss, diagnostics, output
 
-    def prior_diagnostics(self, output):
-        Hp, usage = [output[k] for k in ('Hp', 'usage')]
-        return {'Hp': torch.sum(torch.cat(Hp)), 'usage': torch.mean(torch.cat(usage))}
+    def _diagnostics(self, output):
+        """A function to append additional diagnostics from the model otuput"""
+
+        prior = {}
+        if 'Hp' in output.keys():
+            prior['hp'] = torch.sum(torch.cat(output['Hp']))
+        if 'usage' in output.keys():
+            prior['usage'] = torch.mean(torch.cat(output['usage']))
+
+        gmm = {}
+        if 'posterior_mse' in output.keys():
+            gmm['posterior_mse'] = output['posterior_mse']
+        if 'prior_mse' in output.keys():
+            gmm['prior_mse'] = output['prior_mse']
+
+        return {'prior': prior, 'gmm': gmm}
 
 
 class PathwiseVAE(VariationalInference):

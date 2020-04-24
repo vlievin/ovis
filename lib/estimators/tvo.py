@@ -145,8 +145,9 @@ class ThermoVariationalObjective(VariationalInference):
                      'nll': - self._reduce_sample(log_px_z),
                      'kl': self._reduce_sample(tvo_data.get('kl')),
                      'N_eff': tvo_data.get('N_eff') / self.iw},
-            'prior': self.prior_diagnostics(output)
         })
+
+        diagnostics.update(self._diagnostics(output))
 
         if backward:
             loss.mean().backward()
