@@ -12,7 +12,8 @@ from lib.logging import get_loggers
 from lib.plotting import *
 from lib.utils import parse_numbers
 
-sns.set()
+sns.set(style="whitegrid")
+sns.set(style="ticks")
 sns.set_context("paper", font_scale=1.2)
 
 try:
@@ -23,24 +24,33 @@ except:
     exit()
 
 log_rules = {
+    'loss/elbo': 'logx',
+    'loss/kl': 'logx',
+    'loss/nll': 'logx',
+    'loss/r_eff': 'logx',
     'grads/snr': 'loglog',
     'grads/dsnr': 'loglog',
     'grads/variance': 'loglog',
     'grads/magnitude': 'loglog',
-    'grads/direction': 'logx'
+    'grads/direction': 'logx',
+    'gmm/posterior_mse': 'loglog',
+    'gmm/prior_mse': 'loglog'
 }
 
 metric_dict = {
-    'iw' : "$K$",
-    'c_iw' : "$K$",
-    'loss/elbo': "$\mathcal{L}_K$",
-    'loss/kl': "$KL(q_{\phi}(z | x) | p(z))$",
-    'loss/nll': "$- \log p_{\theta}(z | x)$",
-    'grads/variance': "$Var(\Delta_K(\phi))$",
-    'grads/snr': "$SNR(\Delta_K(\phi))$",
-    'grads/dsnr': "$DSNR(\Delta_K(\phi))$",
-    'grads/magnitude': "$ | E[\Delta_K(\phi)] | $",
-    'grads/direction': "$cosine( \Delta_K(\phi) ,  \Delta_K^{oracle}(\phi) )$",
+    'iw' : r"$K$",
+    'c_iw' : r"$K$",
+    'loss/elbo': r"$\mathcal{L}_K$",
+    'loss/kl': r"$KL(q_{\phi}(z | x) | p(z))$",
+    'loss/nll': r"$- \log p_{\theta}(z | x)$",
+    'loss/r_eff': r"$ESS / K$",
+    'grads/variance': r"$Var(\Delta_K(\phi))$",
+    'grads/snr': r"$SNR(\Delta_K(\phi))$",
+    'grads/dsnr': r"$DSNR(\Delta_K(\phi))$",
+    'grads/magnitude': r"$ | E[\Delta_K(\phi)] | $",
+    'grads/direction': r"$cosine( \Delta_K(\phi) ,  \Delta_K^{oracle}(\phi) )$",
+    'gmm/posterior_mse': r"$\left\| q_{\phi}(z | x) - p_{\theta_{true}}(z | x) \right\| $",
+    'gmm/prior_mse': r"$\left\| p_{\theta}(z) - p_{\theta_{true}}(z) \right\| $"
 
 }
 
@@ -510,14 +520,15 @@ fourth_key = _keys[4] if len(_keys) > 4 else None
 
 meta = {'log_rules': log_rules, 'metric_dict': metric_dict}
 
-# pivot plot
-logger.info(f"|- Generating pivot plots with key = {cat_key} ..")
-_path = os.path.join(output_path, f"pivot-plot-all-level={level}-by={cat_key}-hue={main_key}.png")
-pivot_plot(df, _path, pivot_metrics, cat_key, main_key, aux_key, style_key=third_key, **meta)
+if logs[cat_key].nunique() > 0:
+    # pivot plot
+    logger.info(f"|- Generating pivot plots with key = {cat_key} ..")
+    _path = os.path.join(output_path, f"pivot-plot-all-level={level}-by={cat_key}-hue={main_key}.png")
+    pivot_plot(df, _path, pivot_metrics, cat_key, main_key, aux_key, style_key=third_key, **meta)
 
-if _keys[0] == 'dataset':
-    _path = os.path.join(output_path, f"curves-all-level={level}.png")
-    plot_logs(logs, _path, curves_metrics, main_key, ylims=ylims, style_key=aux_key, **meta)
+    if cat_key != 'dataset':
+        _path = os.path.join(output_path, f"curves-all-level={level}.png")
+        plot_logs(logs, _path, curves_metrics, main_key, ylims=ylims, style_key=aux_key, **meta)
 
 # plot all data for each key
 level = 2
