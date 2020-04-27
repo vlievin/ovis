@@ -32,7 +32,7 @@ if __name__ == '__main__':
     # parser.add_argument('--dataset', default='shapes', help='dataset [shapes | binmnist | omniglot | fashion]')
     # parser.add_argument('--mini', action='store_true', help='use a sub-sampled version of the dataset')
     parser.add_argument('--root', default='runs/', help='directory to store training logs')
-    # parser.add_argument('--data_root', default='data/', help='directory to store the data')
+    parser.add_argument('--data_root', default='data/', help='directory to store the data') # To work with manager.py
     parser.add_argument('--exp', default='tvo-2-beta-test', help='experiment directory')
     parser.add_argument('--id', default='', type=str, help='run id suffix')
     parser.add_argument('--seed', default=13, type=int, help='random seed')
@@ -49,7 +49,7 @@ if __name__ == '__main__':
     parser.add_argument('--optimizer', default='adam', help='[sgd | adam | adamax]')
     parser.add_argument('--lr', default=1e-2, type=float, help='learning rate')
     parser.add_argument('--baseline_lr', default=5e-3, type=float, help='learning rate for the weight of the baseline')
-    parser.add_argument('--bs', default=1, type=int, help='batch size')
+    parser.add_argument('--bs', default=1, type=int, help='batch size') # Should be 1
     parser.add_argument('--lr_reduce_steps', default=3, type=int, help='number of learning rate reduce steps')
     parser.add_argument('--only_train_set', action='store_true',
                         help='only use the training dataset: useful to study optimization behaviour.')
