@@ -60,7 +60,7 @@ def fn(job_args):
                 if 'cuda' in device:
                     device_id = device.split(':')[-1]
                     if os.name == 'nt':
-                        command = f"set CUDA_VISIBLE_DEVICES={device_id} python {opt.script} {args}"
+                        command = f"set CUDA_VISIBLE_DEVICES={device_id} & python {opt.script} {args}"
                     else:
                         command = f"CUDA_VISIBLE_DEVICES={device_id} python {opt.script} {args}"
                 else:
