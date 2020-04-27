@@ -62,9 +62,6 @@ class ToyModel(Template):
         thetas = torch.sigmoid(self.qlogits.detach())# .cpu().numpy()
         plot_loss = thetas * (1 - x) ** 2 + (1 - thetas) * x **2 # Loss = E_p [ f(x) ], f(x) = (x-t)**2
         plot_loss = plot_loss.mean()
-        print(plot_loss)
-        print(self.qlogits)
-        print("X = ", x)
         return {'bernoulli_mse': plot_loss}
 
 
