@@ -15,7 +15,7 @@ from tqdm import tqdm
 
 from lib import get_datasets
 from lib.config import get_config
-from lib import VariationalInference
+from lib.estimators import VariationalInference
 from lib.gradients import get_gradients_statistics
 from lib.logging import sample_model, get_loggers, log_summary, save_model, load_model
 from lib.models import VAE, Baseline, ConvVAE, ToyVAE, GaussianMixture, ToyModel
