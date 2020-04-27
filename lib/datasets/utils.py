@@ -3,13 +3,12 @@ import random
 from torch.utils.data import Dataset
 from torchvision.transforms import ToTensor
 
-from .air import PyroMultiMNIST
 from .binmnist import get_binmnist_datasets
 from .fashion import get_fashion_datasets
 from .gaussian_toy import GaussianToyDataset
-from .gmm import GaussianMixtureDataset
 from .omniglot import get_omniglot_datasets
 from .shapes import get_shapes_datasets
+from .gmm import GaussianMixtureDataset
 
 _train_mini = 5000
 _valid_mini = 500
@@ -41,18 +40,13 @@ def get_datasets(opt):
     elif "gaussian-toy" in opt.dataset:
         output = GaussianToyDataset(), GaussianToyDataset(), GaussianToyDataset()
     elif "gmm" in opt.dataset:
-        output = GaussianMixtureDataset(N=10000, C=opt.N), GaussianMixtureDataset(N=100,
-                                                                                  C=opt.N), GaussianMixtureDataset(
-            N=100, C=opt.N)
+        output = GaussianMixtureDataset(N=10000, C=opt.N), GaussianMixtureDataset(N=100, C=opt.N), GaussianMixtureDataset(N=100, C=opt.N)
     elif "binmnist" in opt.dataset:
         output = get_binmnist_datasets(opt.data_root, transform=transform)
     elif "omniglot" in opt.dataset:
         output = get_omniglot_datasets(opt.data_root, transform=transform, dynamic=True)
     elif "fashion" in opt.dataset:
         output = get_fashion_datasets(opt.data_root, transform=transform, binarize=True)
-    elif "air" in opt.dataset:
-        output = PyroMultiMNIST(opt.data_root, train=True), PyroMultiMNIST(opt.data_root, train=False), PyroMultiMNIST(
-            opt.data_root, train=False)
     else:
         raise ValueError(f"Unknown data: {opt.dataset}")
 
