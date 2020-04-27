@@ -1,5 +1,4 @@
 from .estimators import *
-from .estimators.structured_estimators import StructuredReinforce
 from .utils import parse_numbers
 
 
@@ -27,7 +26,7 @@ def get_config(estimator):
 
 
     elif estimator == 'wake-sleep' or estimator == 'wake-wake':
-        Estimator = {'wake-sleep': WakeSleep, 'wake-wake': WakeWake}[estimator]
+        Estimator = {'wake-sleep': WakeSleep, 'wake-wake': WakeWake, }[estimator]
         config = {'tau': 0, 'zgrads': False}
 
     elif any([e in estimator for e in ['reinforce', 'vimco', 'copt']]):
@@ -105,10 +104,6 @@ def get_config(estimator):
     elif estimator == 'relax':
         Estimator = Relax
         config = {'tau': 0.5, 'zgrads': True}
-
-    elif estimator == 'struct-reinforce':
-        Estimator = StructuredReinforce
-        config = {'tau': 0, 'zgrads': False}
 
     elif 'tvo' in estimator:
         partition_args = [arg for arg in estimator.split('-') if 'part' in arg]

@@ -9,7 +9,7 @@ class BaseWakeSleep(Reinforce):
 
         # sample data from model: z ~ p(z), x ~ p(x|z)
         with torch.no_grad():
-            data = model.sample_from_prior(N=bs*self.mc*self.iw)
+            data = model.sample_from_prior(N=bs * self.mc * self.iw)
             x = data['px'].sample()
             z = data['z']
 

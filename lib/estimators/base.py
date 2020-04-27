@@ -1,10 +1,6 @@
 import numpy as np
-from booster import Diagnostic
 from torch import nn, Tensor
-from torch.nn.functional import softmax
 
-from lib.baseline import Baseline
-from lib.model import PseudoCategorical, VAE
 from lib.utils import *
 
 _EPS = 1e-18

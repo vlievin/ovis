@@ -14,8 +14,8 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-from lib import VAE, Baseline, ConvVAE, ToyVAE, GaussianMixture
-from lib import VariationalInference
+from lib.models import VAE, Baseline, ConvVAE, ToyVAE, GaussianMixture
+from lib.estimators import VariationalInference
 from lib import get_datasets
 from lib.config import get_config
 from lib.gradients import get_gradients_statistics
