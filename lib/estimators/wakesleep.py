@@ -1,5 +1,5 @@
 from .reinforce import *
-
+from booster import Diagnostic
 
 class BaseWakeSleep(Reinforce):
     """inspired from https://github.com/vmasrani/tvo/blob/master/discrete_vae/losses.py"""
