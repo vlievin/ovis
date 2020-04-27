@@ -18,7 +18,7 @@ from lib.config import get_config
 from lib import VariationalInference
 from lib.gradients import get_gradients_statistics
 from lib.logging import sample_model, get_loggers, log_summary, save_model, load_model
-from lib import VAE, Baseline, ConvVAE, ToyVAE, GaussianMixture, ToyMSE
+from lib.models import VAE, Baseline, ConvVAE, ToyVAE, GaussianMixture, ToyModel
 from lib.ops import training_step, test_step
 from lib.utils import notqdm
 
@@ -204,7 +204,7 @@ if __name__ == '__main__':
 
         # define model
         torch.manual_seed(opt.seed)
-        model = ToyMSE(num_latents=opt.num_latents, batch_size=opt.bs) #, mc=opt.mc, iw=opt.iw)
+        model = ToyModel(num_latents=opt.num_latents, batch_size=opt.bs) #, mc=opt.mc, iw=opt.iw)
 
         # define baseline
         baseline = Baseline(x.shape, opt.b_nlayers, opt.hdim) if use_baseline else None
