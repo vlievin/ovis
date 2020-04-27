@@ -19,7 +19,7 @@ from lib.config import get_config
 from lib.estimators import VariationalInference
 from lib.gradients import get_gradients_statistics
 from lib.logging import sample_model, get_loggers, log_summary, save_model, load_model
-from lib.models import VAE, Baseline, ConvVAE, ToyVAE, GaussianMixture
+from lib.models import VAE, Baseline, ConvVAE, ToyVAE, GaussianMixture, AIR
 from lib.ops import training_step, test_step
 from lib.utils import notqdm
 
@@ -213,12 +213,30 @@ if __name__ == '__main__':
         loader_valid = DataLoader(dset_valid, batch_size=opt.valid_bs, shuffle=True, num_workers=opt.workers,
                                   pin_memory=True)
 
-        # define model
+        # hyperparameters
+        hyperparams = {
+            'xdim': x.shape,
+            'N': opt.N,
+            'K': opt.K,
+            'hdim': opt.hdim,
+            'kdim': opt.kdim,
+            'nlayers': opt.nlayers,
+            'learn_prior': opt.learn_prior,
+            'prior': opt.prior,
+            'normalization': opt.norm,
+            'dropout': opt.dropout
+        }
+        # get the right constructor
+        model_id = {'gmm': 'gmm', 'gaussian-toy': 'toy-vae', 'air': 'air'}.get(opt.dataset, opt.model)
+        _MODEL = {'vae': VAE,
+                  'conv-vae': ConvVAE,
+                  'toy-vae': ToyVAE,
+                  'gmm': GaussianMixture,
+                  'air': AIR}[model_id]
+
+        # init model
         torch.manual_seed(opt.seed)
-        model_id = {'gmm': 'gmm', 'gaussian-toy': 'toy-vae'}.get(opt.dataset, opt.model)
-        _MODEL = {'vae': VAE, 'conv-vae': ConvVAE, 'toy-vae': ToyVAE, 'gmm': GaussianMixture}[model_id]
-        model = _MODEL(x.shape, opt.N, opt.K, opt.hdim, kdim=opt.kdim, nlayers=opt.nlayers, learn_prior=opt.learn_prior,
-                       prior=opt.prior, normalization=opt.norm, dropout=opt.dropout)
+        model = _MODEL(**hyperparams)
 
         # define baseline
         baseline = Baseline(x.shape, opt.b_nlayers, opt.hdim) if use_baseline else None

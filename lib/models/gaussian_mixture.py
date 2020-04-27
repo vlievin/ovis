@@ -8,25 +8,41 @@ from ..distributions import PseudoCategorical, NormalFromLoc
 
 class GaussianMixture(BaseVAE):
     """
-    A simple VAE model parametrized by MLPs
+    A simple VAE model parametrized by MLPs as described in
+    `Revisiting Reweighted Wake-Sleep for Models with Stochastic Control Flow` [https://arxiv.org/abs/1805.10469]
+
+    * p_{\theta}(z) = Cat(z | softmax(\theta)), p(x | z)= \mathcal{N} (x | \mu_{z}, \sigma_{z}^{2} ) \\
+    * q_{\phi}(z | x) = Cat( z | softmax(\eta_{\phi}(x) )
+    * \eta_{\phi}(x) : 1-16-C
     """
 
-    def __init__(self, xdim, C, K, hdim=16, **kwargs):
+    def __init__(self,
+                 N: int = 20,
+                 hdim: int = 16,
+                 **kwargs):
+        """
+        Initizialize a Gaussian-Mixture model.
+
+        :param N: number of clusters
+        :param hdim: hidden dimensions of the perceptrons
+        :param kwargs:
+        """
         super(Template, self).__init__()
         act = nn.Tanh
         xdim = 1
-        self.C = C
-        self.register_buffer('log_theta_opt', torch.log(5 + torch.arange(0, C, dtype=torch.float)).view(1, 1, C))
-        self.log_theta = nn.Parameter(torch.zeros(1, 1, C))
+        self.C = N
+        self.register_buffer('log_theta_opt',
+                             torch.log(5 + torch.arange(0, self.C, dtype=torch.float)).view(1, 1, self.C))
+        self.log_theta = nn.Parameter(torch.zeros(1, 1, self.C))
         self.prior_dist = PseudoCategorical
         self.likelihood = NormalFromLoc
-        self.register_buffer('p_mu', 10. * torch.arange(0, C))
+        self.register_buffer('p_mu', 10. * torch.arange(0, self.C))
         self.register_buffer('p_scale', torch.tensor(5.))
 
         self.phi = nn.Sequential(
             nn.Linear(xdim, hdim),
             act(),
-            nn.Linear(hdim, C)
+            nn.Linear(hdim, self.C)
         )
 
     def true_posterior(self, x):
@@ -51,7 +67,6 @@ class GaussianMixture(BaseVAE):
         return logits
 
     def forward(self, x, tau=0, zgrads=False, mc=1, iw=1, **kwargs):
-
         qz, meta = self.infer(x, tau=tau, mc=mc, iw=iw)
 
         z = qz.rsample()

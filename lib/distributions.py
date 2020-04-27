@@ -6,10 +6,27 @@ from torch.distributions import Distribution, Normal
 from torch.nn.functional import gumbel_softmax, log_softmax
 
 
-class PseudoCategorical(Distribution):
+class BaseDistribution(Distribution):
+    """A base class for the distribution used in the project.
+    The rest of the framework relies on the """
+    def __init__(self, logits: Tensor):
+        self.logits = logits
+
+    def sample(self):
+        raise NotImplementedError
+
+    def entropy(self):
+        raise NotImplementedError
+
+    def log_prob(self, value):
+        raise NotImplementedError
+
+
+class PseudoCategorical(BaseDistribution):
 
     def __init__(self, logits: Tensor, tau: float = 0, dim: int = -1):
-        self.logits = logits - logits.logsumexp(dim=dim, keepdim=True)
+        logits = logits - logits.logsumexp(dim=dim, keepdim=True)
+        super().__init__(logits)
         self.dim = dim
         self.tau = tau
 
@@ -35,11 +52,10 @@ class PseudoCategorical(Distribution):
         return (value * log_pdf).sum(self.dim)
 
 
-class NormalFromLogits(Distribution):
+class NormalFromLogits(BaseDistribution):
     def __init__(self, logits: Tensor, dim: int = -1, **kwargs: Any):
         """hacking the Normal class so we can easily compute d p.log_prob(z) / d logits"""
-        super().__init__()
-        self.logits = logits
+        super().__init__(logits)
         self.dim = dim
 
     @property

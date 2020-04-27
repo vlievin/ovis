@@ -7,9 +7,8 @@ _EPS = 1e-18
 
 
 class Estimator(nn.Module):
-    def __init__(self, beta: float = 1, mc: int = 1, iw: int = 1, sequential_computation=False, freebits=None, partition=0, **kwargs):
+    def __init__(self, mc: int = 1, iw: int = 1, sequential_computation=False, freebits=None, partition=0, **kwargs):
         super().__init__()
-        self.beta = beta
         self.mc = mc
         self.iw = iw
         self.log_iw = np.log(iw)
@@ -42,5 +41,3 @@ class Estimator(nn.Module):
         :return: loss, diagnostics, model's output
         """
         raise NotImplementedError
-
-

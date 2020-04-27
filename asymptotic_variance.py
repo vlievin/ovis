@@ -6,8 +6,8 @@ from shutil import rmtree
 
 import pandas as pd
 
-from lib import ToyVAE
 from lib.logging import get_loggers
+from lib.models import ToyVAE
 from lib.utils import notqdm
 from lib.variance_utils import *
 
@@ -112,7 +112,7 @@ try:
 
     # define model
     torch.manual_seed(opt.seed)
-    model = ToyVAE((opt.D,), None, None, None)
+    model = ToyVAE(xdim=(opt.D,))
 
     # valid estimator (it is important that all models are evaluated using the same evaluator)
     Estimator, config_ref = get_config("pathwise-iwae")

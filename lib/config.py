@@ -19,14 +19,13 @@ def get_config(estimator):
         Estimator = PathwiseVAE
         config = {'tau': 0, 'zgrads': True}
 
-
     elif estimator == 'pathwise-iwae':
         Estimator = PathwiseIWAE
         config = {'tau': 0, 'zgrads': True}
 
 
-    elif estimator == 'wake-sleep' or estimator == 'wake-wake':
-        Estimator = {'wake-sleep': WakeSleep, 'wake-wake': WakeWake, }[estimator]
+    elif  'wake-sleep' in estimator or 'wake-wake' in estimator:
+        Estimator = {'wake-sleep': WakeSleep, 'wake-wake': WakeWake}[estimator]
         config = {'tau': 0, 'zgrads': False}
 
     elif any([e in estimator for e in ['reinforce', 'vimco', 'copt']]):

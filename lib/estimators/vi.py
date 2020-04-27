@@ -197,14 +197,14 @@ class VariationalInference(Estimator):
 
 class PathwiseVAE(VariationalInference):
 
-    def __init__(self, beta: float = 1, mc: int = 1, iw: int = 1, **kwargs):
-        super().__init__(beta=beta, mc=iw * mc, iw=1, **kwargs)
+    def __init__(self, mc: int = 1, iw: int = 1, **kwargs):
+        super().__init__(mc=iw * mc, iw=1, **kwargs)
 
 
 class PathwiseIWAE(VariationalInference):
 
-    def __init__(self, beta: float = 1, mc: int = 1, iw: int = 1, **kwargs):
-        super().__init__(beta=beta, mc=1, iw=iw * mc, **kwargs)
+    def __init__(self, mc: int = 1, iw: int = 1, **kwargs):
+        super().__init__(mc=1, iw=iw * mc, **kwargs)
 
 
 class SafeVariationalInference(VariationalInference):

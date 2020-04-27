@@ -8,10 +8,14 @@ from ..utils import batch_reduce
 
 class ToyVAE(Template):
     """
-    A simple VAE model parametrized by MLPs
+    A simple Gaussian VAE model as defined in
+    `Tighter Variational Bounds are Not Necessarily Better` [https://arxiv.org/abs/1802.04537]
+
+    * z ~ \mathcal{N} (z, \mu, I)
+    * x|z ~ \mathcal{N} (x ; z, I)
     """
 
-    def __init__(self, xdim, N, K, hdim, **kwargs):
+    def __init__(self, xdim: int = 20, **kwargs):
         super().__init__()
         D = xdim[0]
         self.xdim = xdim
