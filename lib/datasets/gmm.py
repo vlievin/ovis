@@ -1,7 +1,7 @@
 import torch
 from torch.utils.data import Dataset
 
-from ..model import GaussianMixture
+from ..models import GaussianMixture
 
 
 class GaussianMixtureDataset(Dataset):

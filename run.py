@@ -14,12 +14,12 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-from lib import VAE, Baseline, ConvVAE, ToyVAE, GaussianMixture
-from lib import VariationalInference
 from lib import get_datasets
 from lib.config import get_config
+from lib.estimators import VariationalInference
 from lib.gradients import get_gradients_statistics
 from lib.logging import sample_model, get_loggers, log_summary, save_model, load_model
+from lib.models import VAE, Baseline, ConvVAE, ToyVAE, GaussianMixture
 from lib.ops import training_step, test_step
 from lib.utils import notqdm
 
@@ -64,6 +64,7 @@ if __name__ == '__main__':
     parser.add_argument('--estimator', default='reinforce', help='[vi, reinforce, vimco, gs, st-gs]')
     parser.add_argument('--mc', default=1, type=int, help='number of Monte-Carlo samples')
     parser.add_argument('--iw', default=1, type=int, help='number of Importance-Weighted samples')
+    parser.add_argument('--beta', default=1.0, type=float, help='Beta weight for the KL term (i.e. Beta-VAE)')
 
     # evaluation
     parser.add_argument('--eval_freq', default=10, type=int, help='frequency for the evaluation [test set + grads]')
@@ -105,8 +106,6 @@ if __name__ == '__main__':
     parser.add_argument('--dropout', default=0, type=float, help='dropout value')
 
     opt = parser.parse_args()
-
-    print(f"## run.py: opt.root = {opt.root}")
 
     if opt.deterministic:
         torch.backends.cudnn.deterministic = True
@@ -157,6 +156,8 @@ if __name__ == '__main__':
     if use_baseline:
         run_id += f"-b{opt.b_nlayers}"
     run_id += f"-N{opt.N}-K{opt.K}-kdim{opt.kdim}"
+    if opt.beta != 1:
+        run_id += f"-Beta{opt.beta}"
     if opt.learn_prior:
         run_id += "-learn-prior"
     run_id += f"-arch{opt.hdim}x{opt.nlayers}"
@@ -190,6 +191,8 @@ if __name__ == '__main__':
     try:
         # define logger
         base_logger, train_logger, valid_logger, test_logger = get_loggers(logdir)
+        base_logger.info(f"Run id: {run_id}")
+        base_logger.info(f"Logging directory: {logdir}")
         base_logger.info(f"Torch version: {torch.__version__}")
 
         # setting the random seed
@@ -212,7 +215,7 @@ if __name__ == '__main__':
 
         # define model
         torch.manual_seed(opt.seed)
-        model_id = {'gmm' : 'gmm', 'gaussian-toy': 'toy-vae'}.get(opt.dataset, opt.model)
+        model_id = {'gmm': 'gmm', 'gaussian-toy': 'toy-vae'}.get(opt.dataset, opt.model)
         _MODEL = {'vae': VAE, 'conv-vae': ConvVAE, 'toy-vae': ToyVAE, 'gmm': GaussianMixture}[model_id]
         model = _MODEL(x.shape, opt.N, opt.K, opt.hdim, kdim=opt.kdim, nlayers=opt.nlayers, learn_prior=opt.learn_prior,
                        prior=opt.prior, normalization=opt.norm, dropout=opt.dropout)
@@ -223,6 +226,9 @@ if __name__ == '__main__':
         # estimator
         Estimator, config = get_config(opt.estimator)
         estimator = Estimator(baseline=baseline, mc=opt.mc, iw=opt.iw, N=opt.N, K=opt.K, hdim=opt.hdim)
+
+        # add beta parameter to the config
+        config.update({'beta': opt.beta})
 
         # valid estimator (it is important that all models are evaluated using the same evaluator)
         config_valid = {'tau': 0, 'zgrads': False}

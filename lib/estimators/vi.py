@@ -1,3 +1,5 @@
+from booster import Diagnostic
+
 from .base import *
 
 
@@ -8,7 +10,8 @@ class VariationalInference(Estimator):
     """
 
     def compute_iw_bound(self, log_px_z: Tensor, log_pzs: List[Tensor], log_qzs: List[Tensor],
-                         detach_qlogits: bool = False, request: List[str] = list()) -> Dict[str, Tensor]:
+                         detach_qlogits: bool = False, beta: float = 1.0, request: List[str] = list()) -> Dict[
+        str, Tensor]:
         """
         Compute the importance weighted bound:
 
@@ -20,6 +23,7 @@ class VariationalInference(Estimator):
         :param log_pzs: [log p(z_i | *) l=1..L], each of of shape [bs * mc * iw, N_i]
         :param log_qzs: [log q(z_i | *) l=1..L], each of of shape [bs * mc * iw, N_i]
         :param detach_qlogits: detach the logits of q(z|x)
+        :param beta: weight for the KL term (i.e. Beta-VAE)
         :param request: list of variables to return
         :return: dictionary with outputs [L_k, kl, log_wk]
         """
@@ -45,7 +49,7 @@ class VariationalInference(Estimator):
         kl = batch_reduce(kl)
 
         # compute log w_k = log p(x, z^k) - log q(z^k | x) (ELBO)
-        log_wk = log_px_z - kl
+        log_wk = log_px_z - beta * kl
 
         # view log_wk as shape [bs, mc, iw]
         log_wk = log_wk.view(-1, self.mc, self.iw)
@@ -140,7 +144,8 @@ class VariationalInference(Estimator):
 
         return output
 
-    def forward(self, model: nn.Module, x: Tensor, backward: bool = False, **kwargs: Any) -> Tuple[Tensor, Dict, Dict]:
+    def forward(self, model: nn.Module, x: Tensor, backward: bool = False, beta: float = 1.0, **kwargs: Any) -> Tuple[
+        Tensor, Dict, Dict]:
 
         if self.sequential_computation:
             # warning: here only one `output` will be returned
@@ -150,7 +155,7 @@ class VariationalInference(Estimator):
             output = self.evaluate_model(model, x, x_target, mc=self.mc, iw=self.iw, **kwargs)
 
         log_px_z, log_pz, log_qz = [output[k] for k in ('log_px_z', 'log_pz', 'log_qz')]
-        iw_data = self.compute_iw_bound(log_px_z, log_pz, log_qz)
+        iw_data = self.compute_iw_bound(log_px_z, log_pz, log_qz, beta=beta)
 
         # loss
         L_k = iw_data.get('L_k').mean(1)  # MC averaging

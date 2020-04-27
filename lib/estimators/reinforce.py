@@ -1,3 +1,5 @@
+from torch import softmax
+
 from .vi import *
 
 
@@ -68,7 +70,8 @@ class Reinforce(VariationalInference):
 
         return score, {'L_k': L_k, "v": v}
 
-    def forward(self, model: nn.Module, x: Tensor, backward: bool = False, debug: bool = False, **kwargs: Any) -> Tuple[
+    def forward(self, model: nn.Module, x: Tensor, backward: bool = False, debug: bool = False, beta=1.0,
+                **kwargs: Any) -> Tuple[
         Tensor, Dict, Dict]:
 
         bs = x.size(0)
@@ -76,7 +79,7 @@ class Reinforce(VariationalInference):
         x_target = self._expand_sample(x)
         output = self.evaluate_model(model, x, x_target, mc=self.mc, iw=self.iw, **kwargs)
         log_px_z, log_pz, log_qz = [output[k] for k in ('log_px_z', 'log_pz', 'log_qz')]
-        iw_data = self.compute_iw_bound(log_px_z, log_pz, log_qz, detach_qlogits=self.factorize_v)
+        iw_data = self.compute_iw_bound(log_px_z, log_pz, log_qz, detach_qlogits=self.factorize_v, beta=beta)
         L_k, kl, N_eff = [iw_data[k] for k in ('L_k', 'kl', 'N_eff')]
         # concatenate all q(z_l| *, x)
         log_qz = torch.cat(log_qz, 1)
@@ -270,13 +273,14 @@ class VimcoPlus(Reinforce):
         self.log_1_m_uniform = np.log(1. - 1. / self.iw)
 
     def forward(self, model: nn.Module, x: Tensor, backward: bool = False, debug: bool = False, alpha=1.0, eta=1.0,
+                beta=1.0,
                 v_k_hat='vimco', **kwargs: Any) -> Tuple[Tensor, Dict, Dict]:
 
         bs = x.size(0)
         x_target = self._expand_sample(x)
         output = self.evaluate_model(model, x, x_target, mc=self.mc, iw=self.iw, **kwargs)
         log_px_z, log_pz, log_qz = [output[k] for k in ('log_px_z', 'log_pz', 'log_qz')]
-        iw_data = self.compute_iw_bound(log_px_z, log_pz, log_qz, detach_qlogits=True)
+        iw_data = self.compute_iw_bound(log_px_z, log_pz, log_qz, detach_qlogits=True, beta=beta)
         L_k, kl, N_eff, log_wk = [iw_data[k] for k in ('L_k', 'kl', 'N_eff', 'log_wk')]
 
         # concatenate all q(z_l| *, x)

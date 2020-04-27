@@ -15,7 +15,7 @@
     "seed": [14, 65, 48, 24, 79],
     "dataset": ["gmm"],
     "batch_grads": [true],
-    "grad_samples" : [200],
+    "grad_samples" : [250],
     "bs" : [100],
     "valid_bs" : [100],
     "lr": [1e-3 ],

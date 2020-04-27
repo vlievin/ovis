@@ -1,13 +1,13 @@
 import numpy as np
 from torch import nn
 
-from .utils import *
+from ..utils import *
 
 
 class Baseline(nn.Module):
     def __init__(self, xdim, nlayers, hdim, batch_norm=True, bias=True, center_x=True):
         super().__init__()
-        self.center_x =center_x
+        self.center_x = center_x
 
         # encoder
         layers = []
