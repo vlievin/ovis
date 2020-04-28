@@ -6,7 +6,7 @@ from torch.distributions import Distribution, Bernoulli
 
 from .base import Template
 from .layers import MLP, ConvEncoder, ConvDecoder
-from ..distributions import PseudoCategorical, NormalFromLogits
+from ..distributions import PseudoCategorical, PseudoBernoulli, NormalFromLogits
 from ..utils import batch_reduce, prod, flatten
 
 
@@ -47,9 +47,16 @@ class BaseVAE(Template):
         super().__init__()
 
         # define prior family
-        self.prior_dist = {'categorical': PseudoCategorical, 'normal': NormalFromLogits}[prior]
+        self.prior_dist = {'bernoulli': PseudoBernoulli,
+                           'categorical': PseudoCategorical,
+                           'normal': NormalFromLogits
+                           }[prior]
+
         if prior == 'normal':
             K = 2
+            kdim = 0
+        elif prior == 'bernoulli':
+            K = 1
             kdim = 0
 
         # output distribution p(x|z)
