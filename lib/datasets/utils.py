@@ -7,6 +7,7 @@ from .air import PyroMultiMNIST
 from .binmnist import get_binmnist_datasets
 from .fashion import get_fashion_datasets
 from .gaussian_toy import GaussianToyDataset
+from .bernoulli_toy import get_bernoulli_toy_datasets
 from .gmm import GaussianMixtureDataset
 from .omniglot import get_omniglot_datasets
 from .shapes import get_shapes_datasets
@@ -44,6 +45,8 @@ def get_datasets(opt):
         output = GaussianMixtureDataset(N=10000, C=opt.N), GaussianMixtureDataset(N=100,
                                                                                   C=opt.N), GaussianMixtureDataset(
             N=100, C=opt.N)
+    elif 'bernoulli_toy' in opt.dataset:
+        output = get_bernoulli_toy_datasets(target=opt.toy_target, N=opt.N)
     elif "binmnist" in opt.dataset:
         output = get_binmnist_datasets(opt.data_root, transform=transform)
     elif "omniglot" in opt.dataset:
