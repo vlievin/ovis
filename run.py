@@ -19,7 +19,7 @@ from lib.config import get_config
 from lib.estimators import VariationalInference
 from lib.gradients import get_gradients_statistics
 from lib.logging import sample_model, get_loggers, log_summary, save_model, load_model
-from lib.models import VAE, Baseline, ConvVAE, ToyVAE, GaussianMixture
+from lib.models import VAE, Baseline, ConvVAE, ToyVAE, GaussianMixture, ToyModel
 from lib.ops import training_step, test_step
 from lib.utils import notqdm
 
@@ -30,7 +30,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     # run directory, id and seed
-    parser.add_argument('--dataset', default='shapes', help='dataset [shapes | binmnist | omniglot | fashion]')
+    parser.add_argument('--dataset', default='shapes', help='dataset [shapes | binmnist | omniglot | fashion | bernoulli_toy]')
     parser.add_argument('--mini', action='store_true', help='use a sub-sampled version of the dataset')
     parser.add_argument('--root', default='runs/', help='directory to store training logs')
     parser.add_argument('--data_root', default='data/', help='directory to store the data')
@@ -97,13 +97,14 @@ if __name__ == '__main__':
     parser.add_argument('--learn_prior', action='store_true', help='learn the prior')
 
     # model architecture
-    parser.add_argument('--model', default='vae', help='[vae, conv-vae]')
+    parser.add_argument('--model', default='vae', help='[vae, conv-vae, bernoulli_toy]')
     parser.add_argument('--hdim', default=64, type=int, help='number of hidden units for each layer')
     parser.add_argument('--nlayers', default=3, type=int, help='number of hidden layers for the encoder and decoder')
     parser.add_argument('--b_nlayers', default=1, type=int, help='number of hidden layers for the baseline')
     parser.add_argument('--norm', default='layernorm', type=str,
                         help='normalization layer [none | layernorm | batchnorm]')
     parser.add_argument('--dropout', default=0, type=float, help='dropout value')
+    parser.add_argument('--toy_target', default=0.499, type=float, help='target in Bernoulli toy example')
 
     opt = parser.parse_args()
 
@@ -113,6 +114,12 @@ if __name__ == '__main__':
 
     if opt.silent:
         tqdm = notqdm
+
+    if opt.model == 'bernoulli_toy' or opt.dataset == 'bernoulli_toy':
+        assert opt.model == 'bernoulli_toy'
+        assert opt.bs == 1 and opt.valid_bs == 1 and opt.test_bs == 1
+
+
 
     # define conunterfactuals
     if len(opt.counterfactuals):
@@ -167,6 +174,8 @@ if __name__ == '__main__':
         run_id += f"-drp{opt.dropout}"
     if opt.oracle != "":
         run_id += f"-oracle={opt.oracle}-iw{opt.oracle_iw_samples}"
+    if opt.model == 'bernoulli_toy':
+        run_id += f"-tar{opt.toy_target}"
 
     # _exp_id = f"{opt.exp}-{opt.dataset}-{opt.estimator}"
     _exp_id = f"{opt.exp}-{opt.estimator}"
@@ -215,8 +224,8 @@ if __name__ == '__main__':
 
         # define model
         torch.manual_seed(opt.seed)
-        model_id = {'gmm': 'gmm', 'gaussian-toy': 'toy-vae'}.get(opt.dataset, opt.model)
-        _MODEL = {'vae': VAE, 'conv-vae': ConvVAE, 'toy-vae': ToyVAE, 'gmm': GaussianMixture}[model_id]
+        model_id = {'gmm': 'gmm', 'gaussian-toy': 'toy-vae', 'bernoulli_toy': 'bernoulli_toy'}.get(opt.dataset, opt.model)
+        _MODEL = {'vae': VAE, 'conv-vae': ConvVAE, 'toy-vae': ToyVAE, 'gmm': GaussianMixture, 'bernoulli_toy': ToyModel}[model_id]
         model = _MODEL(x.shape, opt.N, opt.K, opt.hdim, kdim=opt.kdim, nlayers=opt.nlayers, learn_prior=opt.learn_prior,
                        prior=opt.prior, normalization=opt.norm, dropout=opt.dropout)
 
