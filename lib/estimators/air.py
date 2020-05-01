@@ -86,12 +86,9 @@ class AirReinforce(Reinforce):
             kl = output.get('kl')
             nll = output.get('recons')
 
-            # N_eff
-            N_eff = torch.exp(2 * torch.logsumexp(log_wk, dim=2) - torch.logsumexp(2 * log_wk, dim=2))
-            N_eff = N_eff.mean(1)  # MC
-
-            # print(
-            #     f">> Lk: {L_k.mean():.3f}, elbo = {output.get('elbo'):.3f}, kl = {kl:.3f}, inferred_n= {output.get('inferred_n').float().mean():.3f}")
+            # effective sample size
+            ess = torch.exp(2 * torch.logsumexp(log_wk, dim=2) - torch.logsumexp(2 * log_wk, dim=2))
+            ess = ess.mean(1)  # MC
 
         # prepare diagnostics
         diagnostics = Diagnostic({
@@ -100,8 +97,8 @@ class AirReinforce(Reinforce):
                 'elbo': L_k.mean(1),
                 'nll': nll,
                 'kl': kl,
-                'r_eff': N_eff / self.iw,
-                'ess': N_eff
+                'r_eff': ess / self.iw,
+                'ess': ess
             },
             'reinforce': {
                 'loss': reinforce_loss,

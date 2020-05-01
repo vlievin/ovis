@@ -29,7 +29,7 @@ class VariationalInference(Estimator):
         """
 
         # compute the effective sample size
-        N_eff = self.effective_sample_size(log_px_z, log_pzs, log_qzs)
+        ess = self.effective_sample_size(log_px_z, log_pzs, log_qzs)
 
         def cat_by_layer(log_pzs):
             """sum over the latent dimension (N_i) and concatenate stocastic layers.
@@ -57,7 +57,7 @@ class VariationalInference(Estimator):
         # IW-ELBO: L_k
         L_k = torch.logsumexp(log_wk, dim=2) - self.log_iw  # if self.iw > 1 else log_f_xz.squeeze(2)
 
-        output = {'L_k': L_k, 'kl': kl, 'log_wk': log_wk, 'N_eff': N_eff}
+        output = {'L_k': L_k, 'kl': kl, 'log_wk': log_wk, 'ess': ess}
 
         if len(request):
             # append additional data to the output
@@ -97,18 +97,15 @@ class VariationalInference(Estimator):
             # computation in log-space
             a = 2 * torch.logsumexp(log_w, dim=2)
             b = torch.logsumexp(2 * log_w, dim=2)
-            N_eff = torch.exp(a - b)
-
-            # average over MC samples
-            N_eff = N_eff.mean(1)
+            ess = torch.exp(a - b)
 
             # back to simple precision
-            N_eff = N_eff.float()
+            ess = ess.float()
         else:
             x = (log_pz).view(-1, self.mc, self.iw)
-            N_eff = torch.ones_like(x[:, 0, 0])
+            ess = torch.ones_like(x[:, :, 0])
 
-        return N_eff
+        return ess
 
     def evaluate_model(self, model: nn.Module, x: Tensor, **kwargs: Any) -> Dict[str, Tensor]:
 
@@ -164,7 +161,7 @@ class VariationalInference(Estimator):
         Tensor, Dict, Dict]:
 
         if self.sequential_computation:
-            # warning: here only one `output` will be returned
+            # warning: here only one iw sample `output` will be returned
             output = self._sequential_evaluation(model, x, **kwargs)
         else:
             output = self.evaluate_model(model, x, **kwargs)
@@ -179,19 +176,23 @@ class VariationalInference(Estimator):
         # prepare diagnostics
         diagnostics = Diagnostic({
             'loss': {'loss': loss,
-                     'elbo': L_k,
-                     'nll': - self._reduce_sample(log_px_z),
-                     'kl': self._reduce_sample(iw_data.get('kl')),
-                     'r_eff': iw_data.get('N_eff') / self.iw,
-                     'ess': iw_data.get('N_eff')},
+                     **self._loss_diagnostics(**iw_data, **output)}
         })
 
+        # add auxiliary diagnostics that can customized throught the method _diagnostics
         diagnostics.update(self._diagnostics(output))
 
         if backward:
             loss.mean().backward()
 
         return loss, diagnostics, output
+
+    def _loss_diagnostics(self, **kwargs):
+        L_k = kwargs.get('L_k').mean(1)
+        ess = kwargs.get('ess').mean(1)
+        nll = - self._reduce_sample(kwargs.get('log_px_z'))
+        kl = self._reduce_sample(kwargs.get('kl'))
+        return {'elbo': L_k, 'ess': ess, 'r_ess': ess / self.iw, 'nll': nll, 'kl': kl}
 
     def _diagnostics(self, output):
         """A function to append additional diagnostics from the model otuput"""
@@ -259,7 +260,7 @@ class SafeVariationalInference(VariationalInference):
         L_k = torch.logsumexp(log_wk, dim=2).mean(1)
 
         # compute stats
-        N_eff = (log_wk.exp().sum(2) ** 2 / (log_wk.exp() ** 2).sum(2)).mean(1)
+        ess = (log_wk.exp().sum(2) ** 2 / (log_wk.exp() ** 2).sum(2)).mean(1)
         kl = (log_pz - log_qz).view(bs, self.mc, self.iw).mean(dim=(1, 2))
         log_px_z = log_px_z.view(bs, self.mc, self.iw).mean(dim=(1, 2))
 
@@ -272,8 +273,8 @@ class SafeVariationalInference(VariationalInference):
                      'elbo': L_k,
                      'nll': - log_px_z,
                      'kl': kl,
-                     'r_eff': N_eff / self.iw,
-                     'ess': N_eff},
+                     'r_ess': ess / self.iw,
+                     'ess': ess},
         })
 
         if backward:

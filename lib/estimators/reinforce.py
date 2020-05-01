@@ -1,3 +1,5 @@
+from copy import copy
+
 from torch import softmax
 
 from .vi import *
@@ -78,7 +80,7 @@ class Reinforce(VariationalInference):
         output = self.evaluate_model(model, x, **kwargs)
         log_px_z, log_pz, log_qz = [output[k] for k in ('log_px_z', 'log_pz', 'log_qz')]
         iw_data = self.compute_iw_bound(log_px_z, log_pz, log_qz, detach_qlogits=self.factorize_v, beta=beta)
-        L_k, kl, N_eff = [iw_data[k] for k in ('L_k', 'kl', 'N_eff')]
+
         # concatenate all q(z_l| *, x)
         log_qz = torch.cat(log_qz, 1)
 
@@ -94,19 +96,20 @@ class Reinforce(VariationalInference):
 
         # MC averaging
         reinforce_loss = reinforce_loss.mean(1)
-        L_k = L_k.mean(1)
+        L_k = iw_data['L_k'].mean(1)
 
         # final loss
         loss = - L_k - reinforce_loss + self.control_variate_loss_weight * control_variate_l1
 
         # update output with meta data
-        output.update(**score_meta)
-        output.update(**control_variate_meta)
+        estimator_outptut = copy(output)
+        estimator_outptut.update(**score_meta)
+        estimator_outptut.update(**control_variate_meta)
 
         # compute dlogits
         if debug:
-            output['dqlogits'] = self._compute_dlogits(output)
-            output.update(**iw_data)
+            estimator_outptut['dqlogits'] = self._compute_dlogits(output)
+            estimator_outptut.update(**iw_data)
 
         # check shapes
         assert score.shape[0] == bs
@@ -116,11 +119,7 @@ class Reinforce(VariationalInference):
         diagnostics = Diagnostic({
             'loss': {
                 'loss': loss,
-                'elbo': L_k,
-                'nll': - self._reduce_sample(log_px_z),
-                'kl': self._reduce_sample(kl),
-                'r_eff': N_eff / self.iw,
-                'ess': N_eff
+                **self._loss_diagnostics(**iw_data, **output)
             },
             'reinforce': {
                 'loss': reinforce_loss,
@@ -134,7 +133,7 @@ class Reinforce(VariationalInference):
         if backward:
             loss.mean().backward()
 
-        return loss, diagnostics, output
+        return loss, diagnostics, estimator_outptut
 
     def _compute_dlogits(self, output):
 
@@ -276,7 +275,7 @@ class VimcoPlus(Reinforce):
         output = self.evaluate_model(model, x, **kwargs)
         log_px_z, log_pz, log_qz = [output[k] for k in ('log_px_z', 'log_pz', 'log_qz')]
         iw_data = self.compute_iw_bound(log_px_z, log_pz, log_qz, detach_qlogits=True, beta=beta)
-        L_k, kl, N_eff, log_wk = [iw_data[k] for k in ('L_k', 'kl', 'N_eff', 'log_wk')]
+        L_k, ess, log_wk = [iw_data[k] for k in ('L_k', 'ess', 'log_wk')]
 
         # concatenate all q(z_l| *, x)
         log_qz = torch.cat(log_qz, 1).view(bs, self.mc, self.iw, -1)
@@ -319,8 +318,8 @@ class VimcoPlus(Reinforce):
             prefactor_k = log_gamma - mask * (-1 - self.log_iw) - alpha * v_k
 
             # use the low ESS estimate when ess \approx 1
-            _N_eff = N_eff[:, None, None].expand(-1, self.mc, self.iw)
-            prefactor_k = torch.where(_N_eff < 1.05, prefactor_k, prefactor_k)
+            ess = ess[:, :, None].expand(-1, self.mc, self.iw)
+            prefactor_k = torch.where(ess < 1.05, prefactor_k, prefactor_k)
 
         # compute loss: - \sum_k (log_Z - v_k - c_k) h_k
         reinforce_loss = - torch.sum(prefactor_k[..., None].detach() * log_qz, dim=(2, 3))  # sum over IW and Nz
@@ -341,11 +340,7 @@ class VimcoPlus(Reinforce):
         diagnostics = Diagnostic({
             'loss': {
                 'loss': loss,
-                'elbo': L_k,
-                'nll': - self._reduce_sample(log_px_z),
-                'kl': self._reduce_sample(kl),
-                'r_eff': N_eff / self.iw,
-                'ess': N_eff
+                **self._loss_diagnostics(**iw_data, **output)
             },
             'reinforce': {
                 'loss': reinforce_loss,
