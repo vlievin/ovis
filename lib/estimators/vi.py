@@ -90,8 +90,20 @@ class VariationalInference(Estimator):
         if self.iw > 1:
             # compute effective sample size
             log_w = batch_reduce(log_px_z + log_pz - log_qz).view(-1, self.mc, self.iw)
-            N_eff = torch.exp(2 * torch.logsumexp(log_w, dim=2) - torch.logsumexp(2 * log_w, dim=2))
-            N_eff = N_eff.mean(1)  # MC
+
+            # use double for numerical stability
+            log_w = log_w.double()
+
+            # computation in log-space
+            a = 2 * torch.logsumexp(log_w, dim=2)
+            b = torch.logsumexp(2 * log_w, dim=2)
+            N_eff = torch.exp(a - b)
+
+            # average over MC samples
+            N_eff = N_eff.mean(1)
+
+            # back to simple precision
+            N_eff = N_eff.float()
         else:
             x = (log_pz).view(-1, self.mc, self.iw)
             N_eff = torch.ones_like(x[:, 0, 0])
@@ -167,7 +179,8 @@ class VariationalInference(Estimator):
                      'elbo': L_k,
                      'nll': - self._reduce_sample(log_px_z),
                      'kl': self._reduce_sample(iw_data.get('kl')),
-                     'r_eff': iw_data.get('N_eff') / self.iw},
+                     'r_eff': iw_data.get('N_eff') / self.iw,
+                     'ess': iw_data.get('N_eff')},
         })
 
         diagnostics.update(self._diagnostics(output))
@@ -192,7 +205,11 @@ class VariationalInference(Estimator):
         if 'prior_mse' in output.keys():
             gmm['prior_mse'] = output['prior_mse']
 
-        return {'prior': prior, 'gmm': gmm}
+        loss = {}
+        if 'inferred_n' in output.keys():
+            loss['inferred_n'] = output['inferred_n']
+
+        return {'prior': prior, 'gmm': gmm, 'loss': loss}
 
 
 class PathwiseVAE(VariationalInference):
@@ -253,7 +270,8 @@ class SafeVariationalInference(VariationalInference):
                      'elbo': L_k,
                      'nll': - log_px_z,
                      'kl': kl,
-                     'r_eff': N_eff / self.iw},
+                     'r_eff': N_eff / self.iw,
+                     'ess': N_eff},
         })
 
         if backward:
