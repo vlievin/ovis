@@ -160,7 +160,7 @@ def spot_on_plot(logs, path, metrics, main_key, auxiliary_key, style_key=None, y
     hue_order = list(logs[main_key].unique())
     step_min = np.percentile(logs['step'].values.tolist(), 10) if len(logs['step']) else 0  # used to filter first steps
     fig, axes = plt.subplots(nrows, ncols, figsize=(PLOT_WIDTH * ncols, PLOT_HEIGHT * nrows), sharex='col',
-                             sharey='row')
+                             sharey='row', squeeze=False)
 
     for j, aux_key in tqdm(list(enumerate(sorted(aux_keys))), desc="|  aux. keys"):
         aux_data = logs[logs[auxiliary_key] == aux_key]
@@ -227,6 +227,9 @@ def spot_on_plot(logs, path, metrics, main_key, auxiliary_key, style_key=None, y
 def pivot_plot(df, path, metrics, cat_key, hue_key, x_key, style_key=None, ylims=dict(), log_rules=dict(),
                metric_dict=dict(), **kwargs):
     """make grid of pointplot [metric x dataset], where each point plot is [aux_key vs. metric] (e.g. iw vs. avg log_snr) """
+
+    df = df.dropna()
+
     color_palette = sns.color_palette()
     categories = df[cat_key].unique()
     ncols = len(categories)
@@ -256,7 +259,9 @@ def pivot_plot(df, path, metrics, cat_key, hue_key, x_key, style_key=None, ylims
     if nrows == 0 or ncols == 0:
         return None
 
-    hue_order = { l:i for i,l in enumerate(sorted(df[key_name].unique())) }
+
+    print(">>> pivot: ", key_name, df[key_name].unique())
+    hue_order = {l: i for i, l in enumerate(sorted(df[key_name].unique()))}
     if len(categories) > 1:
         fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(PLOT_WIDTH * ncols, PLOT_HEIGHT * nrows),
                                  sharex='col', sharey='row' if cat_key != 'dataset' else False)
@@ -276,12 +281,12 @@ def pivot_plot(df, path, metrics, cat_key, hue_key, x_key, style_key=None, ylims
                     color = palette[hue_order[_key]]
 
                     # extract mean and 90 percentiles
-                    series = sub_data[[x_key, metric]].groupby(x_key).agg(['mean', percentile(5), percentile(95)])
+                    series = sub_data[[x_key, metric]].groupby(x_key).agg(['mean', 'std'])
                     series.reset_index(inplace=True)
 
                     # area plot for CI + mean
-                    ax.fill_between(series[x_key], series[metric]['p_5'], series[metric]['p_95'], color=color,
-                                    alpha=0.2)
+                    ax.fill_between(series[x_key], series[metric]['mean'] - 0.5 * series[metric]['std'],
+                                    series[metric]['mean'] + 0.5 * series[metric]['std'], color=color, alpha=0.2)
                     ax.plot(series[x_key], series[metric]['mean'], color=color, label=_key, marker=markers[c])
 
                 ax.set_xlabel(x_key)

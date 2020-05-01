@@ -98,6 +98,7 @@ if __name__ == '__main__':
     parser.add_argument('--rf', action='store_true', help='force delete previous experiment')
     parser.add_argument('--append', action='store_true', help='force append new experiment')
     parser.add_argument('--update_exp', action='store_true', help='update experiment file in the snapshot')
+    parser.add_argument('--update_lib', action='store_true', help='update the entire snapshot')
     parser.add_argument('--max_jobs', default=-1, type=int, help='maximum jobs per thread (stop after `max_jobs`)')
     opt = parser.parse_args()
 
@@ -128,6 +129,14 @@ if __name__ == '__main__':
 
     # copy library to the `snapshot` directory
     if not opt.append:
+        shutil.copytree('./', snapshot_dir(exp_root),
+                        ignore=shutil.ignore_patterns('.*', '*.git', 'runs', 'reports', 'data', '__pycache__'))
+
+    if opt.update_lib:
+        # move original lib
+        shutil.move(snapshot_dir(exp_root), f"{snapshot_dir(exp_root)}-saved")
+
+        # copy lib
         shutil.copytree('./', snapshot_dir(exp_root),
                         ignore=shutil.ignore_patterns('.*', '*.git', 'runs', 'reports', 'data', '__pycache__'))
 

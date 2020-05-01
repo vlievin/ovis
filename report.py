@@ -38,17 +38,18 @@ log_rules = {
 }
 
 metric_dict = {
-    'iw' : r"$K$",
-    'c_iw' : r"$K$",
+    'iw': r"$K$",
+    'c_iw': r"$K$",
     'loss/elbo': r"$\mathcal{L}_K$",
     'loss/kl': r"$KL(q_{\phi}(z | x) | p(z))$",
     'loss/nll': r"$- \log p_{\theta}(z | x)$",
-    'loss/r_eff': r"$ESS / K$",
-    'grads/variance': r"$Var(\Delta_K(\phi))$",
-    'grads/snr': r"$SNR(\Delta_K(\phi))$",
-    'grads/dsnr': r"$DSNR(\Delta_K(\phi))$",
+    'loss/r_eff': r"$\operatorname{ESS} / K$",
+    'loss/ess': r"$\operatorname{ESS}$",
+    'grads/variance': r"$\operatorname{Var}(\Delta_K(\phi))$",
+    'grads/snr': r"$\operatorname{SNR}(\Delta_K(\phi))$",
+    'grads/dsnr': r"$\operatorname{DSNR}(\Delta_K(\phi))$",
     'grads/magnitude': r"$ | E[\Delta_K(\phi)] | $",
-    'grads/direction': r"$cosine( \Delta_K(\phi) ,  \Delta_K^{oracle}(\phi) )$",
+    'grads/direction': r"$\operatorname{cosine}( \Delta_K(\phi) ,  \Delta_K^{oracle}(\phi) )$",
     'gmm/posterior_mse': r"$\left\| q_{\phi}(z | x) - p_{\theta_{true}}(z | x) \right\| $",
     'gmm/prior_mse': r"$\left\| p_{\theta}(z) - p_{\theta_{true}}(z) \right\| $"
 

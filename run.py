@@ -9,17 +9,17 @@ from shutil import rmtree
 import numpy as np
 import torch
 from booster import Aggregator, Diagnostic
-from torch.optim import Adam, Adamax, SGD
+from torch.optim import Adam, Adamax, SGD, RMSprop
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from lib import get_datasets
 from lib.config import get_config
-from lib.estimators import VariationalInference
+from lib.estimators import VariationalInference, AirReinforce
 from lib.gradients import get_gradients_statistics
 from lib.logging import sample_model, get_loggers, log_summary, save_model, load_model
-from lib.models import VAE, Baseline, ConvVAE, ToyVAE, GaussianMixture, AIR
+from lib.models import VAE, Baseline, ConvVAE, ToyVAE, GaussianMixture, AIR, HierarchicalVae
 from lib.ops import training_step, test_step
 from lib.utils import notqdm
 
@@ -49,8 +49,9 @@ if __name__ == '__main__':
     # epochs, batch size, MC samples, lr
     parser.add_argument('--epochs', default=-1, type=int, help='number of epochs (use n_steps if `epochs` < 0)')
     parser.add_argument('--nsteps', default=500000, type=int, help='number of optimization steps')
-    parser.add_argument('--optimizer', default='adam', help='[sgd | adam | adamax]')
+    parser.add_argument('--optimizer', default='adam', help='[sgd | adam | adamax | rmsprop]')
     parser.add_argument('--lr', default=2e-3, type=float, help='learning rate')
+    parser.add_argument('--freebits', default=None, type=float, help='freebits per layer')
     parser.add_argument('--baseline_lr', default=5e-3, type=float, help='learning rate for the weight of the baseline')
     parser.add_argument('--bs', default=32, type=int, help='batch size')
     parser.add_argument('--valid_bs', default=50, type=int, help='evaluation batch size')
@@ -97,9 +98,11 @@ if __name__ == '__main__':
     parser.add_argument('--learn_prior', action='store_true', help='learn the prior')
 
     # model architecture
-    parser.add_argument('--model', default='vae', help='[vae, conv-vae]')
+    parser.add_argument('--model', default='vae', help='[vae, conv-vae, hierarchical]')
     parser.add_argument('--hdim', default=64, type=int, help='number of hidden units for each layer')
     parser.add_argument('--nlayers', default=3, type=int, help='number of hidden layers for the encoder and decoder')
+    parser.add_argument('--depth', default=3, type=int,
+                        help='number of stochastic layers when using hierarchical models')
     parser.add_argument('--b_nlayers', default=1, type=int, help='number of hidden layers for the baseline')
     parser.add_argument('--norm', default='layernorm', type=str,
                         help='normalization layer [none | layernorm | batchnorm]')
@@ -158,6 +161,8 @@ if __name__ == '__main__':
     run_id += f"-N{opt.N}-K{opt.K}-kdim{opt.kdim}"
     if opt.beta != 1:
         run_id += f"-Beta{opt.beta}"
+    if opt.freebits is not None:
+        run_id += f"-fb{opt.freebits}"
     if opt.learn_prior:
         run_id += "-learn-prior"
     run_id += f"-arch{opt.hdim}x{opt.nlayers}"
@@ -203,15 +208,28 @@ if __name__ == '__main__':
         dset_train, dset_valid, dset_test = get_datasets(opt)
         base_logger.info(f"Dataset size: train = {len(dset_train)}, valid = {len(dset_valid)}")
 
-        # get a sample to evaluate the input shape
-        x = dset_train[0]
-        base_logger.info(
-            f"Sample: x.shape = {x.shape}, x.min = {x.min():.1f}, x.max = {x.max():.1f}, x.dtype = {x.dtype}")
-
         # dataloaders
         loader_train = DataLoader(dset_train, batch_size=opt.bs, shuffle=True, num_workers=opt.workers, pin_memory=True)
         loader_valid = DataLoader(dset_valid, batch_size=opt.valid_bs, shuffle=True, num_workers=opt.workers,
                                   pin_memory=True)
+
+        # compute mean value of train set
+        _xmean = None
+        _n = 0.
+        for x in loader_train:
+            k = x.size(0)
+            m = x.sum(0)
+            _n += k
+            if _xmean is None:
+                _xmean = m / k
+            else:
+                _xmean += (m - k * _xmean) / _n
+        _xmean = _xmean.unsqueeze(0)
+
+        # get a sample to evaluate the input shape
+        x = dset_train[0]
+        base_logger.info(
+            f"Sample: x.shape = {x.shape}, x.min = {x.min():.1f}, x.max = {x.max():.1f}, x.mean = {_xmean.mean():1f}, x.dtype = {x.dtype}")
 
         # hyperparameters
         hyperparams = {
@@ -221,10 +239,12 @@ if __name__ == '__main__':
             'hdim': opt.hdim,
             'kdim': opt.kdim,
             'nlayers': opt.nlayers,
+            'depth': opt.depth,
             'learn_prior': opt.learn_prior,
             'prior': opt.prior,
             'normalization': opt.norm,
-            'dropout': opt.dropout
+            'dropout': opt.dropout,
+            'x_mean': _xmean
         }
         # get the right constructor
         model_id = {'gmm': 'gmm', 'gaussian-toy': 'toy-vae', 'air': 'air'}.get(opt.dataset, opt.model)
@@ -232,7 +252,8 @@ if __name__ == '__main__':
                   'conv-vae': ConvVAE,
                   'toy-vae': ToyVAE,
                   'gmm': GaussianMixture,
-                  'air': AIR}[model_id]
+                  'air': AIR,
+                  'hierarchical': HierarchicalVae}[model_id]
 
         # init model
         torch.manual_seed(opt.seed)
@@ -243,14 +264,16 @@ if __name__ == '__main__':
 
         # estimator
         Estimator, config = get_config(opt.estimator)
-        estimator = Estimator(baseline=baseline, mc=opt.mc, iw=opt.iw, N=opt.N, K=opt.K, hdim=opt.hdim)
+        estimator = Estimator(baseline=baseline, mc=opt.mc, iw=opt.iw, N=opt.N, K=opt.K, hdim=opt.hdim,
+                              freebits=opt.freebits)
 
         # add beta parameter to the config
         config.update({'beta': opt.beta})
 
         # valid estimator (it is important that all models are evaluated using the same evaluator)
+        Estimator_valid = AirReinforce if 'air' == opt.dataset else VariationalInference
         config_valid = {'tau': 0, 'zgrads': False}
-        estimator_valid = VariationalInference(mc=1, iw=opt.iw_valid, sequential_computation=opt.sequential_computation)
+        estimator_valid = Estimator_valid(mc=1, iw=opt.iw_valid, sequential_computation=opt.sequential_computation)
 
         # oracle estimator to find the true gradients direction
         if len(opt.oracle):
@@ -276,7 +299,7 @@ if __name__ == '__main__':
 
         # optimizers
         optimizers = []
-        _OPT = {'sgd': SGD, 'adam': Adam, 'adamax': Adamax}[opt.optimizer]
+        _OPT = {'sgd': SGD, 'adam': Adam, 'adamax': Adamax, 'rmsprop': RMSprop}[opt.optimizer]
         optimizers += [_OPT(model.parameters(), lr=opt.lr)]
         if len(list(estimator.parameters())):
             optimizers += [torch.optim.Adam(estimator.parameters(), lr=opt.baseline_lr)]
@@ -306,6 +329,9 @@ if __name__ == '__main__':
             epochs = 1 + opt.nsteps // iter_per_epoch
         base_logger.info(f"# {opt.dataset}: running for {epochs} epochs, {iter_per_epoch * epochs} steps")
 
+        # sample model
+        sample_model("prior-sample", model, logdir, global_step=0, writer=writer_valid, seed=opt.seed)
+
         # run
         best_elbo = (-1e20, 0, 0)
         global_step = 0
@@ -325,55 +351,58 @@ if __name__ == '__main__':
 
             if epoch % opt.eval_freq == 0:
 
-                # batch of data for the gradients variance evaluation (at maximum of size bs)
-                x_eval = next(iter(loader_train)).to(device)[:opt.grad_bs]
+                if opt.grad_samples > 0:
 
-                # estimate the variance of the gradients
-                grad_args = {'seed': opt.seed, 'batch_size': opt.bs * opt.mc * opt.iw, 'n_samples': opt.grad_samples,
-                             'key_filter': 'tensor:qlogits', 'use_batch_grads': opt.batch_grads, 'use_dsnr': True}
+                    # batch of data for the gradients variance evaluation (at maximum of size bs)
+                    x_eval = next(iter(loader_train)).to(device)[:opt.grad_bs]
 
-                # compute oracle gradients (the true gradients direction)
-                if estimator_oracle is not None:
-                    print(
-                        f">> evaluating oracle `{opt.oracle}`, K = {opt.oracle_iw_samples} using {opt.oracle_mc_samples} MC samples (batch_grads = {opt.batch_grads})")
-                    # define args
-                    oracle_args = copy(grad_args)
-                    seed = oracle_args.pop('seed', 13) + 1
-                    oracle_args.update({'seed': seed, 'n_samples': opt.oracle_mc_samples})
+                    # estimate the variance of the gradients
+                    grad_args = {'seed': opt.seed, 'batch_size': opt.bs * opt.mc * opt.iw,
+                                 'n_samples': opt.grad_samples,
+                                 'key_filter': 'tensor:qlogits', 'use_batch_grads': opt.batch_grads, 'use_dsnr': True}
 
-                    _, oracle_grads = get_gradients_statistics(estimator_oracle, model, x_eval, **oracle_args,
-                                                               **config_oracle)
-                    oracle_grads = oracle_grads['expected']
-                    oracle_grads = oracle_grads / oracle_grads.norm(p=2, dim=-1, keepdim=True)
-                    grad_args.update({'true_grads': oracle_grads})
+                    # compute oracle gradients (the true gradients direction)
+                    if estimator_oracle is not None:
+                        print(
+                            f">> evaluating oracle `{opt.oracle}`, K = {opt.oracle_iw_samples} using {opt.oracle_mc_samples} MC samples (batch_grads = {opt.batch_grads})")
+                        # define args
+                        oracle_args = copy(grad_args)
+                        seed = oracle_args.pop('seed', 13) + 1
+                        oracle_args.update({'seed': seed, 'n_samples': opt.oracle_mc_samples})
 
-                # for the main estimator
-                grad_data, _ = get_gradients_statistics(estimator, model, x_eval, **grad_args, **config)
-                with torch.no_grad():
-                    summary_train.update(grad_data)
-                    train_logger.info(f"{_exp_id} | grads | "
-                                      f"snr = {grad_data.get('grads', {}).get('snr', 0.):.3E}, "
-                                      f"variance = {grad_data.get('grads', {}).get('variance', 0.):.3E}, "
-                                      f"magnitude = {grad_data.get('grads', {}).get('magnitude', 0.):.3E}, "
-                                      f"dsnr = {grad_data.get('grads', {}).get('dsnr', -1):.3E}, "
-                                      f"direction = {grad_data.get('grads', {}).get('direction', -1):.3E}")
+                        _, oracle_grads = get_gradients_statistics(estimator_oracle, model, x_eval, **oracle_args,
+                                                                   **config_oracle)
+                        oracle_grads = oracle_grads['expected']
+                        oracle_grads = oracle_grads / oracle_grads.norm(p=2, dim=-1, keepdim=True)
+                        grad_args.update({'true_grads': oracle_grads})
 
-                # analyse the control variate terms on the counter-factual estimators
-                # analyse_control_variate(x_eval, model, c_configs, c_estimators, counterfactual_estimators, writer_train, seed=opt.seed, global_step=global_step)
-
-                # counter-factual estimation of the other estimators
-                for (c_writer, c_conf, c_est, c) in zip(counterfactual_writers, c_configs, c_estimators,
-                                                        counterfactual_estimators):
-                    grad_data, _ = get_gradients_statistics(c_est, model, x_eval, **grad_args, **c_conf)
+                    # for the main estimator
+                    grad_data, _ = get_gradients_statistics(estimator, model, x_eval, **grad_args, **config)
                     with torch.no_grad():
-                        summary = Diagnostic(grad_data)
-                        summary.log(c_writer, global_step)
-                        train_logger.info(f" | counterfactual | {c:{max(map(len, counterfactual_estimators))}s} "
-                                          f"| snr = {grad_data.get('grads', {}).get('snr', 0.):.3f}, "
-                                          f"variance = {grad_data.get('grads', {}).get('variance', 0.):.3f}, "
+                        summary_train.update(grad_data)
+                        train_logger.info(f"{_exp_id} | grads | "
+                                          f"snr = {grad_data.get('grads', {}).get('snr', 0.):.3E}, "
+                                          f"variance = {grad_data.get('grads', {}).get('variance', 0.):.3E}, "
+                                          f"magnitude = {grad_data.get('grads', {}).get('magnitude', 0.):.3E}, "
                                           f"dsnr = {grad_data.get('grads', {}).get('dsnr', -1):.3E}, "
-                                          f"direction = {grad_data.get('grads', {}).get('direction', -1):.3E}"
-                                          )
+                                          f"direction = {grad_data.get('grads', {}).get('direction', -1):.3E}")
+
+                    # analyse the control variate terms on the counter-factual estimators
+                    # analyse_control_variate(x_eval, model, c_configs, c_estimators, counterfactual_estimators, writer_train, seed=opt.seed, global_step=global_step)
+
+                    # counter-factual estimation of the other estimators
+                    for (c_writer, c_conf, c_est, c) in zip(counterfactual_writers, c_configs, c_estimators,
+                                                            counterfactual_estimators):
+                        grad_data, _ = get_gradients_statistics(c_est, model, x_eval, **grad_args, **c_conf)
+                        with torch.no_grad():
+                            summary = Diagnostic(grad_data)
+                            summary.log(c_writer, global_step)
+                            train_logger.info(f" | counterfactual | {c:{max(map(len, counterfactual_estimators))}s} "
+                                              f"| snr = {grad_data.get('grads', {}).get('snr', 0.):.3f}, "
+                                              f"variance = {grad_data.get('grads', {}).get('variance', 0.):.3f}, "
+                                              f"dsnr = {grad_data.get('grads', {}).get('dsnr', -1):.3E}, "
+                                              f"direction = {grad_data.get('grads', {}).get('direction', -1):.3E}"
+                                              )
 
                 # validation epoch
                 with torch.no_grad():
@@ -416,8 +445,8 @@ if __name__ == '__main__':
         agg_test = Aggregator()
 
         config_test = {'tau': 0, 'zgrads': False}
-        estimator_test = VariationalInference(mc=1, iw=opt.iw_test,
-                                              sequential_computation=opt.test_sequential_computation)
+        estimator_test = Estimator_valid(mc=1, iw=opt.iw_test,
+                                         sequential_computation=opt.test_sequential_computation)
 
         # load best model and run over the test set
         load_model(model, logdir)
