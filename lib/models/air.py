@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from torch import nn
 from torch.distributions import Bernoulli, Normal, kl_divergence
 from torch.nn import LSTMCell
+from copy import deepcopy
 
 State = namedtuple(
     'State',
@@ -15,6 +16,7 @@ class Predictor(nn.Module):
     """
     Infer presence and location from LSTM hidden state
     """
+
     def __init__(self, lstm_hidden_dim):
         nn.Module.__init__(self)
         self.seq = nn.Sequential(
@@ -22,7 +24,7 @@ class Predictor(nn.Module):
             nn.ReLU(),
             nn.Linear(200, 7),
         )
-        
+
     def forward(self, h):
         z = self.seq(h)
         z_pres_p = torch.sigmoid(z[:, :1])
@@ -30,11 +32,12 @@ class Predictor(nn.Module):
         z_where_scale = F.softplus(z[:, 4:])
         return z_pres_p, z_where_loc, z_where_scale
 
-    
+
 class AppearanceEncoder(nn.Module):
     """
     Infer object appearance latent z_what given an image crop around the object
     """
+
     def __init__(self, object_size, color_channels, encoder_hidden_dim, z_what_dim):
         super().__init__()
         object_numel = color_channels * (object_size ** 2)
@@ -54,13 +57,15 @@ class AppearanceEncoder(nn.Module):
         x = self.net(crop_flat)
         z_what_loc, z_what_scale = x.chunk(2, dim=1)
         z_what_scale = F.softplus(z_what_scale)
-        
+
         return z_what_loc, z_what_scale
-    
+
+
 class AppearanceDecoder(nn.Module):
     """
     Generate pixel representation of an object given its latent code z_what
     """
+
     def __init__(self, z_what_dim, decoder_hidden_dim,
                  object_size, color_channels, bias=-2.0):
         super().__init__()
@@ -89,14 +94,13 @@ class AIR(nn.Module):
 
     z_where_dim = 3
     z_pres_dim = 1
-    
+
     def __init__(self,
-                 img_size,
+                 xdim=tuple(),
                  object_size=28,
                  max_steps=3,
-                 color_channels=1,
-                 likelihood='original',
-                 z_what_dim=50,
+                 likelihood=Bernoulli,
+                 N=50,
                  lstm_hidden_dim=256,
                  baseline_hidden_dim=256,
                  encoder_hidden_dim=200,
@@ -105,6 +109,7 @@ class AIR(nn.Module):
                  scale_prior_std=0.2,
                  pos_prior_mean=0.0,
                  pos_prior_std=1.0,
+                 **kwargs
                  ):
         super().__init__()
 
@@ -112,10 +117,15 @@ class AIR(nn.Module):
 
         self.max_steps = max_steps
 
+        # unpacking arguments
+        color_channels, height, width = xdim
+        assert height == width
+        img_size = height
+
         self.img_size = img_size
         self.object_size = object_size
         self.color_channels = color_channels
-        self.z_what_dim = z_what_dim
+        self.z_what_dim = N
         self.lstm_hidden_dim = lstm_hidden_dim
         self.baseline_hidden_dim = baseline_hidden_dim
         self.encoder_hidden_dim = encoder_hidden_dim
@@ -142,12 +152,12 @@ class AIR(nn.Module):
 
         # Infer z_what given an image crop around the object
         self.encoder = AppearanceEncoder(object_size, color_channels,
-                                         encoder_hidden_dim, z_what_dim)
+                                         encoder_hidden_dim, N)
 
         # Generate pixel representation of an object given its z_what
-        self.decoder = AppearanceDecoder(z_what_dim, decoder_hidden_dim,
+        self.decoder = AppearanceDecoder(N, decoder_hidden_dim,
                                          object_size, color_channels)
-        
+
         # Spatial transformer (does both forward and inverse)
         self.spatial_transf = SpatialTransformer(
             (self.object_size, self.object_size),
@@ -171,7 +181,7 @@ class AIR(nn.Module):
                                  scale=self.z_what_scale_prior)
 
         # Data likelihood
-        self.likelihood = likelihood
+        self.likelihood = 'original'
 
     @staticmethod
     def _module_list_to_params(modules):
@@ -190,7 +200,7 @@ class AIR(nn.Module):
 
     def get_output_dist(self, mean):
         if self.likelihood == 'original':
-            std = torch.tensor(0.3).to(self.get_device())
+            std = torch.tensor(0.3, device=mean.device)
             dist = Normal(mean, std.expand_as(mean))
         elif self.likelihood == 'bernoulli':
             dist = Bernoulli(probs=mean)
@@ -198,8 +208,8 @@ class AIR(nn.Module):
             msg = "Unrecognized likelihood '{}'".format(self.likelihood)
             raise RuntimeError(msg)
         return dist
-        
-    def forward(self, x):
+
+    def forward(self, x, tau=0, zgrads=False, mc=1, iw=1, **kwargs):
         bs = x.size(0)
 
         # Init model state
@@ -257,7 +267,7 @@ class AIR(nn.Module):
             # It is used to zero out all time steps after the first z_pres=0.
             # The first z_pres=0 is NOT masked.
             mask_prev[:, t] = state.z_pres.squeeze()
-            
+
             # Do one inference step and save results
             result = self.inference_step(state, x)
             state = result['state']
@@ -268,13 +278,13 @@ class AIR(nn.Module):
             baseline_value[:, t] = result['baseline_value']
             z_pres_likelihood[:, t] = result['z_pres_likelihood']
 
-            qz.extend([result['qz_pres'], result['qz_where'], result['qz_what']])
+            qz.extend([result['qz_pres']])
 
             # Add KL at timestep t to baseline_target for timesteps 0 to t
             # At the end of the loop: baseline_target[t] = sum_{i=t}^T KL[i]
             for j in range(t + 1):
                 baseline_target[:, j] += result['kl']
-                
+
             # Decode z_what to object appearance
             sprite = self.decoder(state.z_what)
 
@@ -291,14 +301,14 @@ class AIR(nn.Module):
             # Save z_where to visualize bounding boxes
             all_z_where[:, t] = state.z_where  # shape (B, 3)
 
-            z.extend([state.z_pres, state.z_where, state.z_what])
+            z.extend([state.z_pres])
 
         # Clip canvas to [0, 1] (lose gradient where overlap)
         if self.likelihood == 'bernoulli':
             canvas = canvas.clamp(min=0., max=1.)
 
         # Inferred number of objects in each image
-        inferred_n = mask_curr.sum(1)   # shape (B,)
+        inferred_n = mask_curr.sum(1)  # shape (B,)
 
         # Output distribution p(x | z)
         output_dist = self.get_output_dist(canvas)
@@ -355,18 +365,17 @@ class AIR(nn.Module):
 
         return data
 
-
-    def inference_step(self, prev, x):
+    def inference_step(self, prev, x, tau=0, zgrads=False):
         """
         Given previous (or initial) state and input image, predict the next
         inference step (next object).
         """
 
         bs = x.size(0)
-        
+
         # Flatten the image
         x_flat = x.view(bs, -1)
-        
+
         # Feed (x, z_{<t}) through the LSTM cell, get encoding h
         lstm_input = torch.cat(
             (x_flat, prev.z_where, prev.z_what, prev.z_pres), dim=1)
@@ -374,41 +383,44 @@ class AIR(nn.Module):
 
         # Predictor presence and location from h
         z_pres_p, z_where_loc, z_where_scale = self.predictor(h)
-        
+
         # If previous z_pres is 0, force z_pres to 0
         z_pres_p = z_pres_p * prev.z_pres
-        
+
         # Numerical stability
         eps = 1e-12
-        z_pres_p = z_pres_p.clamp(min=eps, max=1.0-eps)
+        z_pres_p = z_pres_p.clamp(min=eps, max=1.0 - eps)
 
         # sample z_pres
-        z_pres_post = Bernoulli(z_pres_p)
-        z_pres = z_pres_post.sample()
+        qz_pres = Bernoulli(z_pres_p)
+        z_pres = qz_pres.sample()
 
         # If previous z_pres is 0, then this z_pres should also be 0.
         # However, this is sampled from a Bernoulli whose probability is at
         # least eps. In the unlucky event that the sample is 1, we force this
         # to 0 as well.
         z_pres = z_pres * prev.z_pres
-        
+
         # Likelihood: log q(z_pres[i] | x, z_{<i}) (if z_pres[i-1]=1, else 0)
         # Mask with prev.z_pres instead of z_pres, i.e. if already at the
         # previous step there was no object.
-        z_pres_likelihood = z_pres_post.log_prob(z_pres) * prev.z_pres
+        z_pres_likelihood = qz_pres.log_prob(z_pres) * prev.z_pres
         z_pres_likelihood = z_pres_likelihood.squeeze()  # shape (B,)
 
+        # TODO: do that properly
+        qz_pres = Bernoulli(z_pres_p.detach()) # detach logits for the KL computation so gradients only come from the reinforce term
+
         # Sample z_where
-        z_where_post = Normal(z_where_loc, z_where_scale)
-        z_where = z_where_post.rsample()
-        
+        qz_where = Normal(z_where_loc, z_where_scale)
+        z_where = qz_where.rsample()
+
         # Get object from image - shape (B, 1, Hobj, Wobj)
         obj = self.spatial_transf.inverse(x, z_where)
-        
+
         # Predictor z_what
         z_what_loc, z_what_scale = self.encoder(obj)
-        z_what_post = Normal(z_what_loc, z_what_scale)
-        z_what = z_what_post.rsample()
+        qz_what = Normal(z_what_loc, z_what_scale)
+        z_what = qz_what.rsample()
 
         # Compute baseline for this z_pres:
         # b_i(z_{<i}) depending on previous step latent variables only.
@@ -418,17 +430,17 @@ class AIR(nn.Module):
         # The baseline is not used if z_pres[t-1] is 0 (object not present in
         # the previous step). Mask it out to be on the safe side.
         baseline_value = baseline_value * prev.z_pres.squeeze()
-        
+
         # KL for the current step, sum over data dimension: shape (B,)
         kl_pres = kl_divergence(
-            z_pres_post,
-            self.pres_prior.expand(z_pres_post.batch_shape)).sum(1)
+            qz_pres,
+            self.pres_prior.expand(qz_pres.batch_shape)).sum(1)
         kl_where = kl_divergence(
-            z_where_post,
-            self.where_prior.expand(z_where_post.batch_shape)).sum(1)
+            qz_where,
+            self.where_prior.expand(qz_where.batch_shape)).sum(1)
         kl_what = kl_divergence(
-            z_what_post,
-            self.what_prior.expand(z_what_post.batch_shape)).sum(1)
+            qz_what,
+            self.what_prior.expand(qz_what.batch_shape)).sum(1)
 
         # When z_pres[i] is 0, zwhere and zwhat are not used -> set KL=0
         kl_where = kl_where * z_pres.squeeze()
@@ -436,7 +448,7 @@ class AIR(nn.Module):
 
         # When z_pres[i-1] is 0, zpres is not used -> set KL=0
         kl_pres = kl_pres * prev.z_pres.squeeze()
-        
+
         kl = (kl_pres + kl_where + kl_what)
 
         # New state
@@ -448,7 +460,7 @@ class AIR(nn.Module):
             c=c,
             bl_c=bl_c,
             bl_h=bl_h,
-            )
+        )
 
         out = {
             'state': new_state,
@@ -458,20 +470,21 @@ class AIR(nn.Module):
             'kl_what': kl_what,
             'baseline_value': baseline_value,
             'z_pres_likelihood': z_pres_likelihood,
-            'qz_where': z_where_post,
-            'qz_what': z_what_post,
-            'qz_pres': z_pres_post,
+            'qz_where': qz_where,
+            'qz_what': qz_what,
+            'qz_pres': qz_pres,
         }
         return out
 
+    def sample_prior(self, n_imgs, prior_prob=None, **kwargs):
 
-    def sample_prior(self, n_imgs, **kwargs):
-
+        pres_prior = self.pres_prior if prior_prob is None else Bernoulli(
+            probs=torch.tensor(prior_prob, device=self.z_pres_prob_prior.device))
         # Sample from prior. Shapes:
         # z_pres:  (B, T)
         # z_what:  (B, T, z_what_dim)
         # z_where: (B, T, 3)
-        z_pres = self.pres_prior.sample((n_imgs, self.max_steps))
+        z_pres = pres_prior.sample((n_imgs, self.max_steps))
         z_what = self.what_prior.sample((n_imgs, self.max_steps, self.z_what_dim))
         z_where = self.where_prior.sample((n_imgs, self.max_steps))
 
@@ -486,7 +499,7 @@ class AIR(nn.Module):
         # If z_pres is sampled from the prior, make sure there are no ones
         # after a zero.
         for t in range(1, self.max_steps):
-            z_pres[:, t] *= z_pres[:, t-1]  # if previous=0, this is also 0
+            z_pres[:, t] *= z_pres[:, t - 1]  # if previous=0, this is also 0
 
         n_obj = z_pres.sum(1)
 
@@ -507,6 +520,24 @@ class AIR(nn.Module):
         canvas = canvas.sum(1)
 
         return canvas, z_where, n_obj
+
+    def sample_from_prior(self, N, **kwargs):
+
+        canvas, *_ = self.sample_prior(N, prior_prob=0.5, **kwargs)
+
+        # px = self.get_output_dist(canvas)
+
+        class DummyDist():
+            def __init__(self, canvas):
+                self.canvas = canvas
+
+            def sample(self):
+                return self.canvas
+
+        print(">>> prior sample")
+        px = DummyDist(canvas)
+
+        return {'px': px}
 
 
 class SpatialTransformer:
@@ -559,6 +590,7 @@ def spatial_transformer(x, z_where, out_shape):
     out = F.grid_sample(x, grid, align_corners=False)
     return out
 
+
 def expand_z_where(z_where):
     """
     :param z_where: batch. [s, x, y]
@@ -575,12 +607,14 @@ def expand_z_where(z_where):
 
     return matrix
 
+
 def invert_z_where(z_where):
     z_where_inv = torch.zeros_like(z_where)
-    scale = z_where[:, 0:1]   # (batch, 1)
-    z_where_inv[:, 1:3] = -z_where[:, 1:3] / scale   # (batch, 2)
-    z_where_inv[:, 0:1] = 1 / scale    # (batch, 1)
+    scale = z_where[:, 0:1]  # (batch, 1)
+    z_where_inv[:, 1:3] = -z_where[:, 1:3] / scale  # (batch, 2)
+    z_where_inv[:, 0:1] = 1 / scale  # (batch, 1)
     return z_where_inv
+
 
 def nograd_param(x):
     """

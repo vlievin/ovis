@@ -1,0 +1,16 @@
+{
+  "description": "compare VIMCO and Covbaseline using different number of IW samples and using different averaging (arithmetic vs geometric)",
+  "args": [
+    "--estimator air-copt",
+    "--estimator air-vimco",
+    "--estimator air-vimco-alpha0",
+    "--estimator air-ww"
+  ],
+  "global": "--silent --deterministic --epochs 1000 --lr_reduce_steps 4 --bs 64 --lr 1e-4 --iw_valid 100 --iw_test 1000 --grad_samples 0 --eval_freq 5",
+  "parameters": {
+    "iw" : [100, 50, 20, 10, 5],
+    "seed": [13, 64, 47],
+    "dataset": ["air"]
+  }
+
+}

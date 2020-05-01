@@ -29,9 +29,9 @@ class PyroMultiMNIST(Dataset):
 
         x, y = torch.from_numpy(x).float(), torch.from_numpy(y).float()
         x = x[None]
-        y = {'n_obj': y}  # label dict: compatible with multiobject dataloader
+        # y = {'n_obj': y}  # label dict: compatible with multiobject dataloader
 
-        return x, y
+        return x
 
     def __len__(self):
         return len(self.x)

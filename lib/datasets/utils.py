@@ -51,8 +51,10 @@ def get_datasets(opt):
     elif "fashion" in opt.dataset:
         output = get_fashion_datasets(opt.data_root, transform=transform, binarize=True)
     elif "air" in opt.dataset:
-        output = PyroMultiMNIST(opt.data_root, train=True), PyroMultiMNIST(opt.data_root, train=False), PyroMultiMNIST(
-            opt.data_root, train=False)
+        path = 'lib/datasets/raw_data/multi_mnist_pyro.npz'
+        train_dset = PyroMultiMNIST(path, train=True)
+        test_dset = PyroMultiMNIST(path, train=False)
+        output = train_dset, test_dset, test_dset
     else:
         raise ValueError(f"Unknown data: {opt.dataset}")
 
