@@ -1,4 +1,3 @@
-from .copt import OptCovReinforce
 from .reinforce import Reinforce, Vimco, VimcoPlus
 from .relax import Relax
 from .tvo import ThermoVariationalObjective

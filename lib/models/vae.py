@@ -125,7 +125,6 @@ class BaseVAE(Template):
 
         # we need this here so qz has the attribute .logits as `qlogits_expanded`
         # this easier for evaluation, at least for now.
-        # todo: refactor to do the expansion in the sample() method
         if mc > 1 or iw > 1:
             bs, *dims = qlogits.shape
             qlogits_expanded = qlogits[:, None, None, :].expand(x.size(0), mc, iw, *dims).contiguous()

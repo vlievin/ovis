@@ -7,11 +7,12 @@ from torch.nn.functional import gumbel_softmax, log_softmax
 
 
 class BaseDistribution(Distribution):
-    """A base class for the distribution used in the project.
-    The rest of the framework relies on the """
+    """A base class wrapper of torch.Distributions that takes a single tensor `logits` as parameter"""
 
-    def __init__(self, logits: Tensor):
+    def __init__(self, logits: Tensor, tau: float = 0, dim: int = -1):
         self.logits = logits
+        self.tau = tau
+        self.dim = dim
 
     def sample(self):
         raise NotImplementedError
@@ -27,9 +28,7 @@ class PseudoCategorical(BaseDistribution):
 
     def __init__(self, logits: Tensor, tau: float = 0, dim: int = -1):
         logits = logits - logits.logsumexp(dim=dim, keepdim=True)
-        super().__init__(logits)
-        self.dim = dim
-        self.tau = tau
+        super().__init__(logits, tau=tau, dim=dim)
 
     def rsample(self):
 
@@ -59,6 +58,7 @@ class PseudoBernoulli(Bernoulli):
         super().__init__(logits=logits)
         assert tau == 0, 'Not implemented for tau > 0'
         self.tau = tau
+        self.dim = dim
 
     def rsample(self, **kwargs):
         return super().sample(**kwargs)
@@ -67,8 +67,7 @@ class PseudoBernoulli(Bernoulli):
 class NormalFromLogits(BaseDistribution):
     def __init__(self, logits: Tensor, dim: int = -1, **kwargs: Any):
         """hacking the Normal class so we can easily compute d p.log_prob(z) / d logits"""
-        super().__init__(logits)
-        self.dim = dim
+        super().__init__(logits, dim=dim, **kwargs)
 
     @property
     def _params(self):
@@ -106,9 +105,8 @@ class NormalFromLoc(NormalFromLogits):
     def _torch_normal(self):
         return Normal(loc=self.logits, scale=self.scale)
 
-    
-class FakeToyDist(Distribution):
 
+class FakeToyDist(Distribution):
     """ Fake probability distribution used for Toy example (run_bernoulli_toy.py)
         Usable with various estimators such that score function is MSE. """
 
@@ -119,8 +117,8 @@ class FakeToyDist(Distribution):
 
     def log_prob(self, target):
         if self.training:
-            target = target[0] # Workaround for _expand_sample in base Estimator class
-        MSE = (self.b-target)**2 # log score ( log f_b )
+            target = target[0]  # Workaround for _expand_sample in base Estimator class
+        MSE = (self.b - target) ** 2  # log score ( log f_b )
         return MSE
 
     def rsample(self):
