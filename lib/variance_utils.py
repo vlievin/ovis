@@ -182,7 +182,7 @@ def plot_gradients_distribution(grads, logdir):
                                  figsize=(PLOT_WIDTH * ncols, PLOT_HEIGHT * nrows), sharex='col')
     else:
         fig, axes = plt.subplots(nrows=1, ncols=nrows,
-                                 figsize=(PLOT_WIDTH * nrows, PLOT_HEIGHT * 1), sharex='row', sharey='row')
+                                 figsize=(PLOT_WIDTH * nrows, PLOT_HEIGHT * 1), sharex=False, sharey='row')
 
     for j, noise in enumerate(noises):
         grads_p = grads[grads["noise"] == noise]
