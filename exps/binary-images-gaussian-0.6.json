@@ -1,0 +1,29 @@
+{
+  "description": "Comparing c_opt vs. Vimco using a basic MLP VAE on 3 binary images datasets using a Gaussian prior.",
+  "args": [
+    "--estimator pathwise-iwae",
+    "--estimator vimco",
+    "--estimator copt",
+    "--estimator copt-uniform",
+    "--estimator copt-ess",
+    "--estimator vimco-alpha0",
+    "--estimator tvo",
+    "--estimator wake-wake",
+    "--estimator wake-sleep"
+  ],
+  "global": "--silent --deterministic --nsteps 300000 --lr_reduce_steps 0 --model vae --hdim 256 --N 32 --K 8 --eval_freq 20 --only_train_set --lr 1e-3 --prior normal",
+  "parameters": {
+    "iw" : [10, 30, 100, 200],
+    "seed":[47, 45, 32],
+    "dataset" : ["binmnist", "omniglot", "fashion"],
+    "grad_samples" : [1000],
+    "iw_valid" : [1000],
+    "iw_test" : [5000],
+    "eval_freq": [25],
+    "batch_grads" : [true],
+    "bs": [100],
+    "valid_bs": [10],
+    "test_bs": [5],
+    "grad_bs": [20]
+  }
+}
