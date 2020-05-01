@@ -116,6 +116,9 @@ class ThermoVariationalObjective(VariationalInference):
         # compute covariance gradient estimator (eq. 11 / appendix F)
         tvo = torch.sum(multiplier * (cov_term + torch.sum(w_detached * log_wk.unsqueeze(-1), dim=2)), dim=2)
 
+        for k in ['log_px_z', 'log_pz', 'log_qz']:
+            iw_data.pop(k)
+
         return {'tvo': tvo, **iw_data}
 
     def forward(self, model: nn.Module, x: Tensor, backward: bool = False, partition: int = 21,

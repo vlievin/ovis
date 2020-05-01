@@ -1,5 +1,3 @@
-from copy import copy
-
 from torch import softmax
 
 from .vi import *
@@ -101,11 +99,6 @@ class Reinforce(VariationalInference):
         # final loss
         loss = - L_k - reinforce_loss + self.control_variate_loss_weight * control_variate_l1
 
-        # update output with meta data
-        estimator_outptut = copy(output)
-        estimator_outptut.update(**score_meta)
-        estimator_outptut.update(**control_variate_meta)
-
         # compute dlogits
         if debug:
             estimator_outptut['dqlogits'] = self._compute_dlogits(output)
@@ -133,7 +126,9 @@ class Reinforce(VariationalInference):
         if backward:
             loss.mean().backward()
 
-        return loss, diagnostics, estimator_outptut
+        output.update(**score_meta)
+        output.update(**control_variate_meta)
+        return loss, diagnostics, output
 
     def _compute_dlogits(self, output):
 
@@ -315,11 +310,27 @@ class VimcoPlus(Reinforce):
             log_gamma = self.log_1_m_uniform - torch.log1p(- v_k_safe)
             # c_k = log Z-k - 1_{k = argmax w_k}
             # log Z - c_k - v_k = log (1 - 1/K) - log(1 - v_k) + 1_{k = argmax w_k} (1+logK) - v_k
-            prefactor_k = log_gamma - mask * (-1 - self.log_iw) - alpha * v_k
+            _prefactor_k = log_gamma - mask * (-1 - self.log_iw) - alpha * v_k
 
             # use the low ESS estimate when ess \approx 1
             ess = ess[:, :, None].expand(-1, self.mc, self.iw)
-            prefactor_k = torch.where(ess < 1.05, prefactor_k, prefactor_k)
+            prefactor_k = torch.where(ess < 1.05, _prefactor_k, prefactor_k)
+
+            # # mask = 1_{k = argmax w_k}
+            # log_wk = log_wk.view(bs, self.mc, self.iw)
+            # _topk, idx = log_wk.topk(k=2, dim=2)
+            # _max = _topk[:, :, 0][..., None]
+            # _second_max = _topk[:, :, 1][..., None]
+            # mask = (log_wk == _max).float()
+            #
+            # # c_k = log Z-k - 1_{k = argmax w_k}
+            # # log Z - c_k - v_k = log (1 - 1/K) - log(1 - v_k) + 1_{k = argmax w_k} (1+logK) - v_k
+            # prefactor_k_ = (1 - mask) * prefactor_k + mask * (
+            #             L_k[:, :, None] - _second_max + (1 + self.log_iw) - alpha * v_k)
+            #
+            # # use the low ESS estimate when ess \approx 1
+            # ess = ess[:, :, None].expand(-1, self.mc, self.iw)
+            # prefactor_k = torch.where(ess < 1.05, prefactor_k_, prefactor_k)
 
         # compute loss: - \sum_k (log_Z - v_k - c_k) h_k
         reinforce_loss = - torch.sum(prefactor_k[..., None].detach() * log_qz, dim=(2, 3))  # sum over IW and Nz

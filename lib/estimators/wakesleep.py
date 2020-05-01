@@ -1,5 +1,3 @@
-from booster import Diagnostic
-
 from .reinforce import *
 
 
@@ -16,7 +14,7 @@ class BaseWakeSleep(Reinforce):
             z = data['z']
 
         # compute log q(z | x)
-        qz, meta = model.infer(x, tau=0, mc=1, iw=1)
+        qz, meta = model.infer(x, tau=0)
         return - batch_reduce(qz.log_prob(z)), meta
 
     def get_wake_theta_loss(self, iw_data):
@@ -35,31 +33,21 @@ class BaseWakeSleep(Reinforce):
 
     def forward(self, model: nn.Module, x: Tensor, backward: bool = False, **kwargs: Any) -> Tuple[Tensor, Dict, Dict]:
         bs = x.size(0)
-        x_target = self._expand_sample(x)
-        output = self.evaluate_model(model, x, x_target, mc=self.mc, iw=self.iw, **kwargs)
+        output = self.evaluate_model(model, x, **kwargs)
         log_px_z, log_pz, log_qz = [output[k] for k in ('log_px_z', 'log_pz', 'log_qz')]
         iw_data = self.compute_iw_bound(log_px_z, log_pz, log_qz, detach_qlogits=True)
-        L_k, kl, N_eff, log_wk = [iw_data[k] for k in ('L_k', 'kl', 'N_eff', 'log_wk')]
 
         # concatenate all q(z_l| *, x)
         log_qz = torch.cat(log_qz, 1).view(bs, self.mc, self.iw, -1).sum(-1)
 
         # compute loss
         loss, model_meta = self.get_loss(model, log_qz, iw_data)
-        output.update(**model_meta)
-
-        # MC averaging
-        L_k = L_k.mean(1)
-        loss = loss.mean(1)
 
         # prepare diagnostics
         diagnostics = Diagnostic({
             'loss': {
                 'loss': loss,
-                'elbo': L_k,
-                'nll': - self._reduce_sample(log_px_z),
-                'kl': self._reduce_sample(kl),
-                'r_eff': N_eff / self.iw
+                **self._loss_diagnostics(**iw_data, **output)
             },
         })
 
@@ -68,6 +56,7 @@ class BaseWakeSleep(Reinforce):
         if backward:
             loss.mean().backward()
 
+        output.update(**model_meta)
         return loss, diagnostics, output
 
 
@@ -76,10 +65,12 @@ class WakeSleep(BaseWakeSleep):
         bs = log_qz.size(0)
         phi_loss, meta = self.get_sleep_phi_loss(model, bs)
         theta_loss = self.get_wake_theta_loss(iw_data)
-        return theta_loss + phi_loss, meta
+        loss = (theta_loss + phi_loss).mean(1)
+        return loss, meta
 
 
 class WakeWake(BaseWakeSleep):
 
     def get_loss(self, model, log_qz, iw_data):
-        return self.get_wake_theta_loss(iw_data) + self.get_wake_phi_loss(log_qz, iw_data), dict()
+        loss = (self.get_wake_theta_loss(iw_data) + self.get_wake_phi_loss(log_qz, iw_data)).mean(1)
+        return loss, dict()
