@@ -77,8 +77,8 @@ if __name__ == '__main__':
     # gradients analysis
     parser.add_argument('--grad_samples', default=100, type=int,
                         help='number of samples used to evaluate the variance.')
-    parser.add_argument('--batch_grads', action='store_true',
-                        help='Compute expected gradients over mini-batch instead of grads for single datapoints.')
+    parser.add_argument('--individual_grads', action='store_true',
+                        help='Compute expected gradients for single datapoints instead of over the mini-batch.')
     parser.add_argument('--counterfactuals', default='',
                         help='comma separated list of estimators for which the gradients will be evaluated without being used for optimization.'
                              'example: `reinforce, covbaseline-arithmetic`')
@@ -372,7 +372,7 @@ if __name__ == '__main__':
                     # estimate the variance of the gradients
                     grad_args = {'seed': opt.seed, 'batch_size': opt.bs * opt.mc * opt.iw,
                                  'n_samples': opt.grad_samples,
-                                 'key_filter': 'tensor:qlogits', 'use_batch_grads': opt.batch_grads, 'use_dsnr': True}
+                                 'key_filter': 'tensor:qlogits', 'use_individual_grads': opt.individual_grads, 'use_dsnr': True}
 
                     # compute oracle gradients (the true gradients direction)
                     if estimator_oracle is not None:

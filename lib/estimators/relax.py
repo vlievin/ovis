@@ -1,5 +1,10 @@
-from .vi import *
+from torch import softmax
+
 from .base import _EPS
+from .vi import *
+from ..distributions import *
+from ..models import Baseline
+from ..models import VAE
 
 
 class Lax(VariationalInference):

@@ -128,8 +128,7 @@ class ThermoVariationalObjective(VariationalInference):
             # warning: here only one `output` will be returned
             output = self._sequential_evaluation(model, x, **kwargs)
         else:
-            x_target = self._expand_sample(x)
-            output = self.evaluate_model(model, x, x_target, mc=self.mc, iw=self.iw, **kwargs)
+            output = self.evaluate_model(model, x, **kwargs)
 
         log_px_z, log_pz, log_qz = [output[k] for k in ('log_px_z', 'log_pz', 'log_qz')]
         tvo_data = self.compute_loss(log_px_z, log_pz, log_qz, partition=partition, integration=integration)

@@ -66,8 +66,8 @@ class GaussianMixture(BaseVAE):
 
         return logits
 
-    def forward(self, x, tau=0, zgrads=False, mc=1, iw=1, **kwargs):
-        qz, meta = self.infer(x, tau=tau, mc=mc, iw=iw)
+    def forward(self, x, tau=0, zgrads=False, **kwargs):
+        qz, meta = self.infer(x, tau=tau)
 
         z = qz.rsample()
 

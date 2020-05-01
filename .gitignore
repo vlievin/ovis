@@ -140,7 +140,7 @@ trend.py
 
 *.ipynb
 
-exps/alpha-eta-0.1.json
+exps/ess.json
 
 gaussian-star.png
 /exps/check-tvo.json

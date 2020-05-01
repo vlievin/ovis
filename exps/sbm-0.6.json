@@ -25,7 +25,6 @@
     "iw_valid" : [1000],
     "iw_test" : [5000],
     "eval_freq": [10],
-    "batch_grads" : [true],
     "bs": [64],
     "lr": [3e-4],
     "valid_bs": [10],

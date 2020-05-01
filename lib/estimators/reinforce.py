@@ -75,9 +75,7 @@ class Reinforce(VariationalInference):
         Tensor, Dict, Dict]:
 
         bs = x.size(0)
-
-        x_target = self._expand_sample(x)
-        output = self.evaluate_model(model, x, x_target, mc=self.mc, iw=self.iw, **kwargs)
+        output = self.evaluate_model(model, x, **kwargs)
         log_px_z, log_pz, log_qz = [output[k] for k in ('log_px_z', 'log_pz', 'log_qz')]
         iw_data = self.compute_iw_bound(log_px_z, log_pz, log_qz, detach_qlogits=self.factorize_v, beta=beta)
         L_k, kl, N_eff = [iw_data[k] for k in ('L_k', 'kl', 'N_eff')]
@@ -275,8 +273,7 @@ class VimcoPlus(Reinforce):
                 **kwargs: Any) -> Tuple[Tensor, Dict, Dict]:
 
         bs = x.size(0)
-        x_target = self._expand_sample(x)
-        output = self.evaluate_model(model, x, x_target, mc=self.mc, iw=self.iw, **kwargs)
+        output = self.evaluate_model(model, x, **kwargs)
         log_px_z, log_pz, log_qz = [output[k] for k in ('log_px_z', 'log_pz', 'log_qz')]
         iw_data = self.compute_iw_bound(log_px_z, log_pz, log_qz, detach_qlogits=True, beta=beta)
         L_k, kl, N_eff, log_wk = [iw_data[k] for k in ('L_k', 'kl', 'N_eff', 'log_wk')]

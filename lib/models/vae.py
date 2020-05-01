@@ -110,48 +110,33 @@ class BaseVAE(Template):
 
         return logits
 
-    def infer(self, x, tau=0, mc=1, iw=1):
+    def infer(self, x, tau=0):
         """
         infer the approximate posterior q(z|x)
 
         :param x: observation
         :param tau: temperature parameter when using relaxation-based methods (e.g. Gumbel-Softmax)
-        :param mc: number of Monte-Carlo samples
-        :param iw: number of Importance-Weighted samples
         :return: posterior distribution, meta data that will be passed in the output
         """
 
         qlogits = self.get_logits(x)
-
-        # we need this here so qz has the attribute .logits as `qlogits_expanded`
-        # this easier for evaluation, at least for now.
-        if mc > 1 or iw > 1:
-            bs, *dims = qlogits.shape
-            qlogits_expanded = qlogits[:, None, None, :].expand(x.size(0), mc, iw, *dims).contiguous()
-            qlogits_expanded = qlogits_expanded.view(-1, *dims)
-
-        else:
-            qlogits_expanded = qlogits
-
-        qz = self.prior_dist(logits=qlogits_expanded, tau=tau)
+        qz = self.prior_dist(logits=qlogits, tau=tau)
         meta = {'qlogits': [qlogits]}
 
         return qz, meta
 
-    def forward(self, x, tau=0, zgrads=False, mc=1, iw=1, **kwargs):
+    def forward(self, x, tau=0, zgrads=False, **kwargs):
         """
         Compute the posterior q(z|x), sample z~q(z|x) and compute p(x|z).
 
         :param x: observation
         :param tau: temperature parameter when using relaxation-based methods (e.g. Gumbel-Softmax)
         :param zgrads: allow gradients through the sample z (reparametrization trick)
-        :param mc: number of Monte-Carlo samples
-        :param iw: number of importance weighted samples
         :param kwargs: additional keyword arguments
         :return: {'px' p(x|z), 'z': latent samples, 'qz': q(z|x), 'pz': p(z), ** additional data}:
         """
 
-        qz, meta = self.infer(x, tau=tau, mc=mc, iw=iw)
+        qz, meta = self.infer(x, tau=tau)
 
         z = qz.rsample()
 

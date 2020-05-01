@@ -56,8 +56,8 @@ parser.add_argument('--batch_size', default=80000, type=int,
                     help='number of samples per batch size used during evaluation')
 parser.add_argument('--grads_dist', action='store_true', help='plot distributions of gradients for each parameter')
 parser.add_argument('--use_all_params', action='store_true', help='look a the aggregated dist of grads')
-parser.add_argument('--batch_grads', action='store_true',
-                    help='analyse batch gradients instead of the gradients for each individual x')
+parser.add_argument('--individual_grads', action='store_true',
+                    help='analyse gradients for each data-point separately instead of the mini-batch gradients')
 parser.add_argument('--draw_individual', action='store_true', help='draw statistics independently for each parameter')
 
 # dataset
@@ -79,8 +79,8 @@ if opt.silent:
 run_id = f"toy-{opt.estimators}-iw{opt.iw_min}-{opt.iw_max}-{opt.iw_steps}-oracle={opt.oracle}-seed{opt.seed}-noise{opt.noise}-mc{opt.mc_samples}-key{opt.key_filter}-pts{opt.npoints}-D{opt.D}"
 if opt.id != "":
     run_id += f"-{opt.id}"
-if opt.batch_grads:
-    run_id += f"-batch_grads"
+if opt.individual_grads:
+    run_id += f"-individual_grads"
 if opt.use_all_params:
     run_id += f"-allp"
 _exp_id = f"toy-{opt.exp}-{opt.seed}"
@@ -137,7 +137,10 @@ try:
     data = []
     grads = []
     noises = [eval(x) for x in opt.noise.split(",")]
-    global_grad_args = {'seed': opt.seed, 'batch_size': opt.batch_size, 'key_filter': opt.key_filter}
+    global_grad_args = {'seed': opt.seed,
+                        'batch_size': opt.batch_size,
+                        'key_filter': opt.key_filter,
+                        'use_individual_grads': opt.individual_grads}
     for noise in noises:
         print(_sep)
         base_logger.info(f">> Noise = {noise}")
@@ -176,7 +179,6 @@ try:
 
                 # evalute variance of the gradients
                 analysis_data, grads_meta = get_batch_gradients_statistics(estimator, model, x,
-                                                                           use_batch_grads=opt.batch_grads,
                                                                            return_grads=opt.grads_dist,
                                                                            use_dsnr=True, **grad_args, **config)
 

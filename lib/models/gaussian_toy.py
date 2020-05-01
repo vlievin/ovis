@@ -30,7 +30,7 @@ class GaussianToyVAE(Template):
     def generate(self, z):
         return self.likelihood(logits=z)
 
-    def infer(self, x, tau=0, mc=1, iw=1):
+    def infer(self, x, tau=0):
         # retain grads in `b` instead of the qlogits for the gradients analysis
         b = self.b[None, :].expand(x.size(0), self.b.shape[0])
         b.retain_grad()
@@ -38,22 +38,14 @@ class GaussianToyVAE(Template):
         qlogits = x @ self.A + b
         qlogits.retain_grad()
 
-        if mc > 1 or iw > 1:
-            bs, *dims = qlogits.shape
-            qlogits_expanded = qlogits[:, None, None, :].expand(x.size(0), mc, iw, *dims).contiguous()
-            qlogits_expanded = qlogits_expanded.view(-1, *dims)
-
-        else:
-            qlogits_expanded = qlogits
-
-        qz = self.prior_dist(logits=qlogits_expanded, scale=self.q_scale)
+        qz = self.prior_dist(logits=qlogits, scale=self.q_scale)
         meta = {'qlogits': [qlogits], 'b': [b]}
 
         return qz, meta
 
-    def forward(self, x, tau=0, zgrads=False, mc=1, iw=1, **kwargs):
+    def forward(self, x, tau=0, zgrads=False, **kwargs):
 
-        qz, meta = self.infer(x, tau=tau, mc=mc, iw=iw)
+        qz, meta = self.infer(x, tau=tau)
         z = qz.rsample()
 
         if not zgrads:

@@ -110,13 +110,17 @@ class VariationalInference(Estimator):
 
         return N_eff
 
-    def evaluate_model(self, model: nn.Module, x: Tensor, x_target: Tensor, **kwargs: Any) -> Dict[str, Tensor]:
+    def evaluate_model(self, model: nn.Module, x: Tensor, **kwargs: Any) -> Dict[str, Tensor]:
+
+        # expand x as shape [bs * mc * iw]
+        x_expanded = self._expand_sample(x)
+
         # forward pass
-        output = model(x, **kwargs)
+        output = model(x_expanded, **kwargs)
         px, z, qz, pz = [output[k] for k in ['px', 'z', 'qz', 'pz']]
 
         # compute log p(x|z), log p(z) and log q(z | x)
-        log_px_z = batch_reduce(px.log_prob(x_target))
+        log_px_z = batch_reduce(px.log_prob(x_expanded))
         log_pz = [pz_l.log_prob(z_l) for pz_l, z_l in zip(pz, z)]
         log_qz = [qz_l.log_prob(z_l) for qz_l, z_l in zip(qz, z)]
 
@@ -128,10 +132,10 @@ class VariationalInference(Estimator):
         log_px_zs = []
         log_pzs = []
         log_qzs = []
-        x_target = x[:, None].repeat(1, self.mc, *(1 for _ in dims)).view(-1, *dims)
+        x_expanded_mc = x[:, None].repeat(1, self.mc, *(1 for _ in dims)).view(-1, *dims)
         for i in range(self.iw):
             # evaluate batch
-            output = self.evaluate_model(model, x, x_target, mc=self.mc, iw=1, **kwargs)
+            output = self.evaluate_model(model, x, x_expanded_mc, **kwargs)
             log_px_z, log_pz, log_qz = [output[k] for k in ('log_px_z', 'log_pz', 'log_qz')]
 
             log_px_zs += [log_px_z]
@@ -163,8 +167,7 @@ class VariationalInference(Estimator):
             # warning: here only one `output` will be returned
             output = self._sequential_evaluation(model, x, **kwargs)
         else:
-            x_target = self._expand_sample(x)
-            output = self.evaluate_model(model, x, x_target, mc=self.mc, iw=self.iw, **kwargs)
+            output = self.evaluate_model(model, x, **kwargs)
 
         log_px_z, log_pz, log_qz = [output[k] for k in ('log_px_z', 'log_pz', 'log_qz')]
         iw_data = self.compute_iw_bound(log_px_z, log_pz, log_qz, beta=beta)
@@ -242,8 +245,7 @@ class SafeVariationalInference(VariationalInference):
     def forward(self, model: nn.Module, x: Tensor, backward: bool = False, **kwargs: Any) -> Tuple[
         Tensor, Dict, Dict]:
         bs = x.size(0)
-        x_target = self._expand_sample(x)
-        output = self.evaluate_model(model, x, x_target, mc=self.mc, iw=self.iw, **kwargs)
+        output = self.evaluate_model(model, x, **kwargs)
         log_px_z, log_pz, log_qz = [output[k] for k in ('log_px_z', 'log_pz', 'log_qz')]
 
         assert len(log_pz) == 1

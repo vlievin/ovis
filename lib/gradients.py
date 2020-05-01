@@ -68,7 +68,7 @@ class Variance():
         return (self.Ex2 - (self.Ex * self.Ex) / self.n) / (self.n - 1)
 
 
-def get_grads_from_tensor(model, loss, output, tensor_id):
+def get_grads_from_tensor(model, loss, output, tensor_id, mc, iw):
     assert tensor_id in output.keys(), f"Tensor_id = `{tensor_id}` not in model's output"
 
     model.zero_grad()
@@ -76,13 +76,17 @@ def get_grads_from_tensor(model, loss, output, tensor_id):
 
     # get the tensor of interest
     tensors = output[tensor_id] if isinstance(output[tensor_id], list) else output[tensor_id]
-    bs = tensors[0].shape[0]
+    bs = tensors[0].shape[0] // (mc * iw)
+
     # get the gradients, flatten and concat across the feature dimension
     gradients = [p.grad for p in tensors]
     assert not any(
         [g is None for g in gradients]), f"{sum([int(g is None) for g in gradients])} tensors have no gradients." \
                                          f"Use `tensor.retain_graph()` in your model to enable gradients."
-    gradients = torch.cat([g.view(bs, -1) for g in gradients], 1)
+
+    # compute gradients estimate for each individual grads
+    # sum individual gradients because x_expanded = x.expand(bs, mc, iw)
+    gradients = torch.cat([g.view(bs, mc * iw, -1).sum(1) for g in gradients], 1)
 
     # return each individual gradient
     for grads in gradients:
@@ -158,7 +162,7 @@ def get_individual_gradients_statistics(estimator, model, x, batch_size=32, n_sa
                 # gather individual gradients
                 if 'tensor:' in key_filter:
                     tensor_id = key_filter.replace("tensor:", "")
-                    gradients = get_grads_from_tensor(model, loss, output, tensor_id)
+                    gradients = get_grads_from_tensor(model, loss, output, tensor_id, estimator.mc, estimator.iw)
                 else:
                     gradients = get_grads_from_parameters(model, loss, key_filter=key_filter)
 
@@ -269,7 +273,7 @@ def get_individual_gradients_statistics(estimator, model, x, batch_size=32, n_sa
 """Version for gradients averaged over an entire batch"""
 
 
-def get_batch_grads_from_tensor(model, loss, output, tensor_id):
+def get_batch_grads_from_tensor(model, loss, output, tensor_id, mc, iw):
     assert tensor_id in output.keys(), f"Tensor_id = `{tensor_id}` not in model's output"
 
     model.zero_grad()
@@ -277,14 +281,17 @@ def get_batch_grads_from_tensor(model, loss, output, tensor_id):
 
     # get the tensor of interest
     tensors = output[tensor_id] if isinstance(output[tensor_id], list) else output[tensor_id]
-    bs = tensors[0].shape[0]
+    bs = tensors[0].shape[0] // (mc * iw)
     # get the gradients, flatten and concat across the feature dimension
     gradients = [p.grad for p in tensors]
     assert not any(
         [g is None for g in gradients]), f"{sum([int(g is None) for g in gradients])} tensors have no gradients. " \
                                          f"Use `tensor.retain_graph()` in your model to enable gradients. " \
                                          f"tensor_id = `{tensor_id}`"
-    gradients = torch.cat([g.view(bs, -1) for g in gradients], 1)
+
+    # compute gradients estimate for each individual grads
+    # sum individual gradients because x_expanded = x.expand(bs, mc, iw)
+    gradients = torch.cat([g.view(bs, mc * iw, -1).sum(1) for g in gradients], 1)
 
     # return each MC average of the grads
     return gradients.mean(0)
@@ -334,7 +341,7 @@ def get_batch_gradients_statistics(estimator, model, x, n_samples=100, seed=None
         # gather individual gradients
         if 'tensor:' in key_filter:
             tensor_id = key_filter.replace("tensor:", "")
-            gradients = get_batch_grads_from_tensor(model, loss, output, tensor_id)
+            gradients = get_batch_grads_from_tensor(model, loss, output, tensor_id, estimator.mc, estimator.iw)
         else:
             gradients = get_batch_grads_from_parameters(model, loss, key_filter=key_filter)
 
@@ -412,8 +419,8 @@ def get_batch_gradients_statistics(estimator, model, x, n_samples=100, seed=None
     return output, meta
 
 
-def get_gradients_statistics(*args, use_batch_grads=False, **kwargs):
-    if use_batch_grads:
-        return get_batch_gradients_statistics(*args, **kwargs)
-    else:
+def get_gradients_statistics(*args, use_individual_grads=False, **kwargs):
+    if use_individual_grads:
         return get_individual_gradients_statistics(*args, **kwargs)
+    else:
+        return get_batch_gradients_statistics(*args, **kwargs)

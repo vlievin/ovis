@@ -219,40 +219,31 @@ class HierarchicalVae(Template):
 
         return h
 
-    def infer(self, x, mc=1, iw=1, **kwargs):
+    def infer(self, x, **kwargs):
         """
         infer the approximate posterior q(z|x)
 
         :param x: observation
         :param tau: temperature parameter when using relaxation-based methods (e.g. Gumbel-Softmax)
-        :param mc: number of Monte-Carlo samples
-        :param iw: number of Importance-Weighted samples
         :return: posterior distribution, meta data that will be passed in the output
         """
         x = self.x_pre(x)
         x = flatten(x)
 
-        if mc > 1 or iw > 1:
-            bs, *dims = x.shape
-            x = x[:, None, None, :].expand(x.size(0), mc, iw, *dims).contiguous()
-            x = x.view(-1, *dims)
-
         return self.encode(x, **kwargs)
 
-    def forward(self, x, tau=0, zgrads=False, mc=1, iw=1, **kwargs):
+    def forward(self, x, tau=0, zgrads=False, **kwargs):
         """
         Compute the posterior q(z|x), sample z~q(z|x) and compute p(x|z).
 
         :param x: observation
         :param tau: temperature parameter when using relaxation-based methods (e.g. Gumbel-Softmax)
         :param zgrads: allow gradients through the sample z (reparametrization trick)
-        :param mc: number of Monte-Carlo samples
-        :param iw: number of importance weighted samples
         :param kwargs: additional keyword arguments
         :return: {'px' p(x|z), 'z': latent samples, 'qz': q(z|x), 'pz': p(z), ** additional data}:
         """
 
-        q_data = self.infer(x, mc=mc, iw=iw, tau=tau, zgrads=zgrads)
+        q_data = self.infer(x, tau=tau, zgrads=zgrads)
 
         px, p_data = self.generate(q_data['z'], tau=tau, zgrads=zgrads)
 

@@ -17,8 +17,7 @@ class BernoulliToyModel(Template):
         self.qlogits = nn.Parameter(torch.zeros(N, requires_grad=True, device=self.device), requires_grad=True)
         self.prior_logits = torch.zeros_like(self.qlogits, device=self.device)
 
-    def forward(self, x, tau=0, zgrads=False, mc=1, iw=1,
-                **kwargs):  # (self, mc=1, iw=1, **kwargs): # (self, *args, **kwargs) -> Dict[str, Tensor]: # (self, x: Tensor, **kwargs) -> Dict[str, Tensor]:
+    def forward(self, x, tau=0, zgrads=False, **kwargs):  # (self, **kwargs): # (self, *args, **kwargs) -> Dict[str, Tensor]: # (self, x: Tensor, **kwargs) -> Dict[str, Tensor]:
         bs = x.shape[0]
 
         # q_theta(z | x)
@@ -29,7 +28,7 @@ class BernoulliToyModel(Template):
         pz = Bernoulli(logits=self.prior_logits)
 
         # sample posterior
-        u = torch.rand(bs * iw * mc, self.num_latents).to(self.device)  # u ~ Unif[0,1]
+        u = torch.rand(bs, self.num_latents).to(self.device)  # u ~ Unif[0,1]
         # v = torch.rand(self.batch_size * iw * mc, self.num_latents).to(self.device) # v ~ Unif[0,1]
         z = self.qlogits + torch.log(u) - torch.log1p(-u)  # reparametrizing samples, appendix B
         z = z.gt(0.).type_as(
