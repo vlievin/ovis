@@ -24,7 +24,25 @@ def get_config(estimator):
         config = {'tau': 0, 'zgrads': True}
 
 
-    elif  'wake-sleep' in estimator or 'wake-wake' in estimator:
+    elif 'air-' in estimator:
+        if 'copt' in estimator:
+            mode = 'copt'
+        elif 'vimco' in estimator:
+            mode = 'vimco'
+        elif 'ww' in estimator:
+            mode = 'ww'
+
+        # parse `-alphaX`
+        if "-alpha" in estimator:
+            alpha = eval([s for s in estimator.split("-") if 'alpha' in s][0].replace("alpha", ""))
+        else:
+            alpha = 1.
+
+        Estimator = AirReinforce
+        config = {'tau': 0, 'zgrads': False, 'mode': mode, 'alpha': alpha}
+
+
+    elif 'wake-sleep' in estimator or 'wake-wake' in estimator:
         Estimator = {'wake-sleep': WakeSleep, 'wake-wake': WakeWake}[estimator]
         config = {'tau': 0, 'zgrads': False}
 
@@ -38,10 +56,14 @@ def get_config(estimator):
 
         elif not 'old' in estimator and ('copt' in estimator or 'vimco' in estimator):
 
-            if 'copt' in estimator:
-                v_k_hat = 'copt'
-            if 'vimco' in estimator:
-                v_k_hat = 'vimco'
+            if 'copt-uniform' in estimator:
+                mode = 'copt-uniform'
+            elif 'copt' in estimator:
+                mode = 'copt'
+            elif 'vimco' in estimator:
+                mode = 'vimco'
+            else:
+                raise ValueError(f"Unknown estimator mode.")
 
             # parse `-alphaX`
             if "-alpha" in estimator:
@@ -49,14 +71,17 @@ def get_config(estimator):
             else:
                 alpha = 1.
 
-            # parse `-etaX`
-            if "-eta" in estimator:
-                eta = eval([s for s in estimator.split("-") if 'eta' in s][0].replace("eta", ""))
+            # parse `-truncX`
+            if "-trunc" in estimator:
+                trunc = eval([s for s in estimator.split("-") if 'trunc' in s][0].replace("trunc", ""))
             else:
-                eta = 1.
+                trunc = 0.
+
+            handle_low_ess = '-ess' in estimator
 
             Estimator = VimcoPlus
-            config = {'v_k_hat': v_k_hat, 'alpha': alpha, 'eta': eta, **reinforce_args}
+            config = {'mode': mode, 'alpha': alpha, 'truncation': trunc, 'handle_low_ess': handle_low_ess,
+                      **reinforce_args}
 
         # keep legacy test if other tests are needed
         elif 'old-copt' in estimator or 'old-vimco' in estimator:
