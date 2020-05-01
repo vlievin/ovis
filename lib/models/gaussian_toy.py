@@ -6,7 +6,7 @@ from ..distributions import NormalFromLoc, PseudoCategorical
 from ..utils import batch_reduce
 
 
-class ToyVAE(Template):
+class GaussianToyVAE(Template):
     """
     A simple Gaussian VAE model as defined in
     `Tighter Variational Bounds are Not Necessarily Better` [https://arxiv.org/abs/1802.04537]

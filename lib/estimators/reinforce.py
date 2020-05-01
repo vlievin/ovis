@@ -121,7 +121,8 @@ class Reinforce(VariationalInference):
                 'elbo': L_k,
                 'nll': - self._reduce_sample(log_px_z),
                 'kl': self._reduce_sample(kl),
-                'r_eff': N_eff / self.iw
+                'r_eff': N_eff / self.iw,
+                'ess': N_eff
             },
             'reinforce': {
                 'loss': reinforce_loss,

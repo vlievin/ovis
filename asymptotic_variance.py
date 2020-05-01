@@ -7,7 +7,7 @@ from shutil import rmtree
 import pandas as pd
 
 from lib.logging import get_loggers
-from lib.models import ToyVAE
+from lib.models import GaussianToyVAE
 from lib.utils import notqdm
 from lib.variance_utils import *
 
@@ -19,7 +19,7 @@ parser = argparse.ArgumentParser()
 # run directory, id and seed
 parser.add_argument('--root', default='runs/', help='directory to store training logs')
 parser.add_argument('--data_root', default='data/', help='directory to store the data')
-parser.add_argument('--exp', default='gaussian-toy-variance-0.1', help='experiment directory')
+parser.add_argument('--exp', default='asymptotic-variance-0.1', help='experiment directory')
 parser.add_argument('--id', default='', type=str, help='run id suffix')
 parser.add_argument('--seed', default=13, type=int, help='random seed')
 parser.add_argument('--workers', default=1, type=int, help='dataloader workers')
@@ -112,7 +112,7 @@ try:
 
     # define model
     torch.manual_seed(opt.seed)
-    model = ToyVAE(xdim=(opt.D,))
+    model = GaussianToyVAE(xdim=(opt.D,))
 
     # valid estimator (it is important that all models are evaluated using the same evaluator)
     Estimator, config_ref = get_config("pathwise-iwae")

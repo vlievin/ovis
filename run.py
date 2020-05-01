@@ -19,7 +19,7 @@ from lib.config import get_config
 from lib.estimators import VariationalInference, AirReinforce
 from lib.gradients import get_gradients_statistics
 from lib.logging import sample_model, get_loggers, log_summary, save_model, load_model
-from lib.models import VAE, Baseline, ConvVAE, ToyVAE, GaussianMixture, ToyModel, AIR, HierarchicalVae
+from lib.models import VAE, Baseline, ConvVAE, GaussianToyVAE, GaussianMixture, BernoulliToyModel, HierarchicalVae
 from lib.ops import training_step, test_step
 from lib.utils import notqdm
 
@@ -30,7 +30,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     # run directory, id and seed
-    parser.add_argument('--dataset', default='shapes', help='dataset [shapes | binmnist | omniglot | fashion | bernoulli_toy]')
+    parser.add_argument('--dataset', default='shapes',
+                        help='dataset [shapes | binmnist | omniglot | fashion | gmm-toy | gaussian-toy | bernoulli-toy]')
     parser.add_argument('--mini', action='store_true', help='use a sub-sampled version of the dataset')
     parser.add_argument('--root', default='runs/', help='directory to store training logs')
     parser.add_argument('--data_root', default='data/', help='directory to store the data')
@@ -121,8 +122,6 @@ if __name__ == '__main__':
     if opt.model == 'bernoulli_toy' or opt.dataset == 'bernoulli_toy':
         assert opt.model == 'bernoulli_toy'
         assert opt.bs == 1 and opt.valid_bs == 1 and opt.test_bs == 1
-
-
 
     # define conunterfactuals
     if len(opt.counterfactuals):
@@ -255,21 +254,23 @@ if __name__ == '__main__':
             'dropout': opt.dropout,
             'x_mean': _xmean
         }
+
         # get the right constructor
-        model_id = {'gmm': 'gmm', 'gaussian-toy': 'toy-vae', 'air': 'air'}.get(opt.dataset, opt.model)
+        model_id = {'gmm-toy': 'gmm-toy',
+                    'gaussian-toy': 'gaussian-toy',
+                    'bernoulli-toy': 'bernoulli-toy',
+                    'air': 'air'}.get(opt.dataset, opt.model)
+
         _MODEL = {'vae': VAE,
                   'conv-vae': ConvVAE,
-                  'toy-vae': ToyVAE,
-                  'gmm': GaussianMixture,
-                  'air': AIR,
+                  'bernoulli-toy': BernoulliToyModel,
+                  'gaussian-toy': GaussianToyVAE,
+                  'gmm-toy': GaussianMixture,
                   'hierarchical': HierarchicalVae}[model_id]
 
-        # init model
+        # init the model
         torch.manual_seed(opt.seed)
-        model_id = {'gmm': 'gmm', 'gaussian-toy': 'toy-vae', 'bernoulli_toy': 'bernoulli_toy'}.get(opt.dataset, opt.model)
-        _MODEL = {'vae': VAE, 'conv-vae': ConvVAE, 'toy-vae': ToyVAE, 'gmm': GaussianMixture, 'bernoulli_toy': ToyModel}[model_id]
-        model = _MODEL(x.shape, opt.N, opt.K, opt.hdim, kdim=opt.kdim, nlayers=opt.nlayers, learn_prior=opt.learn_prior,
-                       prior=opt.prior, normalization=opt.norm, dropout=opt.dropout)
+        model = _MODEL(**hyperparams)
 
         # define baseline
         baseline = Baseline(x.shape, opt.b_nlayers, opt.hdim) if use_baseline else None
