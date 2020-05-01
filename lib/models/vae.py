@@ -27,7 +27,8 @@ class BaseVAE(Template):
                  bias: bool = True,
                  normalization: str = 'layernorm',
                  likelihood: Distribution = Bernoulli,
-                 prior: str = 'categorical'):
+                 prior: str = 'categorical',
+                 **kwargs):
         """
         Initialize a one layer VAE model.
 

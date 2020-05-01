@@ -4,3 +4,4 @@ from .gaussian_mixture import GaussianMixture
 from .gaussian_toy import ToyVAE
 from .lvae import LVAE
 from .baseline import Baseline
+from .hierarchical import HierarchicalVae

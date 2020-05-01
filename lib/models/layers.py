@@ -14,15 +14,16 @@ class MLP(nn.Module):
     def __init__(self, ninp, nhid, nout, nlayers=1, bias=True, act_in=False, normalization='batchnorm', dropout=0):
         super().__init__()
         Norm = {'batchnorm': nn.BatchNorm1d, 'layernorm': nn.LayerNorm, 'none': None, None: None}[normalization]
+
         layers = []
         if act_in:
-            layers += [Norm(ninp), nn.Dropout(dropout), nn.ReLU()]
+            layers += [Norm(ninp), nn.Dropout(dropout), nn.Tanh()]
         h = ninp
         for i in range(nlayers):
             layers += [nn.Linear(h, nhid, bias=bias), nn.Dropout(dropout)]
             if Norm is not None:
                 layers += [Norm(nhid)]
-            layers += [nn.ReLU()]
+            layers += [nn.Tanh()]
             h = nhid
         layers += [Flatten(), nn.Linear(h, nout, bias=bias)]
 
