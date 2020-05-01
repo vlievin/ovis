@@ -254,17 +254,7 @@ class Vimco(Reinforce):
 
 class VimcoPlus(Reinforce):
     """
-    \nabla_phi L_K = E_q(z^1 .. z^K | x) [ \sum_k  (\eta * \log \gamma^K(v_k)) - \alpha v_k + v^{-k}) \nabla_phi log q(z^k | x) ]
-
-    where:
-    * w_k = p(x, z^k) / q(z^k | x)
-    * v_k = w_k / \sum_l w_l
-    * \alpha = 1 (ubiased) or \alpha < 1 (biased)
-    * \eta = 1 : parameter to experiment with
-    * \gamma^K(v_k) = (1 - 1/K) / (1 - v_k)
-    * v^{-k} =
-        * 0 : vimco
-        * 1/K : copt/vimco++
+    \nabla_phi L_K = E_q(z^1 .. z^K | x) [ \sum_k  (\log Z_{1:K} - v_k - c_k) \nabla_phi log q(z^k | x) ]
     """
 
     def __init__(self, baseline: Optional[nn.Module] = None, **kwargs: Any):
@@ -272,9 +262,16 @@ class VimcoPlus(Reinforce):
         self.baseline = baseline
         self.log_1_m_uniform = np.log(1. - 1. / self.iw)
 
-    def forward(self, model: nn.Module, x: Tensor, backward: bool = False, debug: bool = False, alpha=1.0, eta=1.0,
+    def forward(self, model: nn.Module,
+                x: Tensor,
+                backward: bool = False,
+                debug: bool = False,
+                alpha=1.0,
                 beta=1.0,
-                v_k_hat='vimco', **kwargs: Any) -> Tuple[Tensor, Dict, Dict]:
+                truncation=0,
+                mode='vimco',
+                handle_low_ess=False,
+                **kwargs: Any) -> Tuple[Tensor, Dict, Dict]:
 
         bs = x.size(0)
         x_target = self._expand_sample(x)
@@ -289,22 +286,53 @@ class VimcoPlus(Reinforce):
         # compute v_k = w_k / \sum_l w_l
         v_k = self.normalized_importance_weights(log_wk)
 
-        # compute \log \gamma^K(v_k)
+        if truncation > 0:
+            v_k = torch.max(v_k, truncation * torch.ones_like(v_k))
+
         v_k_safe = torch.min((1 - 1e-6) * torch.ones_like(v_k), v_k)
-        log_gamma_K = self.log_1_m_uniform - torch.log1p(- v_k_safe)
 
-        v_k_hat = {'vimco': 0., 'copt': 1. / self.iw}[v_k_hat]
+        # compute \log \gamma^K(v_k)
+        if mode == 'vimco':
+            # c_k = log Z^{-k}
+            # log Z - c_k - v_k = log (1 - 1/K) - log(1 - v_k) - v_k
+            prefactor_k = self.log_1_m_uniform - torch.log1p(- v_k_safe) - alpha * v_k
+        elif mode == 'copt-uniform':
+            # c_k = log Z^{-k} + 1/ K
+            # log Z - c_k = log (1 - 1/K) - log(1 - v_k) + 1 / K - v_k
+            prefactor_k = self.log_1_m_uniform - torch.log1p(- v_k_safe) + 1 / self.iw - alpha * v_k
+        elif mode == 'copt':
+            # c_k = log 1/ K \sum_{l \neq k} w_l
+            # log Z - c_k = - log(1-v_k) - v_k
+            prefactor_k = - torch.log1p(- v_k_safe) - alpha * v_k
 
-        # compute loss
-        prefactor_k = (eta * log_gamma_K - alpha * v_k + v_k_hat)
-        reinforce_loss = torch.sum(prefactor_k[..., None].detach() * log_qz, dim=(2, 3))  # sum over IW and Nz
+        if handle_low_ess:
+            # when ESS \approx 1, exploits that w_k >> \sum_{l \neq k} w_l
+            # and use c_k = log Z{-k} - 1_{k = argmax w_k} (1+logK)
+
+            # mask = 1_{k = argmax w_k}
+            log_wk = log_wk.view(bs, self.mc, self.iw)
+            _max, idx = log_wk.max(dim=2, keepdim=True)
+            mask = (log_wk == _max).float()
+
+            # log \gamma = log Z - log Z^{-k} = log Z - log Z_{-k}
+            log_gamma = self.log_1_m_uniform - torch.log1p(- v_k_safe)
+            # c_k = log Z-k - 1_{k = argmax w_k}
+            # log Z - c_k - v_k = log (1 - 1/K) - log(1 - v_k) + 1_{k = argmax w_k} (1+logK) - v_k
+            prefactor_k = log_gamma - mask * (-1 - self.log_iw) - alpha * v_k
+
+            # use the low ESS estimate when ess \approx 1
+            _N_eff = N_eff[:, None, None].expand(-1, self.mc, self.iw)
+            prefactor_k = torch.where(_N_eff < 1.05, prefactor_k, prefactor_k)
+
+        # compute loss: - \sum_k (log_Z - v_k - c_k) h_k
+        reinforce_loss = - torch.sum(prefactor_k[..., None].detach() * log_qz, dim=(2, 3))  # sum over IW and Nz
 
         # MC averaging
         L_k = L_k.mean(1)
         reinforce_loss = reinforce_loss.mean(1)
 
-        # final loss
-        loss = - L_k - reinforce_loss
+        # loss = L_k differentiable w.r.t \theta and reinforce_loss differentiable w.r.t \phi
+        loss = - L_k + reinforce_loss
 
         # compute dlogits
         if debug:
@@ -318,7 +346,8 @@ class VimcoPlus(Reinforce):
                 'elbo': L_k,
                 'nll': - self._reduce_sample(log_px_z),
                 'kl': self._reduce_sample(kl),
-                'r_eff': N_eff / self.iw
+                'r_eff': N_eff / self.iw,
+                'ess': N_eff
             },
             'reinforce': {
                 'loss': reinforce_loss,
