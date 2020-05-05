@@ -46,7 +46,7 @@ def get_config(estimator):
         Estimator = {'wake-sleep': WakeSleep, 'wake-wake': WakeWake}[estimator]
         config = {'tau': 0, 'zgrads': False}
 
-    elif any([e in estimator for e in ['reinforce', 'vimco', 'copt']]):
+    elif any([e in estimator for e in ['reinforce', 'vimco', 'copt']]) and not 'old' in estimator:
         reinforce_args = {'tau': 0,
                           'zgrads': False}
 
@@ -54,7 +54,7 @@ def get_config(estimator):
             Estimator = Reinforce
             config = reinforce_args
 
-        elif not 'old' in estimator and ('copt' in estimator or 'vimco' in estimator):
+        elif 'copt' in estimator or 'vimco' in estimator:
 
             if 'copt-uniform' in estimator:
                 mode = 'copt-uniform'
@@ -78,10 +78,11 @@ def get_config(estimator):
                 trunc = 0.
 
             handle_low_ess = '-ess' in estimator
+            use_second_largest = '-ess2' in estimator
 
             Estimator = VimcoPlus
             config = {'mode': mode, 'alpha': alpha, 'truncation': trunc, 'handle_low_ess': handle_low_ess,
-                      **reinforce_args}
+                      'use_second_largest': use_second_largest, **reinforce_args}
 
         # keep legacy test if other tests are needed
         elif 'old-copt' in estimator or 'old-vimco' in estimator:
@@ -99,14 +100,6 @@ def get_config(estimator):
             if 'vimco' in estimator:
                 Estimator = Vimco
                 config = {**reinforce_args, **vimco_args}
-
-            elif 'copt' in estimator:
-                Estimator = OptCovReinforce
-                uniform_v = '-uniform' in estimator
-                zero_v = '-zero' in estimator
-                old = '-old' in estimator
-                config = {**reinforce_args, **vimco_args, 'uniform_v': uniform_v,
-                          'zero_v': zero_v, 'old': old}
 
             else:
                 raise ValueError(
@@ -130,13 +123,15 @@ def get_config(estimator):
         config = {'tau': 0.5, 'zgrads': True}
 
     elif 'tvo' in estimator:
+        auto_partition = "-auto" in estimator
         partition_args = [arg for arg in estimator.split('-') if 'part' in arg]
         partition = parse_numbers(partition_args[0])[0] if len(partition_args) else 21
         _integrations = ['left', 'right', 'trapz']
         integration = [x for x in _integrations if x in estimator.split("-")]
         integration = integration[0] if len(integration) else "left"
         Estimator = ThermoVariationalObjective
-        config = {'tau': 0, 'zgrads': False, 'partition': partition, 'integration': integration}
+        config = {'tau': 0, 'zgrads': False, 'partition': partition, 'integration': integration,
+                  'auto_partition': auto_partition}
 
     else:
         raise ValueError(f"Unknown estimator {estimator}.")

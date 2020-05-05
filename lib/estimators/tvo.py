@@ -45,7 +45,7 @@ class ThermoVariationalObjective(VariationalInference):
         self.register_buffer("partitions", torch.tensor(partitions, dtype=torch.float))
 
     def compute_loss(self, log_px_z: Tensor, log_pzs: List[Tensor], log_qzs: List[Tensor], integration: str = 'left',
-                     partition=21) -> Dict[str, Tensor]:
+                     partition=21, auto_partition=False, **kwargs:Any) -> Dict[str, Tensor]:
         """
         Computes the covariance gradient estimator for the TVO bound.
 
@@ -68,6 +68,16 @@ class ThermoVariationalObjective(VariationalInference):
         :param integration: type of integral approximation (Riemann sum); left, right or trapz
         :return: dictionary with outputs [tvo, elbo, kl, log_f_x,z, N_eff]
         """
+
+        if auto_partition:
+            # map K to a partition accodingly to the figure 3. in the TVO paper
+            if self.iw < 10:
+                partition = 17 # beta = 5e-2
+            elif self.iw < 30:
+                partition = 19 # beta = 2e-1
+            else:
+                partition = 21 # beta = 3e-1
+
         partition = self.partitions[partition]
         num_particles = self.iw
 
@@ -121,8 +131,7 @@ class ThermoVariationalObjective(VariationalInference):
 
         return {'tvo': tvo, **iw_data}
 
-    def forward(self, model: nn.Module, x: Tensor, backward: bool = False, partition: int = 21,
-                integration: str = 'left', **kwargs: Any) -> Tuple[
+    def forward(self, model: nn.Module, x: Tensor, backward: bool = False, **kwargs: Any) -> Tuple[
         Tensor, Dict, Dict]:
         # From VariationalInference estimator.
         # Removed '.mean(1)'s and changed namings for TVO
@@ -134,7 +143,7 @@ class ThermoVariationalObjective(VariationalInference):
             output = self.evaluate_model(model, x, **kwargs)
 
         log_px_z, log_pz, log_qz = [output[k] for k in ('log_px_z', 'log_pz', 'log_qz')]
-        tvo_data = self.compute_loss(log_px_z, log_pz, log_qz, partition=partition, integration=integration)
+        tvo_data = self.compute_loss(log_px_z, log_pz, log_qz, **kwargs)
 
         # loss + L_K
         loss = - tvo_data.get('tvo').mean(1)
