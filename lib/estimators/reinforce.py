@@ -101,8 +101,8 @@ class Reinforce(VariationalInference):
 
         # compute dlogits
         if debug:
-            estimator_outptut['dqlogits'] = self._compute_dlogits(output)
-            estimator_outptut.update(**iw_data)
+            output['dqlogits'] = self._compute_dlogits(output)
+            output.update(**iw_data)
 
         # check shapes
         assert score.shape[0] == bs
@@ -264,6 +264,7 @@ class VimcoPlus(Reinforce):
                 truncation=0,
                 mode='vimco',
                 handle_low_ess=False,
+                use_second_largest=False,
                 **kwargs: Any) -> Tuple[Tensor, Dict, Dict]:
 
         bs = x.size(0)
@@ -296,41 +297,47 @@ class VimcoPlus(Reinforce):
             # c_k = log 1/ K \sum_{l \neq k} w_l
             # log Z - c_k = - log(1-v_k) - v_k
             prefactor_k = - torch.log1p(- v_k_safe) - alpha * v_k
+        else:
+            raise ValueError(f"Unknown mode VimcoPlus `mode` parameter `{mode}`")
 
         if handle_low_ess:
             # when ESS \approx 1, exploits that w_k >> \sum_{l \neq k} w_l
             # and use c_k = log Z{-k} - 1_{k = argmax w_k} (1+logK)
 
-            # mask = 1_{k = argmax w_k}
-            log_wk = log_wk.view(bs, self.mc, self.iw)
-            _max, idx = log_wk.max(dim=2, keepdim=True)
-            mask = (log_wk == _max).float()
+            if not use_second_largest:
 
-            # log \gamma = log Z - log Z^{-k} = log Z - log Z_{-k}
-            log_gamma = self.log_1_m_uniform - torch.log1p(- v_k_safe)
-            # c_k = log Z-k - 1_{k = argmax w_k}
-            # log Z - c_k - v_k = log (1 - 1/K) - log(1 - v_k) + 1_{k = argmax w_k} (1+logK) - v_k
-            _prefactor_k = log_gamma - mask * (-1 - self.log_iw) - alpha * v_k
+                # mask = 1_{k = argmax w_k}
+                log_wk = log_wk.view(bs, self.mc, self.iw)
+                _max, idx = log_wk.max(dim=2, keepdim=True)
+                mask = (log_wk == _max).float()
 
+                # log \gamma = log Z - log Z^{-k} = log Z - log Z_{-k}
+                log_gamma = self.log_1_m_uniform - torch.log1p(- v_k_safe)
+                # c_k = log Z-k - 1_{k = argmax w_k}
+                # log Z - c_k - v_k = log (1 - 1/K) - log(1 - v_k) + 1_{k = argmax w_k} (1+logK) - v_k
+                _prefactor_k = log_gamma - mask * (-1 - self.log_iw) - alpha * v_k
+
+
+            else:
+                # mask = 1_{k = argmax w_k}
+                log_wk = log_wk.view(bs, self.mc, self.iw)
+                _topk, idx = log_wk.topk(k=2, dim=2)
+                _max = _topk[:, :, 0][..., None]
+                _second_max = _topk[:, :, 1][..., None]
+                mask = (log_wk == _max).float()
+
+                # log \gamma = log Z - log Z^{-k} = log Z - log Z_{-k}
+                log_gamma = self.log_1_m_uniform - torch.log1p(- v_k_safe)
+
+                # c_k = log Z-k - 1_{k = argmax w_k}
+                # log Z - c_k - v_k = log (1 - 1/K) - log(1 - v_k) + 1_{k = argmax w_k} (1+logK) - v_k
+                _prefactor_k = (1 - mask) * log_gamma \
+                               + mask * (L_k[:, :, None] - _second_max + (1 + self.log_iw)) \
+                               - alpha * v_k
+            #
             # use the low ESS estimate when ess \approx 1
             ess = ess[:, :, None].expand(-1, self.mc, self.iw)
             prefactor_k = torch.where(ess < 1.05, _prefactor_k, prefactor_k)
-
-            # # mask = 1_{k = argmax w_k}
-            # log_wk = log_wk.view(bs, self.mc, self.iw)
-            # _topk, idx = log_wk.topk(k=2, dim=2)
-            # _max = _topk[:, :, 0][..., None]
-            # _second_max = _topk[:, :, 1][..., None]
-            # mask = (log_wk == _max).float()
-            #
-            # # c_k = log Z-k - 1_{k = argmax w_k}
-            # # log Z - c_k - v_k = log (1 - 1/K) - log(1 - v_k) + 1_{k = argmax w_k} (1+logK) - v_k
-            # prefactor_k_ = (1 - mask) * prefactor_k + mask * (
-            #             L_k[:, :, None] - _second_max + (1 + self.log_iw) - alpha * v_k)
-            #
-            # # use the low ESS estimate when ess \approx 1
-            # ess = ess[:, :, None].expand(-1, self.mc, self.iw)
-            # prefactor_k = torch.where(ess < 1.05, prefactor_k_, prefactor_k)
 
         # compute loss: - \sum_k (log_Z - v_k - c_k) h_k
         reinforce_loss = - torch.sum(prefactor_k[..., None].detach() * log_qz, dim=(2, 3))  # sum over IW and Nz

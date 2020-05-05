@@ -147,6 +147,14 @@ def plot_logs(logs, path, metrics, main_key, style_key=None, ylims=dict(), log_r
     plt.close()
 
 
+def plot_cis(ax, at, ci_low, ci_high, color, capsize, **kws):
+    ax.plot([at, at], [ci_low, ci_high], color=color, **kws)
+    if capsize is not None:
+        ax.plot([at - capsize / 2, at + capsize / 2],
+                [ci_low, ci_low], color=color, **kws)
+        ax.plot([at - capsize / 2, at + capsize / 2],
+                [ci_high, ci_high], color=color, **kws)
+
 def spot_on_plot(logs, path, metrics, main_key, auxiliary_key, style_key=None, ylims=dict(), log_rules=dict(),
                  metric_dict=dict(), **kwargs):
     """make a grid of plot metrics x aux. keys values"""
@@ -281,13 +289,21 @@ def pivot_plot(df, path, metrics, cat_key, hue_key, x_key, style_key=None, ylims
                     color = palette[hue_order[_key]]
 
                     # extract mean and 90 percentiles
-                    series = sub_data[[x_key, metric]].groupby(x_key).agg(['mean', 'std'])
+                    series = sub_data[[x_key, metric]].groupby(x_key).agg(['mean', percentile(5), percentile(95)])
                     series.reset_index(inplace=True)
 
                     # area plot for CI + mean
-                    ax.fill_between(series[x_key], series[metric]['mean'] - 0.5 * series[metric]['std'],
-                                    series[metric]['mean'] + 0.5 * series[metric]['std'], color=color, alpha=0.2)
-                    ax.plot(series[x_key], series[metric]['mean'], color=color, label=_key, marker=markers[c])
+                    # ax.fill_between(series[x_key], series[metric]['mean'] - 0.5 * series[metric]['std'],
+                    #                 series[metric]['mean'] + 0.5 * series[metric]['std'], color=color, alpha=0.2)
+
+                    ci_low = series[metric]['p_5']
+                    ci_high = series[metric]['p_95']
+                    capsize = 0
+                    linewidth = 2.5
+                    markersize = 10
+                    alpha = 0.9
+                    ax.plot(series[x_key], series[metric]['mean'], color=color, label=_key, marker=markers[c], markersize=markersize, linewidth=linewidth, alpha=alpha)
+                    plot_cis(ax, series[x_key], ci_low, ci_high, color, capsize, linewidth=linewidth, alpha=alpha)
 
                 ax.set_xlabel(x_key)
                 ax.set_ylabel(metric)

@@ -225,7 +225,7 @@ for e in pbar:
 
                 # parse estimator args: e.g.
                 # * `vimco-outer` -> estimator=vimco, outer=True
-                # * `vimco-z_reject6` -> estimator=vimco, z_reject=6
+                # * `vimco-alpha0.6` -> estimator=vimco, alpha=0.6
                 if opt.parse_estimator_args and "-" in args.estimator:
 
                     estimator_args = args.estimator.split("-")
@@ -287,8 +287,8 @@ df = pd.DataFrame(data)
 
 # replace void estimator arguments with False (important since nans are dropped afterwards)
 # for instance, for thwo different estimator names
-# *  "vimco-zreject6" is parsed into estimator = vimco, zreject=6
-# *  "vimco" is parsed into estimator = vimco, zreject=0
+# * `vimco-outer` -> estimator=vimco, outer=True
+# * `vimco-alpha0.6` -> estimator=vimco, alpha=0.6
 df = df.fillna(0)  # todo: fill with zero when numbers else False
 
 # merging

@@ -4,6 +4,7 @@
     "--estimator vimco",
     "--estimator copt",
     "--estimator copt-uniform",
+    "--estimator copt-uniform-ess",
     "--estimator copt-ess",
     "--estimator vimco-alpha0",
     "--estimator tvo-part21",

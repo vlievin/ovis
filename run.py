@@ -19,7 +19,7 @@ from lib.config import get_config
 from lib.estimators import VariationalInference, AirReinforce
 from lib.gradients import get_gradients_statistics
 from lib.logging import sample_model, get_loggers, log_summary, save_model, load_model
-from lib.models import VAE, Baseline, ConvVAE, GaussianToyVAE, GaussianMixture, BernoulliToyModel, HierarchicalVae
+from lib.models import VAE, Baseline, ConvVAE, GaussianToyVAE, GaussianMixture, BernoulliToyModel, HierarchicalVae, AIR
 from lib.ops import training_step, test_step
 from lib.utils import notqdm
 
@@ -266,7 +266,8 @@ if __name__ == '__main__':
                   'bernoulli-toy': BernoulliToyModel,
                   'gaussian-toy': GaussianToyVAE,
                   'gmm-toy': GaussianMixture,
-                  'hierarchical': HierarchicalVae}[model_id]
+                  'hierarchical': HierarchicalVae,
+                  'air': AIR}[model_id]
 
         # init the model
         torch.manual_seed(opt.seed)
@@ -287,6 +288,7 @@ if __name__ == '__main__':
         Estimator_valid = AirReinforce if 'air' == opt.dataset else VariationalInference
         config_valid = {'tau': 0, 'zgrads': False}
         estimator_valid = Estimator_valid(mc=1, iw=opt.iw_valid, sequential_computation=opt.sequential_computation)
+        _estimator_valid = Estimator_valid(mc=1, iw=opt.iw, sequential_computation=opt.sequential_computation)
 
         # oracle estimator to find the true gradients direction
         if len(opt.oracle):
@@ -328,6 +330,7 @@ if __name__ == '__main__':
         # data aggregator
         agg_train = Aggregator()
         agg_valid = Aggregator()
+        _agg_valid = Aggregator()
 
         # tensorboard writers
         writer_train = SummaryWriter(os.path.join(logdir, 'train'))
@@ -426,6 +429,17 @@ if __name__ == '__main__':
                         diagnostics = test_step(x, model, estimator_valid, **config)
                         agg_valid.update(diagnostics)
                     summary_valid = agg_valid.data.to('cpu')
+
+                # validation epoch using the train estimator to compute KL(q || p)
+                with torch.no_grad():
+                    model.eval()
+                    _agg_valid.initialize()
+                    for x in tqdm(loader_valid, desc=_exp_id):
+                        x = x.to(device)
+                        diagnostics = test_step(x, model, _estimator_valid, **config)
+                        _agg_valid.update(diagnostics)
+                    _summary_valid = _agg_valid.data.to('cpu')
+                summary_valid['loss']['kl_q_p'] = summary_valid['loss']['elbo'] - _summary_valid['loss']['elbo']
 
                 # update best elbo and save model
                 best_elbo = save_model(model, summary_valid, global_step, epoch, best_elbo, logdir)

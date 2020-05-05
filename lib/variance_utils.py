@@ -44,7 +44,10 @@ def evaluate(estimator, model, x, config, seed, base_logger, desc):
     torch.manual_seed(seed)
     loss, diagnostics, output = estimator(model, x, backward=False, **config)
     base_logger.info(
-        f"{desc} | L_{estimator.iw} = {diagnostics['loss']['elbo'].mean().item():.6f}, KL = {diagnostics['loss']['kl'].mean().item():.6f}, NLL = {diagnostics['loss']['nll'].mean().item():.6f}")
+        f"{desc} | L_{estimator.iw} = {diagnostics['loss']['elbo'].mean().item():.6f}, "
+        f"KL = {diagnostics['loss']['kl'].mean().item():.6f}, "
+        f"NLL = {diagnostics['loss']['nll'].mean().item():.6f}, "
+        f"ESS = {diagnostics['loss']['ess'].mean().item():.6f}")
 
     return diagnostics
 
