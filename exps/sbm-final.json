@@ -1,0 +1,31 @@
+{
+  "description": "Training a 3 layers Sigmoid Belief Network with linear connections.",
+  "args": [
+    "--estimator vimco",
+    "--estimator copt",
+    "--estimator copt-ess",
+    "--estimator tvo-auto",
+    "--estimator wake-wake"
+  ],
+  "global": "--silent --deterministic --nsteps 4000000 --lr_reduce_steps 0",
+  "parameters": {
+    "model":["hierarchical"],
+    "prior": ["bernoulli"],
+    "learn_prior" : [true],
+    "N": [200],
+    "nlayers" :[0],
+    "depth" : [2],
+    "iw" : [300, 100, 50, 10, 5],
+    "seed":[47, 45, 32],
+    "dataset" : ["binmnist"],
+    "grad_samples" : [1000],
+    "iw_valid" : [5000],
+    "iw_test" : [5000],
+    "eval_freq": [5],
+    "bs": [24],
+    "lr": [3e-4],
+    "valid_bs": [2],
+    "test_bs": [2],
+    "grad_bs": [20]
+  }
+}

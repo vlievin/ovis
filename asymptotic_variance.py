@@ -16,6 +16,14 @@ _sep = os.get_terminal_size().columns * "-"
 
 parser = argparse.ArgumentParser()
 
+
+# default commands
+# python asymptotic_variance.py --estimators pathwise-iwae,copt,vimco --iw_steps 10 --npoints 512 --grads_dist --id final
+# python asymptotic_variance.py --estimators pathwise-iwae,copt,vimco --iw_steps 4 --iw_max 1e3 --npoints 512 --grads_dist --id final
+# python asymptotic_variance.py --estimators pathwise-iwae,copt,vimco,tvo,wake-wake --iw_steps 10 --npoints 512 --grads_dist --id final
+# python asymptotic_variance.py --estimators pathwise-iwae,copt,vimco,tvo,wake-wake --iw_steps 4 --iw_max 1e3 --npoints 512 --grads_dist --id final
+
+
 # run directory, id and seed
 parser.add_argument('--root', default='runs/', help='directory to store training logs')
 parser.add_argument('--data_root', default='data/', help='directory to store the data')
@@ -35,12 +43,12 @@ parser.add_argument('--estimators',
                     help='[vi, reinforce, vimco, gs, st-gs]')
 
 parser.add_argument('--iw_min', default=5, type=float, help='min umber of Importance-Weighted samples')
-parser.add_argument('--iw_max', default=1e3, type=float, help='max number of Importance-Weighted samples')
-parser.add_argument('--iw_steps', default=5, type=float, help='number of Importance-Weighted samples samples')
-parser.add_argument('--iw_valid', default=1000, type=int, help='number of iw samples for testing')
+parser.add_argument('--iw_max', default=5e3, type=float, help='max number of Importance-Weighted samples')
+parser.add_argument('--iw_steps', default=5, type=int, help='number of Importance-Weighted samples samples')
+parser.add_argument('--iw_valid', default=5000, type=int, help='number of iw samples for testing')
 
 parser.add_argument('--oracle', default='pathwise-iwae', type=str, help='oracle estimator id')
-parser.add_argument('--iw_oracle', default=1000, type=int, help='number of iw samples to find the true gradients')
+parser.add_argument('--iw_oracle', default=5000, type=int, help='number of iw samples to find the true gradients')
 parser.add_argument('--mc_oracle', default=10000, type=int,
                     help='number of mc samples used to compute the estimae of the oracle gradients')
 
@@ -50,7 +58,7 @@ parser.add_argument('--noise', default='0.01', type=str, help='scale of the nois
 # evaluation of the gradients
 parser.add_argument('--key_filter', default='tensor:b', type=str,
                     help='identifiant of the parameters/tensor for the gradients analysis')
-parser.add_argument('--mc_samples', default=100, type=int, help='number of samples for gradients evaluation')
+parser.add_argument('--mc_samples', default=1000, type=int, help='number of samples for gradients evaluation')
 parser.add_argument('--max_points', default=0, type=int, help='number of data points to evaluate the grads in')
 parser.add_argument('--batch_size', default=80000, type=int,
                     help='number of samples per batch size used during evaluation')
