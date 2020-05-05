@@ -235,21 +235,19 @@ def get_individual_gradients_statistics(estimator, model, x, batch_size=32, n_sa
     if true_grads is not None:
         grads_dir = grads_dir()
 
-    # print(f">> grads: iw = {estimator.iw}, elapsed time = {time() - _start:.3f}, snr = {snr.mean().log().item():.3f}, masked. snr {_mean(snr).log().item():.3f},  log_var = {_mean(variance).log().item():.3f}, Estimator = {type(estimator).__name__}")
-
     if seed is not None:
         torch.manual_seed(_seed)
 
-    # reduce fn
-    _reduce = _mean
+    # reduce fn: keep only parameter with variance > 0
+    mask = 1 - (grads_variance == 0).float()
+    _reduce = lambda x: (x * mask).sum() / mask.sum()
 
-    _dsnr = _reduce(grads_dsnr)
     output = {'grads': {
         'variance': _reduce(grads_variance),
         'magnitude': _reduce(grads_mean.abs()),
         'snr': _reduce(grads_snr),
-        'dsnr': _dsnr if _dsnr is not None else 0.,
-        'direction': _reduce(grads_dir) if true_grads is not None else 0.
+        'dsnr': grads_dsnr.mean() if grads_dsnr is not None else 0.,
+        'direction': grads_dir.mean() if true_grads is not None else 0.
     },
         'snr': {
             'p25': _percentile(grads_snr, q=0.25), 'p50': _percentile(grads_snr, q=0.50),
@@ -379,26 +377,25 @@ def get_batch_gradients_statistics(estimator, model, x, n_samples=100, seed=None
         if true_grads is not None:
             grads_dir = cosine(grads_mean, true_grads, dim=-1)
 
-    print(f">>> elapsed time = {time() - _start:.3f}, estimator = {type(estimator).__name__}, K = {estimator.iw * estimator.mc}")
+    print(
+        f">>> elapsed time = {time() - _start:.3f}, estimator = {type(estimator).__name__}, K = {estimator.iw * estimator.mc}")
 
     # reinitialize grads
     model.zero_grad()
 
-    # print(f">> grads: iw = {estimator.iw}, elapsed time = {time() - _start:.3f}, snr = {snr.mean().log().item():.3f}, masked. snr {_mean(snr).log().item():.3f},  log_var = {_mean(variance).log().item():.3f}, Estimator = {type(estimator).__name__}")
-
     if seed is not None:
         torch.manual_seed(_seed)
 
-    # reduce fn
-    _reduce = _mean
+    # reduce fn: keep only parameter with variance > 0
+    mask = 1 - (grads_variance == 0).float()
+    _reduce = lambda x: (x * mask).sum() / mask.sum()
 
-    _dsnr = _reduce(grads_dsnr)
     output = {'grads': {
         'variance': _reduce(grads_variance),
         'magnitude': _reduce(grads_mean.abs()),
         'snr': _reduce(grads_snr),
-        'dsnr': _dsnr if _dsnr is not None else 0.,
-        'direction': _reduce(grads_dir) if true_grads is not None else 0.
+        'dsnr': grads_dsnr.mean() if grads_dsnr is not None else 0.,
+        'direction': grads_dir.mean() if true_grads is not None else 0.
     },
         'snr': {
             'p25': _percentile(grads_snr, q=0.25), 'p50': _percentile(grads_snr, q=0.50),
