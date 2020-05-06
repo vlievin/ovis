@@ -1,8 +1,9 @@
 import operator
+import re
 from collections import defaultdict
 from functools import reduce
 from typing import *
-import re
+
 import torch
 
 
@@ -11,8 +12,10 @@ def print_summary(x, key):
     print(
         f">>> {key}: avg = {x.mean().item():.3f}, min = {x.min().item():.3f}, max = {x.max().item():.3f}, std = {x.mean().item():.3f}")
 
+
 def parse_numbers(s):
     return [eval(n) for n in re.findall("\d+", s)]
+
 
 def notqdm(iterable, *args, **kwargs):
     """
@@ -39,6 +42,8 @@ def batch_reduce(x):
 
 
 class DataCollector(defaultdict):
+    """A small helper class to model a dictionary of lists: {key : [*values]}"""
+
     def __init__(self):
         super().__init__(list)
 

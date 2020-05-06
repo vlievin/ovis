@@ -80,7 +80,7 @@ class VariationalInference(Estimator):
         Compute the effective sample size: N_eff = (\sum_i w_i)**2 / \sum_i w_i**2
         :param log_pz: log p(z) of shape [bs * mc * iw, ...]
         :param log_qz: loq q(z) of shape [bs * mc * iw, ...]
-        :return: effective_sample_size
+        :return: effective sample size of shape [bs, mc]
         """
 
         if isinstance(log_pz, List):
@@ -103,7 +103,7 @@ class VariationalInference(Estimator):
         """
         Compute the effective sample size: N_eff = (\sum_i w_i)**2 / \sum_i w_i**2 from the log weights log w.
         :param log_w: log weights
-        :return: ess
+        :return: effective sample size of shape [bs, mc]
         """
         if self.iw > 1:
             # use double for numerical stability
@@ -123,23 +123,48 @@ class VariationalInference(Estimator):
         return ess
 
     def evaluate_model(self, model: nn.Module, x: Tensor, **kwargs: Any) -> Dict[str, Tensor]:
+        """
+        Perform a forward pass through the `model` given the observation `x` and return the log probabilities.
+        :param model: VAE model
+        :param x: observation
+        :param kwargs: parameters for the model
+        :return: {'log_px_z' : log p(x|z), 'log_qz' : log q(z|x), 'log_pz': log p(z), **model_output}
+        """
 
         # expand x as shape [bs * mc * iw]
         x_expanded = self._expand_sample(x)
 
         # forward pass
         output = model(x_expanded, **kwargs)
+
+        # unpack the model's output
+        # the output must contain
+        # a. px = p(x|z): torch.distributions.Distribution instance
+        # b. z = latent sample x: List[Tensor]
+        # c. p(z) = prior: List[torch.distributions.Distribution]
+        # d. q(z | x) = approximate posterior: List[torch.distributions.Distribution]
         px, z, qz, pz = [output[k] for k in ['px', 'z', 'qz', 'pz']]
 
-        # compute log p(x|z), log p(z) and log q(z | x)
+        # evaluate the log-densities given the observation `x` and the latent sample `z`
+        # i.e. compute: log p(x|z), log p(z) and log q(z|x)
         log_px_z = batch_reduce(px.log_prob(x_expanded))
         log_pz = [pz_l.log_prob(z_l) for pz_l, z_l in zip(pz, z)]
         log_qz = [qz_l.log_prob(z_l) for qz_l, z_l in zip(qz, z)]
 
+        # update the model's output with the log-densities
         output.update({'log_px_z': log_px_z, 'log_pz': log_pz, 'log_qz': log_qz})
         return output
 
     def _sequential_evaluation(self, model: nn.Module, x: Tensor, **kwargs: Any):
+        """
+        Same as `evaluate_model` however the processing of the importance weighted samples
+        is performed sequentially instead of in parallel.
+        Warning: asides the log-probabilites the model's output is only returned for one sample
+        :param model: VAE model
+        :param x: observation
+        :param kwargs: parameters for the model
+        :return: {'log_px_z' : log p(x|z), 'log_qz' : log q(z|x), 'log_pz': log p(z), **model_output_{L}}
+        """
         bs, *dims = x.size()
         log_px_zs = []
         log_pzs = []
@@ -174,6 +199,18 @@ class VariationalInference(Estimator):
 
     def forward(self, model: nn.Module, x: Tensor, backward: bool = False, beta: float = 1.0, **kwargs: Any) -> Tuple[
         Tensor, Dict, Dict]:
+        """
+        Perform a forward pass through the VAE model, evaluate the Importance-Weighted bound and [optional]
+        perform the backward pass.
+        :param model: VAE model
+        :param x: observation
+        :param backward: perform the backward pass by calling loss.backward()
+        :param beta: beta parameter for Beta-VAE [https://pdfs.semanticscholar.org/a902/26c41b79f8b06007609f39f82757073641e2.pdf]
+        :param kwargs: additional arguments for the model's forward pass
+        :return: (loss : Tensor of shape [bs,],
+                  diagnostics: nested dictionary containing at least the keys {'loss':{'loss':..., 'elbo':...}}
+                  output: model's output + meta data)
+        """
 
         if self.sequential_computation:
             # warning: here only one iw sample `output` will be returned
@@ -184,7 +221,7 @@ class VariationalInference(Estimator):
         log_px_z, log_pz, log_qz = [output[k] for k in ('log_px_z', 'log_pz', 'log_qz')]
         iw_data = self.compute_iw_bound(log_px_z, log_pz, log_qz, beta=beta)
 
-        # loss
+        # compute the loss = - L_k using the reparametrization trick
         L_k = iw_data.get('L_k').mean(1)  # MC averaging
         loss = - L_k
 
@@ -194,7 +231,7 @@ class VariationalInference(Estimator):
                      **self._loss_diagnostics(**iw_data, **output)}
         })
 
-        # add auxiliary diagnostics that can customized throught the method _diagnostics
+        # add auxiliary diagnostics that can customized through the method _diagnostics
         diagnostics.update(self._diagnostics(output))
 
         if backward:
@@ -209,6 +246,7 @@ class VariationalInference(Estimator):
         kl = self._reduce_sample(kwargs.get('kl'))
         return {'elbo': L_k, 'ess': ess, 'r_ess': ess / self.iw, 'nll': nll, 'kl': kl}
 
+    @torch.no_grad()
     def _diagnostics(self, output):
         """A function to append additional diagnostics from the model otuput"""
 
@@ -233,7 +271,18 @@ class VariationalInference(Estimator):
             if 'mse_A' in output.keys():
                 gaussian_toy[key] = output[key]
 
-        return {'prior': prior, 'gmm': gmm, 'loss': loss, 'gaussian_toy': gaussian_toy}
+        kls = {}
+        if 'log_qz' in output.keys() and 'log_pz' in output.keys():
+            # log KL for each layer
+            log_qz = output['log_qz']
+            log_pz = output['log_pz']
+            if len(log_qz) > 1:
+                assert len(log_qz) == len(log_pz)
+
+                for i, (lq, lp) in enumerate(zip(log_qz, log_pz)):
+                    kls[f"kl_{i + 1}"] = batch_reduce(lq - lp).mean()
+
+        return {'prior': prior, 'gmm': gmm, 'loss': loss, 'gaussian_toy': gaussian_toy, 'kls': kls}
 
 
 class PathwiseVAE(VariationalInference):
