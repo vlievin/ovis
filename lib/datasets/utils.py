@@ -42,7 +42,7 @@ def get_datasets(opt):
     elif "gaussian-toy" in opt.dataset:
         output = GaussianToyDataset(), GaussianToyDataset(), GaussianToyDataset()
     elif "gmm-toy" in opt.dataset:
-        _train_dset = GaussianMixtureDataset(N=10000, C=opt.N)
+        _train_dset = GaussianMixtureDataset(N=100000, C=opt.N)
         _valid_dset = GaussianMixtureDataset(N=100, C=opt.N)
         _test_dset = GaussianMixtureDataset(N=100, C=opt.N)
         output = _train_dset, _valid_dset, _test_dset

@@ -13,17 +13,20 @@
     "--estimator tvo-part20",
     "--estimator tvo-part21"
   ],
-  "global": "--silent --deterministic --nsteps 100000 --lr_reduce_steps 0 --N 20 --hdim 16",
+  "global": "--silent --deterministic --nsteps 200000 --lr_reduce_steps 1 --N 20 --hdim 16",
   "parameters": {
     "iw" : [50, 20, 10, 5, 2],
     "seed": [14, 65, 48, 24, 79],
     "dataset": ["gmm-toy"],
-    "grad_samples" : [250],
+    "optimizer": ["adam"],
+    "grad_samples" : [1000],
+    "grad_bs" : [100],
     "bs" : [100],
     "valid_bs" : [100],
     "lr": [1e-3 ],
     "iw_valid": [100],
-    "iw_test": [1000]
+    "iw_test": [1000],
+    "eval_freq": [1]
   }
 
 }
