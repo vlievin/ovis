@@ -5,6 +5,7 @@ import torch
 from tqdm import tqdm
 
 eps = 1e-15
+min_var = 1e-9
 
 
 def covariance(x):
@@ -239,7 +240,7 @@ def get_individual_gradients_statistics(estimator, model, x, batch_size=32, n_sa
         torch.manual_seed(_seed)
 
     # reduce fn: keep only parameter with variance > 0
-    mask = 1 - (grads_variance == 0).float()
+    mask = (grads_variance > min_var).float()
     _reduce = lambda x: (x * mask).sum() / mask.sum()
 
     output = {'grads': {
@@ -387,7 +388,7 @@ def get_batch_gradients_statistics(estimator, model, x, n_samples=100, seed=None
         torch.manual_seed(_seed)
 
     # reduce fn: keep only parameter with variance > 0
-    mask = 1 - (grads_variance == 0).float()
+    mask = (grads_variance > min_var).float()
     _reduce = lambda x: (x * mask).sum() / mask.sum()
 
     output = {'grads': {
