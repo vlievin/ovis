@@ -56,8 +56,8 @@ def summary2logger(logger, summary, global_step, epoch, best=None, stats_key='lo
     if not stats_key in summary.keys():
         logger.warning('key ' + str(stats_key) + ' not int output dictionary')
     else:
-        message = exp_id
-        message += f'\t[{global_step} / {epoch}]   '
+        message = f"{exp_id:32s}"
+        message += f'[{global_step} / {epoch}]   '
         message += ''.join([f'{k} {v:6.2f}   ' for k, v in summary.get(stats_key).items()])
         if 'info' in summary.keys() and 'elapsed-time' in summary['info'].keys():
             message += f'({summary["info"]["elapsed-time"]:.2f}s /iter)'
@@ -77,7 +77,7 @@ def log_summary(summary, global_step, epoch, logger=None, writer=None, **kwargs)
         summary.log(writer, global_step)
 
 
-def save_model(model, eval_summary, global_step, epoch, best_elbo, logdir, key='elbo'):
+def save_model_and_update_best_elbo(model, eval_summary, global_step, epoch, best_elbo, logdir, key='elbo'):
     elbo = eval_summary['loss'][key]
     prev_elbo, *_ = best_elbo
     if elbo > prev_elbo:

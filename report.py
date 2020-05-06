@@ -14,7 +14,7 @@ from lib.utils import parse_numbers
 
 sns.set(style="whitegrid")
 sns.set(style="ticks")
-sns.set_context("paper", font_scale=1.2)
+sns.set_context("paper", font_scale=1.2, rc={"lines.linewidth": 2})
 
 try:
     from tbparser.summary_reader import SummaryReader
@@ -41,10 +41,11 @@ metric_dict = {
     'iw': r"$K$",
     'c_iw': r"$K$",
     'loss/elbo': r"$\mathcal{L}_K$",
-    'loss/kl': r"$KL(q_{\phi}(z | x) | p(z))$",
+    'loss/kl': r"$\operatorname{KL}(q_{\phi}(z | x) | p(z))$",
     'loss/nll': r"$- \log p_{\theta}(z | x)$",
-    'loss/r_eff': r"$\operatorname{ESS} / K$",
+    'loss/r_ess': r"$\operatorname{ESS} / K$",
     'loss/ess': r"$\operatorname{ESS}$",
+    'loss/kl_q_p': r"$\operatorname{KL} (q | p)$",
     'grads/variance': r"$\operatorname{Var}(\Delta_K(\phi))$",
     'grads/snr': r"$\operatorname{SNR}(\Delta_K(\phi))$",
     'grads/dsnr': r"$\operatorname{DSNR}(\Delta_K(\phi))$",

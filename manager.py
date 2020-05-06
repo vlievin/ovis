@@ -174,8 +174,11 @@ if __name__ == '__main__':
         for _arg, values in experiment_args["parameters"].items():
             _args = []
             for v in values:
-                if isinstance(v, bool) and v:
-                    _args += [f"--{_arg} " + a for a in args]
+                if isinstance(v, bool):
+                    if v:
+                        _args += [f"--{_arg} " + a for a in args]
+                    else:
+                        _args += args
                 else:
                     _args += [f"--{_arg} {v} " + a for a in args]
             args = _args
