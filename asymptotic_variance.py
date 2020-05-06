@@ -16,12 +16,16 @@ _sep = os.get_terminal_size().columns * "-"
 
 parser = argparse.ArgumentParser()
 
-
 # default commands
 # python asymptotic_variance.py --estimators pathwise-iwae,copt,vimco --iw_steps 10 --npoints 512 --grads_dist --id final
 # python asymptotic_variance.py --estimators pathwise-iwae,copt,vimco --iw_steps 4 --iw_max 1e3 --npoints 512 --grads_dist --id final
 # python asymptotic_variance.py --estimators pathwise-iwae,copt,vimco,tvo,wake-wake --iw_steps 10 --npoints 512 --grads_dist --id final
 # python asymptotic_variance.py --estimators pathwise-iwae,copt,vimco,tvo,wake-wake --iw_steps 4 --iw_max 1e3 --npoints 512 --grads_dist --id final
+
+
+# debug
+# python asymptotic_variance.py --estimators pathwise-iwae,copt-uniform --iw_steps 3 --iw_max 100 --npoints 100 --mc_samples 100 --mc_oracle 100 --iw_oracle 100 --grads_dist --id debug
+# python asymptotic_variance.py --estimators pathwise-iwae,vimco,copt-uniform --iw_steps 5 --iw_max 300 --npoints 100 --mc_samples 1000 --mc_oracle 10000 --iw_oracle 1000 --grads_dist --id debug
 
 
 # run directory, id and seed
@@ -120,7 +124,7 @@ try:
 
     # define model
     torch.manual_seed(opt.seed)
-    model = GaussianToyVAE(xdim=(opt.D,))
+    model = GaussianToyVAE(xdim=(opt.D,), npoints=opt.npoints)
 
     # valid estimator (it is important that all models are evaluated using the same evaluator)
     Estimator, config_ref = get_config("pathwise-iwae")
@@ -136,8 +140,8 @@ try:
     # parse estimators
     estimators = opt.estimators.replace(" ", "").split(",")
 
-    # generate the dataset
-    x = gen_dataset(model, opt.npoints)
+    # get the dataset
+    x = model.dset
 
     # evaluate model
     diagnostics = evaluate(estimator_ref, model, x, config_ref, opt.seed, base_logger, "Before perturbation")
@@ -154,13 +158,13 @@ try:
         base_logger.info(f">> Noise = {noise}")
 
         # initizalize model using the optimal parameters
-        set_optimal_parameters(model, x)
+        model.set_optimal_parameters()
 
         # evaluate model
         diagnostics = evaluate(estimator_ref, model, x, config_ref, opt.seed, base_logger, "After init.")
 
         # add perturbation to the weights
-        perturbate_weights(model, noise)
+        model.perturbate_weights(noise)
 
         # evaluate model
         diagnostics = evaluate(estimator_ref, model, x, config_ref, opt.seed, base_logger, "After perturbation")

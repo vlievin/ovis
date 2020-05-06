@@ -40,7 +40,8 @@ def get_datasets(opt):
     if "shapes" in opt.dataset:
         output = get_shapes_datasets(transform=transform)
     elif "gaussian-toy" in opt.dataset:
-        output = GaussianToyDataset(), GaussianToyDataset(), GaussianToyDataset()
+        dset = GaussianToyDataset()
+        output = dset, dset, dset
     elif "gmm-toy" in opt.dataset:
         _train_dset = GaussianMixtureDataset(N=100000, C=opt.N)
         _valid_dset = GaussianMixtureDataset(N=100, C=opt.N)

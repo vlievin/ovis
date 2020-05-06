@@ -1,0 +1,31 @@
+{
+  "description": "Fitting the Gaussian toy model from `Tighter Variational Bounds are not necessarily Better`",
+  "args": [
+    "--estimator pathwise-vae",
+    "--estimator pathwise-iwae",
+    "--estimator copt-uniform",
+    "--estimator copt",
+    "--estimator vimco",
+    "--estimator ww",
+    "--estimator tvo"
+  ],
+  "global": "--silent --deterministic",
+  "parameters": {
+    "epochs": [5000],
+    "lr_reduce_steps": [0],
+    "lr": [1e-3],
+    "optimizer": ["adam"],
+    "iw" : [1000, 300, 100, 30, 10],
+    "seed":[47, 45, 32, 73, 279],
+    "dataset" : ["gaussian-toy"],
+    "N": [20],
+    "iw_valid" : [5000],
+    "iw_test" : [5000],
+    "eval_freq": [50],
+    "grad_samples": [1000],
+    "bs": [100],
+    "grad_bs" : [100],
+    "valid_bs": [10],
+    "test_bs": [10]
+  }
+}

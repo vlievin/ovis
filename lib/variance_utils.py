@@ -20,25 +20,6 @@ def get_outliers_boundaries(values, k=1.5):
     return [a - k * (b - a), b + k * (b - a)]
 
 
-def gen_dataset(model, npoints):
-    # generate the dataset
-    model.mu.data = torch.randn_like(model.mu.data)
-    return model.sample_from_prior(N=npoints)['px'].sample()
-
-
-def set_optimal_parameters(model, x):
-    mu = x.mean(dim=0, keepdim=True).data
-    model.mu.data = mu.data.view_as(model.mu.data)  # mu^*
-    model.A.data = 0.5 * torch.eye(x.shape[1], device=x.device).view_as(model.A.data)  # A = I / 2
-    model.b.data = 0.5 * mu.view_as(model.b.data)  # b = 0.5 mu^*
-
-
-def perturbate_weights(model, noise_scale):
-    model.mu.data += noise_scale * torch.randn_like(model.mu.data)
-    model.A.data += noise_scale * torch.randn_like(model.A.data)
-    model.b.data += noise_scale * torch.randn_like(model.b.data)
-
-
 def evaluate(estimator, model, x, config, seed, base_logger, desc):
     print(_sep)
     torch.manual_seed(seed)
@@ -93,7 +74,7 @@ def plot_statistics(df, opt, logdir):
     else:
         metrics = ['grads-snr', 'grads-dsnr', 'grads-variance', 'grads-magnitude', 'grads-direction']
 
-    _true_grads_name = "\Delta_{" + f"{opt.iw_oracle}" + "}^{"+ f"{str(opt.oracle).replace('pathwise-', '')}" + "}"
+    _true_grads_name = "\Delta_{" + f"{opt.iw_oracle}" + "}^{" + f"{str(opt.oracle).replace('pathwise-', '')}" + "}"
     metrics_formaters = [lambda p: f"$SNR_K({param_name}) $",
                          lambda p: f"$DSNR_K({param_name}) $",
                          lambda p: f"$Var \Delta_K({param_name}) $",

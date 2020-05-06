@@ -228,7 +228,12 @@ class VariationalInference(Estimator):
         if 'inferred_n' in output.keys():
             loss['inferred_n'] = output['inferred_n']
 
-        return {'prior': prior, 'gmm': gmm, 'loss': loss}
+        gaussian_toy = {}
+        for key in ['mse_A', 'mse_b', 'mse_mu']:
+            if 'mse_A' in output.keys():
+                gaussian_toy[key] = output[key]
+
+        return {'prior': prior, 'gmm': gmm, 'loss': loss, 'gaussian_toy': gaussian_toy}
 
 
 class PathwiseVAE(VariationalInference):
