@@ -27,11 +27,13 @@ class PyroMultiMNIST(Dataset):
         y = np.array(len(y))
         x = x / 255.0
 
+        # binarize
+        x = x > 0.5
+
         x, y = torch.from_numpy(x).float(), torch.from_numpy(y).float()
         x = x[None]
-        # y = {'n_obj': y}  # label dict: compatible with multiobject dataloader
 
-        return x
+        return x, y
 
     def __len__(self):
         return len(self.x)

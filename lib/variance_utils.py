@@ -2,7 +2,7 @@ import os
 
 import numpy as np
 
-from .config import *
+from lib.estimators.config import *
 from .gradients import *
 from .plotting import PLOT_WIDTH, PLOT_HEIGHT, markers
 

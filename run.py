@@ -9,16 +9,17 @@ from shutil import rmtree
 import numpy as np
 import torch
 from booster import Aggregator, Diagnostic
+from torch import Tensor
 from torch.optim import Adam, Adamax, SGD, RMSprop
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from lib import get_datasets
-from lib.config import get_config
 from lib.estimators import VariationalInference, AirReinforce
+from lib.estimators.config import get_config
 from lib.gradients import get_gradients_statistics
-from lib.logging import sample_model, get_loggers, log_summary, save_model, load_model
+from lib.logging import sample_model, get_loggers, log_summary, save_model_and_update_best_elbo, load_model
 from lib.models import VAE, Baseline, ConvVAE, GaussianToyVAE, GaussianMixture, BernoulliToyModel, HierarchicalVae, AIR
 from lib.ops import training_step, test_step
 from lib.utils import notqdm
@@ -174,7 +175,7 @@ def get_run_id(opt, counterfactual_estimators):
         run_id += f"-fb{opt.freebits}"
     if opt.learn_prior:
         run_id += "-learn-prior"
-    run_id += f"-arch{opt.hdim}x{opt.nlayers}"
+    run_id += f"-arch{opt.hdim}x{opt.nlayers}-L{opt.depth}"
     if opt.norm is not 'none':
         run_id += f"-{opt.norm}"
     if opt.dropout > 0:
@@ -208,8 +209,10 @@ def get_dataset_mean(loader_train):
     _xmean = None
     _n = 0.
     for x in loader_train:
-        k = x.size(0)
-        m = x.sum(0)
+        if not isinstance(x, Tensor):
+            x, *_ = x
+
+        k, m = x.size(0), x.sum(0)
         _n += k
         if _xmean is None:
             _xmean = m / k
@@ -283,11 +286,11 @@ def init_valid_estimator(opt):
     config_valid = {'tau': 0, 'zgrads': False}
 
     # the main validatio estimator with K = opt.iw_valid
-    estimator_valid = Estimator_valid(mc=1, iw=opt.iw_valid, sequential_computation=opt.sequential_computation)
+    estimator_marginal_valid = Estimator_valid(mc=1, iw=opt.iw_valid, sequential_computation=opt.sequential_computation)
 
     # a second estimator with K = opt.iw (training), this is used to compute KL(q||p)
-    estimator_valid_as_training = Estimator_valid(mc=1, iw=opt.iw, sequential_computation=opt.sequential_computation)
-    return estimator_valid, config_valid, estimator_valid_as_training
+    estimator_valid = Estimator_valid(mc=1, iw=opt.iw, sequential_computation=opt.sequential_computation)
+    return estimator_marginal_valid, estimator_valid, config_valid
 
 
 def init_oracle_estimator(opt):
@@ -369,13 +372,15 @@ def perform_gradients_analysis(opt, global_step, writer_train, loader_train, mod
     device = next(iter(model.parameters())).device
 
     # batch of data for the gradients variance evaluation (at maximum of size bs)
-    x_eval = next(iter(loader_train)).to(device)[:opt.grad_bs]
+    batch = next(iter(loader_train))
+    x, *_ = preprocess(batch, device)
+    x = x[:opt.grad_bs]
 
     # get the configuration for the gradients analysis including computing the gradients for the oracle
-    grad_args = get_grads_analysis_config(opt, model, x_eval, estimator_oracle, config_oracle)
+    grad_args = get_grads_analysis_config(opt, model, x, estimator_oracle, config_oracle)
 
     # gradients analysis for the training estimator
-    grad_data, _ = get_gradients_statistics(estimator, model, x_eval, **grad_args, **config)
+    grad_data, _ = get_gradients_statistics(estimator, model, x, **grad_args, **config)
     with torch.no_grad():
         summary = Diagnostic(grad_data)
         summary.log(writer_train, global_step)
@@ -389,7 +394,7 @@ def perform_gradients_analysis(opt, global_step, writer_train, loader_train, mod
     # analsysis for the `counterfactual` estimators
     for (c_writer, c_conf, c_est, c) in zip(counterfactual_writers, c_configs, c_estimators,
                                             counterfactual_estimators):
-        grad_data, _ = get_gradients_statistics(c_est, model, x_eval, **grad_args, **c_conf)
+        grad_data, _ = get_gradients_statistics(c_est, model, x, **grad_args, **c_conf)
         with torch.no_grad():
             summary = Diagnostic(grad_data)
             summary.log(c_writer, global_step)
@@ -399,7 +404,18 @@ def perform_gradients_analysis(opt, global_step, writer_train, loader_train, mod
                 f"variance = {grad_data.get('grads', {}).get('variance', 0.):.3f}, "
                 f"dsnr = {grad_data.get('grads', {}).get('dsnr', -1):.3E}, "
                 f"direction = {grad_data.get('grads', {}).get('direction', -1):.3E}"
-                )
+            )
+
+
+def preprocess(batch, device):
+    if isinstance(batch, Tensor):
+        x = batch.to(device)
+        return x, None
+    else:
+        x, y = batch  # assume tuple (x,y)
+        x = x.to(device)
+        y = y.to(device)
+        return x, y
 
 
 if __name__ == '__main__':
@@ -461,6 +477,8 @@ if __name__ == '__main__':
 
         # get a sample to evaluate the input shape
         x = dset_train[0]
+        if not isinstance(x, Tensor):
+            x, *_ = x
         base_logger.info(
             f"Sample: x.shape = {x.shape}, x.min = {x.min():.1f}, x.max = {x.max():.1f}, "
             f"x.mean = {mean_over_dset.mean():1f}, x.dtype = {x.dtype}")
@@ -474,7 +492,7 @@ if __name__ == '__main__':
         estimator, config = init_main_estimator(opt, baseline)
 
         # valid estimator (it is important that all models are evaluated using the same evaluator)
-        estimator_valid, config_valid, estimator_valid_as_training = init_valid_estimator(opt)
+        estimator_marginal_valid, estimator_valid, config_valid = init_valid_estimator(opt)
 
         # oracle estimator to establish the true gradients direction
         estimator_oracle, config_oracle = init_oracle_estimator(opt)
@@ -487,7 +505,7 @@ if __name__ == '__main__':
         device = "cuda:0" if torch.cuda.device_count() else "cpu"
         model.to(device)
         estimator.to(device)
-        estimator_valid.to(device)
+        estimator_marginal_valid.to(device)
 
         # define the optimizer for the model's parameters and the training estimator's parameters if any (baseline)
         optimizers = init_optimizers(opt, model, estimator)
@@ -512,15 +530,17 @@ if __name__ == '__main__':
             [o.zero_grad() for o in optimizers]
             model.train()
             agg_train = Aggregator()
-            for x in tqdm(loader_train, desc=f"{exp_id}-L_{opt.iw}"):
-                x = x.to(device)
-                diagnostics = training_step(x, model, estimator, optimizers, **config)
+            for batch in tqdm(loader_train, desc=f"{exp_id}-L_{opt.iw}"):
+                x, y = preprocess(batch, device)
+                diagnostics = training_step(x, model, estimator, optimizers, y=y, **config)
                 agg_train.update(diagnostics)
 
                 global_step += 1
             summary_train = agg_train.data.to('cpu')
+
             # log train summary to console and tensorboar
-            log_summary(summary_train, global_step, epoch, logger=train_logger, writer=writer_train, exp_id=exp_id)
+            log_summary(summary_train, global_step, epoch, logger=train_logger, writer=writer_train,
+                        exp_id=f"{exp_id}-L_{opt.iw}")
 
             if epoch % opt.eval_freq == 0:
 
@@ -533,35 +553,45 @@ if __name__ == '__main__':
 
                 # evaluation epoch
                 print(_sep)
-                # validation epoch to compute L_K_valid \approx log \hat{p(x)}
+                # validation epoch to estimate the marginal log-likelihood: L_K_valid \approx log \hat{p(x)}
                 with torch.no_grad():
                     model.eval()
-                    agg_valid = Aggregator()
-                    for x in tqdm(loader_valid, desc=f"{exp_id}-L_{opt.iw_valid}"):
-                        x = x.to(device)
-                        diagnostics = test_step(x, model, estimator_valid, **config)
-                        agg_valid.update(diagnostics)
-                    summary_valid = agg_valid.data.to('cpu')
+                    agg_marginal_valid = Aggregator()
+                    for batch in tqdm(loader_valid, desc=f"{exp_id}-L_{opt.iw_valid}"):
+                        x, y = preprocess(batch, device)
+                        diagnostics = test_step(x, model, estimator_marginal_valid, y=y, **config)
+                        agg_marginal_valid.update(diagnostics)
+                    summary_valid_marginal = agg_marginal_valid.data.to('cpu')
 
                 # validation epoch to compute L_K_train
                 with torch.no_grad():
                     model.eval()
-                    agg_valid_as_training = Aggregator()
-                    for x in tqdm(loader_valid, desc=f"{exp_id}-L_{opt.iw}"):
-                        x = x.to(device)
-                        diagnostics = test_step(x, model, estimator_valid_as_training, **config)
-                        agg_valid_as_training.update(diagnostics)
-                    _summary_valid = agg_valid_as_training.data.to('cpu')
+                    agg_valid = Aggregator()
+                    for batch in tqdm(loader_valid, desc=f"{exp_id}-L_{opt.iw}"):
+                        x, y = preprocess(batch, device)
+                        diagnostics = test_step(x, model, estimator_valid, y=y, **config)
+                        agg_valid.update(diagnostics)
+                    summary_valid = agg_valid.data.to('cpu')
 
                 # compute KL(q||p) = log p(x) - L_K_train
-                summary_valid['loss']['kl_q_p'] = summary_valid['loss']['elbo'] - _summary_valid['loss']['elbo']
+                summary_valid_marginal['loss']['kl_q_p'] = summary_valid_marginal['loss']['elbo'] - \
+                                                           summary_valid['loss']['elbo']
+
+                # compute overfitting L_K^{train} - L_K^{valid}
+                summary_valid_marginal['loss']['overfitting'] = summary_train['loss']['elbo'] - \
+                                                                summary_valid['loss']['elbo']
+
+                # append the data from the simple validation (L_K_train)
+                summary_valid_marginal['_loss'] = summary_valid['loss']
 
                 # update best elbo and save model
-                best_elbo = save_model(model, summary_valid, global_step, epoch, best_elbo, logdir)
+                best_elbo = save_model_and_update_best_elbo(model, summary_valid_marginal, global_step,
+                                                            epoch, best_elbo, logdir)
 
-                # log valid summary to console and tensorboar
-                log_summary(summary_valid, global_step, epoch, logger=valid_logger, best=best_elbo, writer=writer_valid,
-                            exp_id=exp_id)
+                # log marginal valid summary to console and tensorboarf
+                log_summary(summary_valid_marginal, global_step, epoch, logger=valid_logger, best=best_elbo,
+                            writer=writer_valid,
+                            exp_id=f"{exp_id}-L_{opt.iw_valid}")
 
                 # sample model
                 sample_model("prior-sample", model, logdir, global_step=global_step, writer=writer_valid, seed=opt.seed)
@@ -595,9 +625,9 @@ if __name__ == '__main__':
         model.eval()
         agg_test = Aggregator()
         with torch.no_grad():
-            for x in tqdm(loader_test, desc=f"{exp_id}-L_{opt.iw_test}"):
-                x = x.to(device)
-                diagnostics = test_step(x, model, estimator_test, **config_test)
+            for batch in tqdm(loader_test, desc=f"{exp_id}-L_{opt.iw_test}"):
+                x, y = preprocess(batch, device)
+                diagnostics = test_step(x, model, estimator_test, y=y, **config_test)
                 agg_test.update(diagnostics)
             summary_test = agg_test.data.to('cpu')
 

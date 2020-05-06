@@ -29,23 +29,30 @@ class VariationalInference(Estimator):
         """
 
         # compute the effective sample size
-        ess = self.effective_sample_size(log_px_z, log_pzs, log_qzs)
+        ess = self.effective_sample_size_from_probs(log_px_z, log_pzs, log_qzs)
 
         def cat_by_layer(log_pzs):
             """sum over the latent dimension (N_i) and concatenate stocastic layers.
             for L=2, a list of values [[*, N_1], [*, N_2]] becomes [*, 2]"""
             return torch.cat([x.sum(1, keepdims=True) for x in log_pzs], 1)
 
-        # kl = E_q[ log p(z) - log q(z) ]
+        # concatenate log probs from each layer
         log_pz = cat_by_layer(log_pzs)
         log_qz = cat_by_layer(log_qzs)
+
+        # detach log q(z^k | x) in case L_k should only be differentiable with regards to `theta`.
         if detach_qlogits:
             log_qz = log_qz.detach()
+
+        # kl = E[log q(z^k|x) | p(z^k)]
         kl = log_qz - log_pz
+
         # freebits is ditributed equally over the last dimension
         # (meaning L layers result in a total of L * freebits budget)
         if self.freebits is not None:
             kl = self.freebits(kl.unsqueeze(-1))
+
+        # dimension [bs, MC, IW]
         kl = batch_reduce(kl)
 
         # compute log w_k = log p(x, z^k) - log q(z^k | x) (ELBO)
@@ -55,7 +62,7 @@ class VariationalInference(Estimator):
         log_wk = log_wk.view(-1, self.mc, self.iw)
 
         # IW-ELBO: L_k
-        L_k = torch.logsumexp(log_wk, dim=2) - self.log_iw  # if self.iw > 1 else log_f_xz.squeeze(2)
+        L_k = torch.logsumexp(log_wk, dim=2) - self.log_iw
 
         output = {'L_k': L_k, 'kl': kl, 'log_wk': log_wk, 'ess': ess}
 
@@ -68,7 +75,7 @@ class VariationalInference(Estimator):
         return output
 
     @torch.no_grad()
-    def effective_sample_size(self, log_px_z, log_pz, log_qz):
+    def effective_sample_size_from_probs(self, log_px_z, log_pz, log_qz):
         """
         Compute the effective sample size: N_eff = (\sum_i w_i)**2 / \sum_i w_i**2
         :param log_pz: log p(z) of shape [bs * mc * iw, ...]
@@ -86,11 +93,19 @@ class VariationalInference(Estimator):
         log_pz = log_pz.sum(1)
         log_qz = log_qz.sum(1)
 
-        # compute effective sample size
-        if self.iw > 1:
-            # compute effective sample size
-            log_w = batch_reduce(log_px_z + log_pz - log_qz).view(-1, self.mc, self.iw)
+        # compute log weights
+        log_w = batch_reduce(log_px_z + log_pz - log_qz).view(-1, self.mc, self.iw)
 
+        return self.effective_sample_size(log_w)
+
+    @torch.no_grad()
+    def effective_sample_size(self, log_w):
+        """
+        Compute the effective sample size: N_eff = (\sum_i w_i)**2 / \sum_i w_i**2 from the log weights log w.
+        :param log_w: log weights
+        :return: ess
+        """
+        if self.iw > 1:
             # use double for numerical stability
             log_w = log_w.double()
 
@@ -102,7 +117,7 @@ class VariationalInference(Estimator):
             # back to simple precision
             ess = ess.float()
         else:
-            x = (log_pz).view(-1, self.mc, self.iw)
+            x = (log_w).view(-1, self.mc, self.iw)
             ess = torch.ones_like(x[:, :, 0])
 
         return ess

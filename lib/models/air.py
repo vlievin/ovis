@@ -5,7 +5,6 @@ import torch.nn.functional as F
 from torch import nn
 from torch.distributions import Bernoulli, Normal, kl_divergence
 from torch.nn import LSTMCell
-from copy import deepcopy
 
 State = namedtuple(
     'State',
@@ -181,7 +180,7 @@ class AIR(nn.Module):
                                  scale=self.z_what_scale_prior)
 
         # Data likelihood
-        self.likelihood = 'original'
+        self.likelihood = 'bernoulli'
 
     @staticmethod
     def _module_list_to_params(modules):
@@ -209,7 +208,7 @@ class AIR(nn.Module):
             raise RuntimeError(msg)
         return dist
 
-    def forward(self, x, tau=0, zgrads=False, mc=1, iw=1, **kwargs):
+    def forward(self, x, tau=0, zgrads=False, mc=1, iw=1, y=None, **kwargs):
         bs = x.size(0)
 
         # Init model state
@@ -258,6 +257,7 @@ class AIR(nn.Module):
         # List of all posterior distributions, like:
         # [q_pres_1, q_where_1, q_what_1, q_pres_2, q_where_2, q_what_2, ...]
         qz = []
+        qlogits = []
 
         # List of all samples z with same structure
         z = []
@@ -279,6 +279,7 @@ class AIR(nn.Module):
             z_pres_likelihood[:, t] = result['z_pres_likelihood']
 
             qz.extend([result['qz_pres']])
+            qlogits.extend([result['qlogits']])
 
             # Add KL at timestep t to baseline_target for timesteps 0 to t
             # At the end of the loop: baseline_target[t] = sum_{i=t}^T KL[i]
@@ -361,6 +362,7 @@ class AIR(nn.Module):
             'baseline_value': baseline_value,
             'mask_prev': mask_prev,
             'z_pres_likelihood': z_pres_likelihood,
+            'qlogits': qlogits
         }
 
         return data
@@ -391,8 +393,11 @@ class AIR(nn.Module):
         eps = 1e-12
         z_pres_p = z_pres_p.clamp(min=eps, max=1.0 - eps)
 
+        # retain grads for further analysis
+        z_pres_p.retain_grad()
+
         # sample z_pres
-        qz_pres = Bernoulli(z_pres_p)
+        qz_pres = Bernoulli(probs=z_pres_p)
         z_pres = qz_pres.sample()
 
         # If previous z_pres is 0, then this z_pres should also be 0.
@@ -407,8 +412,8 @@ class AIR(nn.Module):
         z_pres_likelihood = qz_pres.log_prob(z_pres) * prev.z_pres
         z_pres_likelihood = z_pres_likelihood.squeeze()  # shape (B,)
 
-        # TODO: do that properly
-        qz_pres = Bernoulli(z_pres_p.detach()) # detach logits for the KL computation so gradients only come from the reinforce term
+        # important: detach logits of q(z | x) for the KL computation so gradients only come from the reinforce term
+        qz_pres = Bernoulli(probs=z_pres_p.detach())
 
         # Sample z_where
         qz_where = Normal(z_where_loc, z_where_scale)
@@ -473,6 +478,7 @@ class AIR(nn.Module):
             'qz_where': qz_where,
             'qz_what': qz_what,
             'qz_pres': qz_pres,
+            'qlogits': z_pres_p,
         }
         return out
 
@@ -534,7 +540,6 @@ class AIR(nn.Module):
             def sample(self):
                 return self.canvas
 
-        print(">>> prior sample")
         px = DummyDist(canvas)
 
         return {'px': px}

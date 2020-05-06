@@ -1,13 +1,9 @@
-from .estimators import *
-from .utils import parse_numbers
-
+from .__init__ import *
+from lib.utils import parse_numbers
 
 def get_config(estimator):
-    if estimator == 'factorized-pathwise':
-        Estimator = FactorizedVariationalInference
-        config = {'tau': 0, 'zgrads': True}
 
-    elif estimator == 'safe-vi':
+    if estimator == 'safe-vi':
         Estimator = SafeVariationalInference
         config = {'tau': 0, 'zgrads': True}
 
@@ -24,29 +20,11 @@ def get_config(estimator):
         config = {'tau': 0, 'zgrads': True}
 
 
-    elif 'air-' in estimator:
-        if 'copt' in estimator:
-            mode = 'copt'
-        elif 'vimco' in estimator:
-            mode = 'vimco'
-        elif 'ww' in estimator:
-            mode = 'ww'
-
-        # parse `-alphaX`
-        if "-alpha" in estimator:
-            alpha = eval([s for s in estimator.split("-") if 'alpha' in s][0].replace("alpha", ""))
-        else:
-            alpha = 1.
-
-        Estimator = AirReinforce
-        config = {'tau': 0, 'zgrads': False, 'mode': mode, 'alpha': alpha}
-
-
     elif 'wake-sleep' in estimator or 'wake-wake' in estimator:
         Estimator = {'wake-sleep': WakeSleep, 'wake-wake': WakeWake}[estimator]
         config = {'tau': 0, 'zgrads': False}
 
-    elif any([e in estimator for e in ['reinforce', 'vimco', 'copt']]) and not 'old' in estimator:
+    elif any([e in estimator for e in ['reinforce', 'vimco', 'copt', 'ww']]) and not 'old' in estimator:
         reinforce_args = {'tau': 0,
                           'zgrads': False}
 
@@ -54,7 +32,7 @@ def get_config(estimator):
             Estimator = Reinforce
             config = reinforce_args
 
-        elif 'copt' in estimator or 'vimco' in estimator:
+        elif 'copt' in estimator or 'vimco' in estimator or 'ww' in estimator:
 
             if 'copt-uniform' in estimator:
                 mode = 'copt-uniform'
@@ -62,6 +40,8 @@ def get_config(estimator):
                 mode = 'copt'
             elif 'vimco' in estimator:
                 mode = 'vimco'
+            elif 'ww' in estimator:
+                mode = 'ww'
             else:
                 raise ValueError(f"Unknown estimator mode.")
 
@@ -80,7 +60,7 @@ def get_config(estimator):
             handle_low_ess = '-ess' in estimator
             use_second_largest = '-ess2' in estimator
 
-            Estimator = VimcoPlus
+            Estimator = AirReinforce if "air-" in estimator else VimcoPlus
             config = {'mode': mode, 'alpha': alpha, 'truncation': trunc, 'handle_low_ess': handle_low_ess,
                       'use_second_largest': use_second_largest, **reinforce_args}
 

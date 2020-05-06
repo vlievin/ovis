@@ -255,16 +255,90 @@ class VimcoPlus(Reinforce):
         self.baseline = baseline
         self.log_1_m_uniform = np.log(1. - 1. / self.iw)
 
+    @torch.no_grad()
+    def compute_prefactors(self,
+                           L_k: Tensor,
+                           log_wk: Tensor,
+                           ess: Tensor,
+                           mode: str = 'vimco',
+                           truncation: float = 0,
+                           alpha: float = 1.,
+                           handle_low_ess: bool = False,
+                           use_second_largest: bool = False,
+                           **kwargs):
+
+        # compute v_k = w_k / \sum_l w_l
+        v_k = self.normalized_importance_weights(log_wk)
+
+        if truncation > 0:
+            v_k = torch.max(v_k, truncation * torch.ones_like(v_k))
+
+        v_k_safe = torch.min((1 - 1e-6) * torch.ones_like(v_k), v_k)
+
+        # compute prefactors g_k such that g = \sum_k g_k h_k
+        if mode == 'vimco':
+            # c_k = log Z^{-k}
+            # log Z - c_k - v_k = log (1 - 1/K) - log(1 - v_k) - v_k
+            prefactor_k = self.log_1_m_uniform - torch.log1p(- v_k_safe) - alpha * v_k
+        elif mode == 'copt-uniform':
+            # c_k = log Z^{-k} - 1/ K
+            # log Z - c_k = log (1 - 1/K) - log(1 - v_k) + 1 / K - v_k
+            prefactor_k = self.log_1_m_uniform - torch.log1p(- v_k_safe) + alpha * (1 / self.iw - v_k)
+        elif mode == 'copt':
+            # c_k = log 1/ K \sum_{l \neq k} w_l
+            # log Z - c_k = - log(1-v_k) - v_k
+            prefactor_k = - torch.log1p(- v_k_safe) - alpha * v_k
+        elif mode == 'ww':
+            # wake-wake estimator
+            prefactor_k = v_k
+        else:
+            raise ValueError(f"Unknown mode VimcoPlus `mode` parameter `{mode}`")
+
+        if handle_low_ess:
+
+            # when ESS \approx 1, exploits that w_k >> \sum_{l \neq k} w_l
+            # and use c_k = log Z{-k} - 1_{k = argmax w_k} (1+logK)
+            if not use_second_largest:
+                # mask = 1_{k = argmax w_k}
+                log_wk = log_wk.view(-1, self.mc, self.iw)
+                _max, idx = log_wk.max(dim=2, keepdim=True)
+                mask = (log_wk == _max).float()
+
+                # log \gamma = log Z - log Z^{-k} = log Z - log Z_{-k}
+                log_gamma = self.log_1_m_uniform - torch.log1p(- v_k_safe)
+                # c_k = log Z-k - 1_{k = argmax w_k}
+                # log Z - c_k - v_k = log (1 - 1/K) - log(1 - v_k) + 1_{k = argmax w_k} (1+logK) - v_k
+                _prefactor_k = log_gamma - mask * (-1 - self.log_iw) - alpha * v_k
+            else:
+                # use the second largest w_k instead of the average log Z^{-k}
+
+                # mask = 1_{k = argmax w_k}
+                log_wk = log_wk.view(-1, self.mc, self.iw)
+                _topk, idx = log_wk.topk(k=2, dim=2)
+                _max = _topk[:, :, 0][..., None]
+                _second_max = _topk[:, :, 1][..., None]
+                mask = (log_wk == _max).float()
+
+                # log \gamma = log Z - log Z^{-k} = log Z - log Z_{-k}
+                log_gamma = self.log_1_m_uniform - torch.log1p(- v_k_safe)
+
+                # c_k = {log w_i}_{i \neq k}.max() - 1_{k = argmax w_k}
+                # log Z - c_k - v_k = L_k - {log w_i}_{i \neq k}.max() + 1_{k = argmax w_k} (1+logK) - v_k
+                _prefactor_k = (1 - mask) * log_gamma \
+                               + mask * (L_k[:, :, None] - _second_max + (1 + self.log_iw)) \
+                               - alpha * v_k
+
+            # use the low ESS estimate only when ess \approx 1
+            ess = ess[:, :, None].expand(-1, self.mc, self.iw)
+            prefactor_k = torch.where(ess < 1.05, _prefactor_k, prefactor_k)
+
+        return prefactor_k
+
     def forward(self, model: nn.Module,
                 x: Tensor,
                 backward: bool = False,
                 debug: bool = False,
-                alpha=1.0,
                 beta=1.0,
-                truncation=0,
-                mode='vimco',
-                handle_low_ess=False,
-                use_second_largest=False,
                 **kwargs: Any) -> Tuple[Tensor, Dict, Dict]:
 
         bs = x.size(0)
@@ -276,68 +350,7 @@ class VimcoPlus(Reinforce):
         # concatenate all q(z_l| *, x)
         log_qz = torch.cat(log_qz, 1).view(bs, self.mc, self.iw, -1)
 
-        # compute v_k = w_k / \sum_l w_l
-        v_k = self.normalized_importance_weights(log_wk)
-
-        if truncation > 0:
-            v_k = torch.max(v_k, truncation * torch.ones_like(v_k))
-
-        v_k_safe = torch.min((1 - 1e-6) * torch.ones_like(v_k), v_k)
-
-        # compute \log \gamma^K(v_k)
-        if mode == 'vimco':
-            # c_k = log Z^{-k}
-            # log Z - c_k - v_k = log (1 - 1/K) - log(1 - v_k) - v_k
-            prefactor_k = self.log_1_m_uniform - torch.log1p(- v_k_safe) - alpha * v_k
-        elif mode == 'copt-uniform':
-            # c_k = log Z^{-k} + 1/ K
-            # log Z - c_k = log (1 - 1/K) - log(1 - v_k) + 1 / K - v_k
-            prefactor_k = self.log_1_m_uniform - torch.log1p(- v_k_safe) + 1 / self.iw - alpha * v_k
-        elif mode == 'copt':
-            # c_k = log 1/ K \sum_{l \neq k} w_l
-            # log Z - c_k = - log(1-v_k) - v_k
-            prefactor_k = - torch.log1p(- v_k_safe) - alpha * v_k
-        else:
-            raise ValueError(f"Unknown mode VimcoPlus `mode` parameter `{mode}`")
-
-        if handle_low_ess:
-            # when ESS \approx 1, exploits that w_k >> \sum_{l \neq k} w_l
-            # and use c_k = log Z{-k} - 1_{k = argmax w_k} (1+logK)
-
-            if not use_second_largest:
-
-                # mask = 1_{k = argmax w_k}
-                log_wk = log_wk.view(bs, self.mc, self.iw)
-                _max, idx = log_wk.max(dim=2, keepdim=True)
-                mask = (log_wk == _max).float()
-
-                # log \gamma = log Z - log Z^{-k} = log Z - log Z_{-k}
-                log_gamma = self.log_1_m_uniform - torch.log1p(- v_k_safe)
-                # c_k = log Z-k - 1_{k = argmax w_k}
-                # log Z - c_k - v_k = log (1 - 1/K) - log(1 - v_k) + 1_{k = argmax w_k} (1+logK) - v_k
-                _prefactor_k = log_gamma - mask * (-1 - self.log_iw) - alpha * v_k
-
-
-            else:
-                # mask = 1_{k = argmax w_k}
-                log_wk = log_wk.view(bs, self.mc, self.iw)
-                _topk, idx = log_wk.topk(k=2, dim=2)
-                _max = _topk[:, :, 0][..., None]
-                _second_max = _topk[:, :, 1][..., None]
-                mask = (log_wk == _max).float()
-
-                # log \gamma = log Z - log Z^{-k} = log Z - log Z_{-k}
-                log_gamma = self.log_1_m_uniform - torch.log1p(- v_k_safe)
-
-                # c_k = log Z-k - 1_{k = argmax w_k}
-                # log Z - c_k - v_k = log (1 - 1/K) - log(1 - v_k) + 1_{k = argmax w_k} (1+logK) - v_k
-                _prefactor_k = (1 - mask) * log_gamma \
-                               + mask * (L_k[:, :, None] - _second_max + (1 + self.log_iw)) \
-                               - alpha * v_k
-            #
-            # use the low ESS estimate when ess \approx 1
-            ess = ess[:, :, None].expand(-1, self.mc, self.iw)
-            prefactor_k = torch.where(ess < 1.05, _prefactor_k, prefactor_k)
+        prefactor_k = self.compute_prefactors(L_k, log_wk, ess, **kwargs)
 
         # compute loss: - \sum_k (log_Z - v_k - c_k) h_k
         reinforce_loss = - torch.sum(prefactor_k[..., None].detach() * log_qz, dim=(2, 3))  # sum over IW and Nz
