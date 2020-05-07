@@ -34,7 +34,10 @@ log_rules = {
     'grads/magnitude': 'loglog',
     'grads/direction': 'logx',
     'gmm/posterior_mse': 'loglog',
-    'gmm/prior_mse': 'loglog'
+    'gmm/prior_mse': 'loglog',
+    'gaussian_toy/mse_A': 'loglog',
+    'gaussian_toy/mse_b': 'loglog',
+    'gaussian_toy/mse_mu': 'loglog'
 }
 
 metric_dict = {
@@ -52,7 +55,10 @@ metric_dict = {
     'grads/magnitude': r"$ | E[\Delta_K(\phi)] | $",
     'grads/direction': r"$\operatorname{cosine}( \Delta_K(\phi) ,  \Delta_K^{oracle}(\phi) )$",
     'gmm/posterior_mse': r"$\left\| q_{\phi}(z | x) - p_{\theta_{true}}(z | x) \right\| $",
-    'gmm/prior_mse': r"$\left\| p_{\theta}(z) - p_{\theta_{true}}(z) \right\| $"
+    'gmm/prior_mse': r"$\left\| p_{\theta}(z) - p_{\theta_{true}}(z) \right\| $",
+    'gaussian_toy/mse_A': r"$\left\| A - A^*  \right\|_2$",
+    'gaussian_toy/mse_b': r"$\left\| b - b^*  \right\|_2$",
+    'gaussian_toy/mse_mu': r"$\left\| \mu - \mu^*  \right\|_2$",
 
 }
 

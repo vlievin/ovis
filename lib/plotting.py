@@ -271,10 +271,15 @@ def pivot_plot(df, path, metrics, cat_key, hue_key, x_key, style_key=None, ylims
     print(">>> pivot: ", key_name, df[key_name].unique())
     hue_order = {l: i for i, l in enumerate(sorted(df[key_name].unique()))}
     if len(categories) > 1:
-        fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(PLOT_WIDTH * ncols, PLOT_HEIGHT * nrows),
+        legend_ncols = ncols
+        fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(PLOT_WIDTH * ncols, 0.5 + PLOT_HEIGHT * nrows),
                                  sharex='col', sharey='row' if cat_key != 'dataset' else False)
     else:
-        fig, axes = plt.subplots(nrows=1, ncols=nrows, figsize=(PLOT_WIDTH * nrows, PLOT_HEIGHT * 1))
+        legend_ncols = nrows
+        fig, axes = plt.subplots(nrows=1, ncols=nrows, figsize=(PLOT_WIDTH * nrows, 0.5 + PLOT_HEIGHT * 1))
+
+    # gather legend info
+    legend_infos = []
 
     for j, cat in enumerate(categories):
         cat_data = df[df[cat_key] == cat]
@@ -322,9 +327,10 @@ def pivot_plot(df, path, metrics, cat_key, hue_key, x_key, style_key=None, ylims
                     else:
                         ax.set_ylabel("")
 
-                if i == len(metrics) - 1 and j == len(categories) - 1:
-                    ax.legend(title=hue_key)
+                # if i == len(metrics) - 1 and j == len(categories) - 1:
+                #     ax.legend(title=hue_key)
 
+                legend_infos += list(zip(*ax.get_legend_handles_labels())) # returns handles, labels
 
             except Exception as ex:
                 print(
@@ -334,8 +340,20 @@ def pivot_plot(df, path, metrics, cat_key, hue_key, x_key, style_key=None, ylims
                 print("--------------------------------------------------------------------------------")
                 print("\nException: ", ex, "\n")
 
+    # update axis labels
     update_labels(axes, metric_dict)
 
+    # create legend
+    legend_infos = {label : handle for handle, label in legend_infos}
+    labels, handles = zip(*legend_infos.items())
+
+    # set tight layout and add margin at the top for the legend
     plt.tight_layout()
+    fig.subplots_adjust(top=0.88)
+    fig.legend(handles=handles, labels=labels, ncol=len(labels), loc='lower center',bbox_to_anchor=(0, 0.9, 1, 0.99))#,fancybox=False, shadow=False), title=hue_key
+
+
+
+
     plt.savefig(path)
     plt.close()
