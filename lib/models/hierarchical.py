@@ -1,4 +1,5 @@
 from collections import defaultdict
+from itertools import chain
 from typing import *
 
 from .base import *
@@ -86,10 +87,9 @@ class HierarchicalVae(Template):
         self.likelihood = likelihood
 
         # input preprocessing
-        self.register_buffer("x_mean", x_mean if isinstance(x_mean, Tensor) else torch.tensor(0.))
+        self.register_buffer("x_mean", x_mean if isinstance(x_mean, Tensor) else 0.5 * torch.ones((1, *xdim)))
         self.x_pre = lambda x: (x - self.x_mean + 1) / 2
-        self.x_post = lambda x: x - torch.log(1. / torch.clamp(self.x_mean, 0.001, 0.999) - 1)
-
+        self.x_post = lambda x: x # TODO [debug] - torch.log(1. / torch.clamp(self.x_mean, 0.001, 0.999) - 1)
 
         # parameters
         self.xdim = xdim
@@ -141,6 +141,21 @@ class HierarchicalVae(Template):
             stage = MLP(prod(self.zdim), hdim, nout, **mlp_args)
             p_stages += [stage]
         self.decoder = nn.ModuleList(p_stages)
+
+
+        # https://github.com/vmasrani/tvo/blob/f7a3229d954274e1d920bf4fe98dcb18f837f825/discrete_vae/models.py:
+        # ``https://github.com/duvenaud/relax/blob/master/binary_vae_multilayer_per_layer.py#L273
+        # https://github.com/tensorflow/models/blob/master/research/rebar/rebar.py#L49
+        # this returns the logit function (inverse of sigmoid) of clamped
+        # self.train_obs_mean (see https://en.wikipedia.org/wiki/Logit)``
+        self.decoder[-1].layers[-1].bias.data = - torch.log(
+            1 / torch.clamp(self.x_mean.view(-1), 1e-4, 1 - 1e-4) - 1)
+
+    def phi(self):
+        return self.encoder.parameters()
+
+    def theta(self):
+        return chain(self.decoder.parameters(), self.prior)
 
     def encode(self, x, tau=0, zgrads=False) -> DataCollector:
         h = x
