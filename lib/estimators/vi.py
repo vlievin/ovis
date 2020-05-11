@@ -34,7 +34,7 @@ class VariationalInference(Estimator):
         def cat_by_layer(log_pzs):
             """sum over the latent dimension (N_i) and concatenate stocastic layers.
             for L=2, a list of values [[*, N_1], [*, N_2]] becomes [*, 2]"""
-            return torch.cat([x.sum(1, keepdims=True) for x in log_pzs], 1)
+            return torch.cat([batch_reduce(x)[:, None] for x in log_pzs], 1)
 
         # concatenate log probs from each layer
         log_pz = cat_by_layer(log_pzs)
@@ -61,10 +61,16 @@ class VariationalInference(Estimator):
         # view log_wk as shape [bs, mc, iw]
         log_wk = log_wk.view(-1, self.mc, self.iw)
 
-        # IW-ELBO: L_k
+        # L_k
         L_k = torch.logsumexp(log_wk, dim=2) - self.log_iw
 
-        output = {'L_k': L_k, 'kl': kl, 'log_wk': log_wk, 'ess': ess}
+        # elbo
+        elbo = torch.mean(log_wk, dim=2)
+
+        # kl(q | p) = \hat{log p} - elbo :  accurate if K -> \inf
+        kl_q_p = L_k - elbo
+
+        output = {'L_k': L_k, 'elbo': elbo, 'kl': kl, 'log_wk': log_wk, 'ess': ess, 'kl_q_p': kl_q_p}
 
         if len(request):
             # append additional data to the output
@@ -84,10 +90,10 @@ class VariationalInference(Estimator):
         """
 
         if isinstance(log_pz, List):
-            log_pz = torch.cat(log_pz, 1)
+            log_pz = torch.cat([l.view(l.size(0), -1) for l in log_pz], 1)
 
         if isinstance(log_qz, List):
-            log_qz = torch.cat(log_qz, 1)
+            log_qz = torch.cat([l.view(l.size(0), -1) for l in log_qz], 1)
 
         # sum over dimensions of z
         log_pz = log_pz.sum(1)
@@ -106,16 +112,10 @@ class VariationalInference(Estimator):
         :return: effective sample size of shape [bs, mc]
         """
         if self.iw > 1:
-            # use double for numerical stability
-            log_w = log_w.double()
-
             # computation in log-space
             a = 2 * torch.logsumexp(log_w, dim=2)
             b = torch.logsumexp(2 * log_w, dim=2)
             ess = torch.exp(a - b)
-
-            # back to simple precision
-            ess = ess.float()
         else:
             x = (log_w).view(-1, self.mc, self.iw)
             ess = torch.ones_like(x[:, :, 0])
@@ -241,10 +241,13 @@ class VariationalInference(Estimator):
 
     def _loss_diagnostics(self, **kwargs):
         L_k = kwargs.get('L_k').mean(1)
+        elbo = kwargs.get('elbo').mean(1)
+        kl_q_p = kwargs.get('kl_q_p').mean(1)
         ess = kwargs.get('ess').mean(1)
         nll = - self._reduce_sample(kwargs.get('log_px_z'))
         kl = self._reduce_sample(kwargs.get('kl'))
-        return {'elbo': L_k, 'ess': ess, 'r_ess': ess / self.iw, 'nll': nll, 'kl': kl}
+        return {'L_k': L_k, 'elbo': elbo, 'kl_q_p': kl_q_p,
+                'ess': ess, 'r_ess': ess / self.iw, 'nll': nll, 'kl': kl}
 
     @torch.no_grad()
     def _diagnostics(self, output):
