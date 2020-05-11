@@ -28,7 +28,7 @@ class PyroMultiMNIST(Dataset):
         x = x / 255.0
 
         # binarize
-        x = x > 0.5
+        # x = x > 0.5
 
         x, y = torch.from_numpy(x).float(), torch.from_numpy(y).float()
         x = x[None]

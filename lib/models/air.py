@@ -1,5 +1,7 @@
 from collections import namedtuple
 
+from .custom_lstms import LayerNormLSTMCell
+
 import torch
 import torch.nn.functional as F
 from torch import nn
@@ -16,11 +18,17 @@ class Predictor(nn.Module):
     Infer presence and location from LSTM hidden state
     """
 
-    def __init__(self, lstm_hidden_dim):
+    def __init__(self, lstm_hidden_dim, normalization=None, dropout=0):
         nn.Module.__init__(self)
+
+        _norm = [normalization(200)] if normalization is not None else []
+
         self.seq = nn.Sequential(
+            nn.Dropout(dropout),
             nn.Linear(lstm_hidden_dim, 200),
+            *_norm,
             nn.ReLU(),
+            nn.Dropout(dropout),
             nn.Linear(200, 7),
         )
 
@@ -37,12 +45,17 @@ class AppearanceEncoder(nn.Module):
     Infer object appearance latent z_what given an image crop around the object
     """
 
-    def __init__(self, object_size, color_channels, encoder_hidden_dim, z_what_dim):
+    def __init__(self, object_size, color_channels, encoder_hidden_dim, z_what_dim, normalization=None, dropout=0):
         super().__init__()
         object_numel = color_channels * (object_size ** 2)
+
+        _norm = [normalization(200)] if normalization is not None else []
+
         self.net = nn.Sequential(
             nn.Linear(object_numel, encoder_hidden_dim),
+            *_norm,
             nn.ReLU(),
+            nn.Dropout(dropout),
             nn.Linear(encoder_hidden_dim, z_what_dim * 2)
         )
 
@@ -66,12 +79,17 @@ class AppearanceDecoder(nn.Module):
     """
 
     def __init__(self, z_what_dim, decoder_hidden_dim,
-                 object_size, color_channels, bias=-2.0):
+                 object_size, color_channels, bias=-2.0, normalization=None, dropout=0):
         super().__init__()
         object_numel = color_channels * (object_size ** 2)
+
+        _norm = [normalization(200)] if normalization is not None else []
+
         self.net = nn.Sequential(
             nn.Linear(z_what_dim, decoder_hidden_dim),
+            *_norm,
             nn.ReLU(),
+            nn.Dropout(dropout),
             nn.Linear(decoder_hidden_dim, object_numel),
         )
         self.sz = object_size
@@ -108,11 +126,16 @@ class AIR(nn.Module):
                  scale_prior_std=0.2,
                  pos_prior_mean=0.0,
                  pos_prior_std=1.0,
+                 normalization='none',
+                 dropout=0,
                  **kwargs
                  ):
         super().__init__()
 
         #### Settings
+
+        normalization = {'layernorm': nn.LayerNorm}.get(normalization, None)
+        _LSTM_cell = {'layernorm': LayerNormLSTMCell}.get(normalization, LSTMCell)
 
         self.max_steps = max_steps
 
@@ -144,18 +167,18 @@ class AIR(nn.Module):
 
         lstm_input_size = (self.img_numel + self.z_what_dim
                            + self.z_where_dim + self.z_pres_dim)
-        self.lstm = LSTMCell(lstm_input_size, self.lstm_hidden_dim)
+        self.lstm = _LSTM_cell(lstm_input_size, self.lstm_hidden_dim)
 
         # Infer presence and location from LSTM hidden state
-        self.predictor = Predictor(self.lstm_hidden_dim)
+        self.predictor = Predictor(self.lstm_hidden_dim, normalization=normalization, dropout=dropout)
 
         # Infer z_what given an image crop around the object
         self.encoder = AppearanceEncoder(object_size, color_channels,
-                                         encoder_hidden_dim, N)
+                                         encoder_hidden_dim, N, normalization=normalization, dropout=dropout)
 
         # Generate pixel representation of an object given its z_what
         self.decoder = AppearanceDecoder(N, decoder_hidden_dim,
-                                         object_size, color_channels)
+                                         object_size, color_channels, normalization=normalization, dropout=dropout)
 
         # Spatial transformer (does both forward and inverse)
         self.spatial_transf = SpatialTransformer(
@@ -163,7 +186,7 @@ class AIR(nn.Module):
             (self.img_size, self.img_size))
 
         # Baseline LSTM
-        self.bl_lstm = LSTMCell(lstm_input_size, self.baseline_hidden_dim)
+        self.bl_lstm = _LSTM_cell(lstm_input_size, self.baseline_hidden_dim)
 
         # Baseline regressor
         self.bl_regressor = nn.Sequential(
@@ -180,7 +203,7 @@ class AIR(nn.Module):
                                  scale=self.z_what_scale_prior)
 
         # Data likelihood
-        self.likelihood = 'bernoulli'
+        self.likelihood = 'original'
 
     @staticmethod
     def _module_list_to_params(modules):
@@ -384,20 +407,22 @@ class AIR(nn.Module):
         h, c = self.lstm(lstm_input, (prev.h, prev.c))
 
         # Predictor presence and location from h
-        z_pres_p, z_where_loc, z_where_scale = self.predictor(h)
+        z_pres_probs, z_where_loc, z_where_scale = self.predictor(h)
 
         # If previous z_pres is 0, force z_pres to 0
-        z_pres_p = z_pres_p * prev.z_pres
+        z_pres_probs = z_pres_probs * prev.z_pres
 
         # Numerical stability
         eps = 1e-12
-        z_pres_p = z_pres_p.clamp(min=eps, max=1.0 - eps)
+        z_pres_probs = z_pres_probs.clamp(min=eps, max=1.0 - eps)
 
         # retain grads for further analysis
-        z_pres_p.retain_grad()
+        z_pres_probs.retain_grad()
 
         # sample z_pres
-        qz_pres = Bernoulli(probs=z_pres_p)
+        # qz_pres = Bernoulli(probs=z_pres_probs)
+        # important: detach logits of q(z | x) for the KL computation so gradients only come from the reinforce term
+        qz_pres = Bernoulli(probs=z_pres_probs.detach())
         z_pres = qz_pres.sample()
 
         # If previous z_pres is 0, then this z_pres should also be 0.
@@ -412,8 +437,9 @@ class AIR(nn.Module):
         z_pres_likelihood = qz_pres.log_prob(z_pres) * prev.z_pres
         z_pres_likelihood = z_pres_likelihood.squeeze()  # shape (B,)
 
+        # TODO check this for the grads
         # important: detach logits of q(z | x) for the KL computation so gradients only come from the reinforce term
-        qz_pres = Bernoulli(probs=z_pres_p.detach())
+        qz_pres = Bernoulli(probs=z_pres_probs.detach())
 
         # Sample z_where
         qz_where = Normal(z_where_loc, z_where_scale)
@@ -478,7 +504,7 @@ class AIR(nn.Module):
             'qz_where': qz_where,
             'qz_what': qz_what,
             'qz_pres': qz_pres,
-            'qlogits': z_pres_p,
+            'qlogits': z_pres_probs,
         }
         return out
 

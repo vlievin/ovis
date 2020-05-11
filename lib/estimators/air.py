@@ -32,6 +32,12 @@ class AirReinforce(VimcoPlus):
         # log w_k, w_k = p(x, z^k) / q(z^k | x)
         L_k = torch.logsumexp(log_wk, dim=2) - self.log_iw
 
+        # elbo
+        elbo = torch.mean(log_wk, dim=2)
+
+        # kl(q | p) = \hat{log p} - elbo :  accurate if K -> \inf
+        kl_q_p = L_k - elbo
+
         # effective sample size
         ess = self.effective_sample_size(log_wk)
 
@@ -54,19 +60,23 @@ class AirReinforce(VimcoPlus):
                 v_k = log_wk.softmax(2)
                 inferred_n = output.get('inferred_n')
                 correct = (inferred_n == y).float().view(-1, self.mc, self.iw)
-                weighted_correct = (v_k * correct).sum(2)
-                accuracy = weighted_correct.mean(1)
+                accuracy = correct.mean(dim=(1, 2))
+                weighted_accuracy = (correct * v_k).sum(2).mean(1)
             else:
                 accuracy = None
+                weighted_accuracy = None
 
         # prepare diagnostics
         diagnostics = Diagnostic({
             'loss': {
                 'loss': loss,
-                'elbo': L_k.mean(1),
+                'L_k': L_k.mean(1),
+                'elbo': elbo.mean(1),
+                'kl_q_p': kl_q_p.mean(1),
                 'nll': nll,
                 'kl': kl,
                 'accuracy': accuracy,
+                'weighted_accuracy': weighted_accuracy,
                 'r_eff': ess.mean(1) / self.iw,
                 'ess': ess.mean(1),
             },
