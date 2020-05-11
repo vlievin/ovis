@@ -2,7 +2,6 @@ import sys
 
 import torch
 from torch import nn
-from torch.nn.functional import mse_loss
 
 from .base import Template
 from ..distributions import NormalFromLoc, Normal
@@ -145,6 +144,6 @@ class GaussianToyVAE(Template):
 
     @torch.no_grad()
     def _get_diagnostics(self):
-        return {'mse_A': mse_loss(self.A, self.opt_A),
-                'mse_b': mse_loss(self.b, self.opt_b),
-                'mse_mu': mse_loss(self.mu, self.opt_mu), }
+        return {'mse_A': (self.A- self.opt_A).norm(p=2),
+                'mse_b': (self.b- self.opt_b).norm(p=2),
+                'mse_mu': (self.mu- self.opt_mu).norm(p=2)}
