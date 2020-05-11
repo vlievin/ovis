@@ -20,7 +20,7 @@ from lib.estimators import VariationalInference, AirReinforce
 from lib.estimators.config import get_config
 from lib.gradients import get_gradients_statistics
 from lib.logging import sample_model, get_loggers, log_summary, save_model_and_update_best_elbo, load_model
-from lib.models import VAE, Baseline, ConvVAE, GaussianToyVAE, GaussianMixture, BernoulliToyModel, HierarchicalVae, AIR
+from lib.models import VAE, Baseline, ConvVAE, GaussianToyVAE, GaussianMixture, BernoulliToyModel, HierarchicalVae, SigmoidBeliefNetwork, AIR
 from lib.ops import training_step, test_step
 from lib.utils import notqdm
 
@@ -78,6 +78,8 @@ def parse_args():
     # gradients analysis
     parser.add_argument('--grad_samples', default=100, type=int,
                         help='number of samples used to evaluate the variance.')
+    parser.add_argument('--grad_key', default='tensor:qlogits', type=str,
+                        help='identifiant of the parameters/tensor for the gradients analysis')
     parser.add_argument('--individual_grads', action='store_true',
                         help='Compute expected gradients for single datapoints instead of over the mini-batch.')
     parser.add_argument('--counterfactuals', default='',
@@ -250,6 +252,7 @@ def init_model(opt, x, xmean=None):
               'gaussian-toy': GaussianToyVAE,
               'gmm-toy': GaussianMixture,
               'hierarchical': HierarchicalVae,
+              'sbm': SigmoidBeliefNetwork,
               'air': AIR}[model_id]
 
     # init the model
@@ -286,11 +289,9 @@ def init_valid_estimator(opt):
     config_valid = {'tau': 0, 'zgrads': False}
 
     # the main validatio estimator with K = opt.iw_valid
-    estimator_marginal_valid = Estimator_valid(mc=1, iw=opt.iw_valid, sequential_computation=opt.sequential_computation)
+    estimator_valid = Estimator_valid(mc=1, iw=opt.iw_valid, sequential_computation=opt.sequential_computation)
 
-    # a second estimator with K = opt.iw (training), this is used to compute KL(q||p)
-    estimator_valid = Estimator_valid(mc=1, iw=opt.iw, sequential_computation=opt.sequential_computation)
-    return estimator_marginal_valid, estimator_valid, config_valid
+    return estimator_valid, config_valid
 
 
 def init_oracle_estimator(opt):
@@ -342,7 +343,7 @@ def get_grads_analysis_config(opt, model, x_eval, estimator_oracle, config_oracl
 
     grad_args = {'seed': opt.seed, 'batch_size': opt.bs * opt.mc * opt.iw,
                  'n_samples': opt.grad_samples,
-                 'key_filter': 'tensor:qlogits', 'use_individual_grads': opt.individual_grads,
+                 'key_filter': opt.grad_key, 'use_individual_grads': opt.individual_grads,
                  'use_dsnr': True}
 
     # compute oracle gradients (the true gradients direction)
@@ -407,6 +408,44 @@ def perform_gradients_analysis(opt, global_step, writer_train, loader_train, mod
             )
 
 
+def evaluation(model, estimator_valid, config_valid, loader_valid, best_elbo, valid_logger,
+               writer_valid, logdir, epoch, global_step, exp_id, device='cpu', summary_train=None):
+    # temporary refactoring
+    # todo: refactor using context object
+    _sep = os.get_terminal_size().columns * "-"
+    # evaluation epoch
+    print(_sep)
+    # validation epoch to estimate the marginal log-likelihood: L_K_valid \approx log \hat{p(x)}
+    with torch.no_grad():
+        model.eval()
+        agg_valid = Aggregator()
+        for batch in tqdm(loader_valid, desc=f"{exp_id}-L_{opt.iw_valid}"):
+            x, y = preprocess(batch, device)
+            diagnostics = test_step(x, model, estimator_valid, y=y, **config_valid)
+            agg_valid.update(diagnostics)
+        summary_valid = agg_valid.data.to('cpu')
+
+    # compute overfitting L_K^{train} - L_K^{valid}
+    if summary_train is not None:
+        summary_valid['loss']['overfitting'] = summary_train['loss']['elbo'].mean() - \
+                                               summary_valid['loss']['elbo'].mean()
+
+    # update best elbo and save model
+    best_elbo = save_model_and_update_best_elbo(model, summary_valid, global_step,
+                                                epoch, best_elbo, logdir)
+
+    # log marginal valid summary to console and tensorboarf
+    log_summary(summary_valid, global_step, epoch, logger=valid_logger, best=best_elbo,
+                writer=writer_valid,
+                exp_id=f"{exp_id}-L_{opt.iw_valid}")
+
+    # sample model
+    sample_model("prior-sample", model, logdir, global_step=global_step, writer=writer_valid, seed=opt.seed)
+    print(_sep)
+
+    return best_elbo
+
+
 def preprocess(batch, device):
     if isinstance(batch, Tensor):
         x = batch.to(device)
@@ -465,11 +504,14 @@ if __name__ == '__main__':
 
         # get datasets (ony use training sets if `opt.only_train_set`)
         dset_train, dset_valid, dset_test = get_datasets(opt)
-        base_logger.info(f"Dataset size: train = {len(dset_train)}, valid = {len(dset_valid)}")
+        base_logger.info(f"Dataset size: train = {len(dset_train)}, valid = {len(dset_valid)}, test = {len(dset_test)}")
 
         # dataloaders
         loader_train = DataLoader(dset_train, batch_size=opt.bs, shuffle=True, num_workers=opt.workers, pin_memory=True)
-        loader_valid = DataLoader(dset_valid, batch_size=opt.valid_bs, shuffle=True, num_workers=opt.workers,
+
+        # use the test set for validation as in:
+        # https://github.com/vmasrani/tvo/blob/f7a3229d954274e1d920bf4fe98dcb18f837f825/discrete_vae/run.py
+        loader_valid = DataLoader(dset_test, batch_size=opt.valid_bs, shuffle=True, num_workers=opt.workers,
                                   pin_memory=True)
 
         # compute mean value of train set
@@ -484,6 +526,7 @@ if __name__ == '__main__':
             f"x.mean = {mean_over_dset.mean():1f}, x.dtype = {x.dtype}")
 
         model = init_model(opt, x, mean_over_dset)
+        base_logger.info(f"Model: Number of parameters = {sum(p.numel() for p in model.parameters()):.3E}")
 
         # define a neural baseline that can be used for the different estimators
         baseline = init_neural_baseline(opt, x) if use_baseline else None
@@ -492,7 +535,7 @@ if __name__ == '__main__':
         estimator, config = init_main_estimator(opt, baseline)
 
         # valid estimator (it is important that all models are evaluated using the same evaluator)
-        estimator_marginal_valid, estimator_valid, config_valid = init_valid_estimator(opt)
+        estimator_valid, config_valid = init_valid_estimator(opt)
 
         # oracle estimator to establish the true gradients direction
         estimator_oracle, config_oracle = init_oracle_estimator(opt)
@@ -505,7 +548,6 @@ if __name__ == '__main__':
         device = "cuda:0" if torch.cuda.device_count() else "cpu"
         model.to(device)
         estimator.to(device)
-        estimator_marginal_valid.to(device)
 
         # define the optimizer for the model's parameters and the training estimator's parameters if any (baseline)
         optimizers = init_optimizers(opt, model, estimator)
@@ -517,7 +559,9 @@ if __name__ == '__main__':
 
         # define the run length based on either
         epochs, iter_per_epoch = get_number_of_epochs(opt)
-        base_logger.info(f"Dataset = {opt.dataset}: running for {epochs} epochs, {iter_per_epoch * epochs} steps")
+        base_logger.info(f"Dataset = {opt.dataset}: running for {epochs} epochs,"
+                         f" {iter_per_epoch * epochs} steps, {iter_per_epoch} steps / epoch")
+
 
         # sample model at initialization
         sample_model("prior-sample", model, logdir, global_step=0, writer=writer_valid, seed=opt.seed)
@@ -525,6 +569,12 @@ if __name__ == '__main__':
         # run
         best_elbo = (-1e20, 0, 0)
         global_step = 0
+
+        # # initial evaluation
+        # best_elbo = evaluation(model, estimator_valid, config_valid,
+        #                        loader_valid, best_elbo, valid_logger, writer_valid, logdir, 0,
+        #                        global_step, exp_id, device=device, summary_train=None)
+
         for epoch in range(1, epochs + 1):
             # train epoch
             [o.zero_grad() for o in optimizers]
@@ -551,51 +601,9 @@ if __name__ == '__main__':
                                                counterfactual_writers=counterfactual_writers, c_estimators=c_estimators,
                                                c_configs=c_configs, counterfactual_estimators=counterfactual_estimators)
 
-                # evaluation epoch
-                print(_sep)
-                # validation epoch to estimate the marginal log-likelihood: L_K_valid \approx log \hat{p(x)}
-                with torch.no_grad():
-                    model.eval()
-                    agg_marginal_valid = Aggregator()
-                    for batch in tqdm(loader_valid, desc=f"{exp_id}-L_{opt.iw_valid}"):
-                        x, y = preprocess(batch, device)
-                        diagnostics = test_step(x, model, estimator_marginal_valid, y=y, **config)
-                        agg_marginal_valid.update(diagnostics)
-                    summary_valid_marginal = agg_marginal_valid.data.to('cpu')
-
-                # validation epoch to compute L_K_train
-                with torch.no_grad():
-                    model.eval()
-                    agg_valid = Aggregator()
-                    for batch in tqdm(loader_valid, desc=f"{exp_id}-L_{opt.iw}"):
-                        x, y = preprocess(batch, device)
-                        diagnostics = test_step(x, model, estimator_valid, y=y, **config)
-                        agg_valid.update(diagnostics)
-                    summary_valid = agg_valid.data.to('cpu')
-
-                # compute KL(q||p) = log p(x) - L_K_train
-                summary_valid_marginal['loss']['kl_q_p'] = summary_valid_marginal['loss']['elbo'] - \
-                                                           summary_valid['loss']['elbo']
-
-                # compute overfitting L_K^{train} - L_K^{valid}
-                summary_valid_marginal['loss']['overfitting'] = summary_train['loss']['elbo'] - \
-                                                                summary_valid['loss']['elbo']
-
-                # append the data from the simple validation (L_K_train)
-                summary_valid_marginal['_loss'] = summary_valid['loss']
-
-                # update best elbo and save model
-                best_elbo = save_model_and_update_best_elbo(model, summary_valid_marginal, global_step,
-                                                            epoch, best_elbo, logdir)
-
-                # log marginal valid summary to console and tensorboarf
-                log_summary(summary_valid_marginal, global_step, epoch, logger=valid_logger, best=best_elbo,
-                            writer=writer_valid,
-                            exp_id=f"{exp_id}-L_{opt.iw_valid}")
-
-                # sample model
-                sample_model("prior-sample", model, logdir, global_step=global_step, writer=writer_valid, seed=opt.seed)
-                print(_sep)
+                best_elbo = evaluation(model, estimator_valid, config_valid,
+                                       loader_valid, best_elbo, valid_logger, writer_valid, logdir, epoch,
+                                       global_step, exp_id, device=device, summary_train=summary_train)
 
             # reduce learning rate
             if opt.lr_reduce_steps > 0:
@@ -613,7 +621,9 @@ if __name__ == '__main__':
               f"L_{opt.iw_valid} = {best_elbo[0]:.3f} at step {best_elbo[1]}, epoch = {best_elbo[2]}\n{_sep}")
 
         writer_test = SummaryWriter(os.path.join(logdir, 'test'))
-        loader_test = DataLoader(dset_test, batch_size=opt.test_bs, shuffle=True, num_workers=1)
+        # use the validation set for testing as in:
+        # https://github.com/vmasrani/tvo/blob/f7a3229d954274e1d920bf4fe98dcb18f837f825/discrete_vae/run.py
+        loader_test = DataLoader(dset_valid, batch_size=opt.test_bs, shuffle=True, num_workers=1)
 
         config_test = {'tau': 0, 'zgrads': False}
         Estimator_valid = AirReinforce if 'air' == opt.dataset else VariationalInference
