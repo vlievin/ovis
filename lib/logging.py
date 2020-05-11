@@ -77,7 +77,7 @@ def log_summary(summary, global_step, epoch, logger=None, writer=None, **kwargs)
         summary.log(writer, global_step)
 
 
-def save_model_and_update_best_elbo(model, eval_summary, global_step, epoch, best_elbo, logdir, key='elbo'):
+def save_model_and_update_best_elbo(model, eval_summary, global_step, epoch, best_elbo, logdir, key='L_k'):
     elbo = eval_summary['loss'][key]
     prev_elbo, *_ = best_elbo
     if elbo > prev_elbo:

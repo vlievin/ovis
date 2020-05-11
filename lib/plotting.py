@@ -59,13 +59,14 @@ def update_labels(axes, metric_dict):
             label = metric_dict[ylabel]
 
             # append `^{header}$` to `$\mathcal{L}`
-            if 'loss/elbo' in ylabel:
-                if 'train:' in ax.get_ylabel():
-                    label = label[:-1] + "^{train}$"
-                elif 'valid:' in ax.get_ylabel():
-                    label = label[:-1] + "^{valid}$"
-                elif 'test:' in ax.get_ylabel():
-                    label = label[:-1] + "^{test}$"
+            for k in ['loss/L_k', 'loss/elbo', 'loss/kl_q_p']:
+                if k in ylabel:
+                    if 'train:' in ax.get_ylabel():
+                        label = label[:-1] + "^{train}$"
+                    elif 'valid:' in ax.get_ylabel():
+                        label = label[:-1] + "^{valid}$"
+                    elif 'test:' in ax.get_ylabel():
+                        label = label[:-1] + "^{test}$"
 
             ax.set_ylabel(label)
 
@@ -155,8 +156,9 @@ def plot_cis(ax, at, ci_low, ci_high, color, capsize, **kws):
         ax.plot([at - capsize / 2, at + capsize / 2],
                 [ci_high, ci_high], color=color, **kws)
 
-def spot_on_plot(logs, path, metrics, main_key, auxiliary_key, style_key=None, ylims=dict(), log_rules=dict(),
-                 metric_dict=dict(), **kwargs):
+
+def detailed_plot(logs, path, metrics, main_key, auxiliary_key, style_key=None, ylims=dict(), log_rules=dict(),
+                  metric_dict=dict(), **kwargs):
     """make a grid of plot metrics x aux. keys values"""
     aux_keys = logs[auxiliary_key].unique()
     nrows = len(metrics)
@@ -267,7 +269,6 @@ def pivot_plot(df, path, metrics, cat_key, hue_key, x_key, style_key=None, ylims
     if nrows == 0 or ncols == 0:
         return None
 
-
     print(">>> pivot: ", key_name, df[key_name].unique())
     hue_order = {l: i for i, l in enumerate(sorted(df[key_name].unique()))}
     if len(categories) > 1:
@@ -307,7 +308,8 @@ def pivot_plot(df, path, metrics, cat_key, hue_key, x_key, style_key=None, ylims
                     linewidth = 2.5
                     markersize = 10
                     alpha = 0.9
-                    ax.plot(series[x_key], series[metric]['mean'], color=color, label=_key, marker=markers[c], markersize=markersize, linewidth=linewidth, alpha=alpha)
+                    ax.plot(series[x_key], series[metric]['mean'], color=color, label=_key, marker=markers[c],
+                            markersize=markersize, linewidth=linewidth, alpha=alpha)
                     plot_cis(ax, series[x_key], ci_low, ci_high, color, capsize, linewidth=linewidth, alpha=alpha)
 
                 ax.set_xlabel(x_key)
@@ -330,7 +332,7 @@ def pivot_plot(df, path, metrics, cat_key, hue_key, x_key, style_key=None, ylims
                 # if i == len(metrics) - 1 and j == len(categories) - 1:
                 #     ax.legend(title=hue_key)
 
-                legend_infos += list(zip(*ax.get_legend_handles_labels())) # returns handles, labels
+                legend_infos += list(zip(*ax.get_legend_handles_labels()))  # returns handles, labels
 
             except Exception as ex:
                 print(
@@ -344,16 +346,14 @@ def pivot_plot(df, path, metrics, cat_key, hue_key, x_key, style_key=None, ylims
     update_labels(axes, metric_dict)
 
     # create legend
-    legend_infos = {label : handle for handle, label in legend_infos}
+    legend_infos = {label: handle for handle, label in legend_infos}
     labels, handles = zip(*legend_infos.items())
 
     # set tight layout and add margin at the top for the legend
     plt.tight_layout()
     fig.subplots_adjust(top=0.88)
-    fig.legend(handles=handles, labels=labels, ncol=len(labels), loc='lower center',bbox_to_anchor=(0, 0.9, 1, 0.99))#,fancybox=False, shadow=False), title=hue_key
-
-
-
+    fig.legend(handles=handles, labels=labels, ncol=len(labels), loc='lower center',
+               bbox_to_anchor=(0, 0.9, 1, 0.99))  # ,fancybox=False, shadow=False), title=hue_key
 
     plt.savefig(path)
     plt.close()

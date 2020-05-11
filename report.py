@@ -43,12 +43,13 @@ log_rules = {
 metric_dict = {
     'iw': r"$K$",
     'c_iw': r"$K$",
-    'loss/elbo': r"$\mathcal{L}_K$",
+    'loss/L_k': r"$\log p_{\theta}(x)$",
+    'loss/elbo': r"$\operatorname{ELBO}$",
     'loss/kl': r"$\operatorname{KL}(q_{\phi}(z | x) | p(z))$",
     'loss/nll': r"$- \log p_{\theta}(z | x)$",
     'loss/r_ess': r"$\operatorname{ESS} / K$",
     'loss/ess': r"$\operatorname{ESS}$",
-    'loss/kl_q_p': r"$\operatorname{KL} (q | p)$",
+    'loss/kl_q_p': r"$\mathrm{KL}\left(Q \| P\right)$",
     'grads/variance': r"$\operatorname{Var}(\Delta_K(\phi))$",
     'grads/snr': r"$\operatorname{SNR}(\Delta_K(\phi))$",
     'grads/dsnr': r"$\operatorname{DSNR}(\Delta_K(\phi))$",
@@ -79,7 +80,7 @@ parser.add_argument('--ylims', default='', type=str,
                     help='comma separated list of limit values for the curve plot (syntax: key:min:max), example: `elbo:-60:-5,kl:4:10`')
 parser.add_argument('--keys', default='estimator, iw', type=str,
                     help='comma separated list of keys to include in the report by decreasing order of importance, more than 3 keys is not yet handled for plotting.')
-parser.add_argument('--spot_on_metrics', default='train:grads/log_snr, train:loss/elbo', type=str,
+parser.add_argument('--detailed_metrics', default='train:grads/log_snr, train:loss/elbo', type=str,
                     help='comma separated list of keys for the `spot-on` plots. ')
 parser.add_argument('--parse_estimator_args', action='store_true',
                     help='parse estimator arguments such that `vimco-outer` -> `vimco` + outer=True')
@@ -156,9 +157,9 @@ curves_metrics = opt.metrics.replace(" ", "").split(',')
 
 # define the metrics for the `spot-on` plot
 keys = list(opt.keys.replace(" ", "").split(','))
-spot_on_metrics = list(opt.spot_on_metrics.replace(" ", "").split(','))
-if spot_on_metrics[0] == "":
-    spot_on_metrics = []
+detailed_metrics = list(opt.detailed_metrics.replace(" ", "").split(','))
+if detailed_metrics[0] == "":
+    detailed_metrics = []
 
 
 # define the `pivot table` metrics
@@ -174,7 +175,7 @@ pivot_metrics_agg_fns, pivot_metrics = zip(
 pivot_metrics = list(pivot_metrics)
 
 # define the metrics to read from tensorboard
-all_metrics = list(set(curves_metrics + spot_on_metrics + pivot_metrics))
+all_metrics = list(set(curves_metrics + detailed_metrics + pivot_metrics))
 _headers, _all_metrics = zip(*[u.split(":") for u in all_metrics])
 dict_metrics = defaultdict(list)
 [dict_metrics[h].append(k) for (h, k) in zip(_headers, _all_metrics)]
@@ -552,18 +553,18 @@ for cat in logs[cat_key].unique():
 
     logger.info(f"|- Generating merged curves plots..")
     # main plot
-    _path = os.path.join(output_path, f"{level}-curves-all-{cat_key}={cat}.png")
-    plot_logs(cat_logs, _path, curves_metrics, main_key, ylims=ylims, style_key=aux_key, **meta)
+    # _path = os.path.join(output_path, f"{level}-curves-all-{cat_key}={cat}.png")
+    # plot_logs(cat_logs, _path, curves_metrics, main_key, ylims=ylims, style_key=aux_key, **meta)
 
     if aux_key is not None:
 
         level = 3
 
         # spot on plots
-        if len(spot_on_metrics):
+        if len(detailed_metrics):
             logger.info(f"|- Generating spot-on plots for aux. key = {aux_key}")
-            _path = os.path.join(output_path, f"{level}-{cat_key}={cat}-spot-on.png")
-            spot_on_plot(cat_logs, _path, spot_on_metrics, main_key, aux_key, style_key=third_key, ylims=ylims, **meta)
+            _path = os.path.join(output_path, f"{level}-{cat_key}={cat}-detailed.png")
+            detailed_plot(cat_logs, _path, detailed_metrics, main_key, aux_key, style_key=third_key, ylims=ylims, **meta)
 
         # on plot for each auxiliary key
         # for each aux key..
