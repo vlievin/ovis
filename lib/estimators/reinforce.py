@@ -164,7 +164,7 @@ class Vimco(Reinforce):
 
     @torch.no_grad()
     def compute_control_variate(self, x: Tensor, arithmetic=False, return_raw=False,
-                                use_outer_samples=False, use_double: bool = True, return_meta: bool = False,
+                                use_outer_samples=False, use_double: bool = False, return_meta: bool = False,
                                 **data: Dict[str, Tensor]) -> Tuple[
         Tensor, dict, int]:
         """Compute the baseline that will be substracted to the score L_k,
@@ -276,20 +276,25 @@ class VimcoPlus(Reinforce):
         v_k_safe = torch.min((1 - 1e-6) * torch.ones_like(v_k), v_k)
 
         # compute prefactors g_k such that g = \sum_k g_k h_k
-        if mode == 'vimco':
-            # c_k = log Z^{-k}
-            # log Z - c_k - v_k = log (1 - 1/K) - log(1 - v_k) - v_k
+        if mode == 'vimco-geometric':
+            # c_k = log Z^{-k} = 1/K \sum{ l \neq k} w_l where log w_k = 1\(K-1) \sum {l \neq k} log w_l
+            c_k, *_ = Vimco.compute_control_variate(self, None, arithmetic=False, log_wk=log_wk)
+            prefactor_k = L_k[:, :, None] - c_k.sum(-1) - alpha * v_k
+        elif mode == 'vimco':
+            # c_k = log Z^{-k} = 1/K \sum{ l \neq k} w_l where w_k = 1\(K-1) \sum {l \neq k} w_l
+            # g_k = log Z - c_k - v_k = log (1 - 1/K) - log(1 - v_k) - v_k
             prefactor_k = self.log_1_m_uniform - torch.log1p(- v_k_safe) - alpha * v_k
         elif mode == 'copt-uniform':
             # c_k = log Z^{-k} - 1/ K
-            # log Z - c_k = log (1 - 1/K) - log(1 - v_k) + 1 / K - v_k
+            # g_k = log Z - c_k = log (1 - 1/K) - log(1 - v_k) + 1 / K - v_k
             prefactor_k = self.log_1_m_uniform - torch.log1p(- v_k_safe) + alpha * (1 / self.iw - v_k)
         elif mode == 'copt':
             # c_k = log 1/ K \sum_{l \neq k} w_l
-            # log Z - c_k = - log(1-v_k) - v_k
+            # g_k = log Z - c_k = - log(1-v_k) - v_k
             prefactor_k = - torch.log1p(- v_k_safe) - alpha * v_k
         elif mode == 'ww':
             # wake-wake estimator
+            # g_k = v_k
             prefactor_k = v_k
         else:
             raise ValueError(f"Unknown mode VimcoPlus `mode` parameter `{mode}`")
@@ -348,7 +353,7 @@ class VimcoPlus(Reinforce):
         L_k, ess, log_wk = [iw_data[k] for k in ('L_k', 'ess', 'log_wk')]
 
         # concatenate all q(z_l| *, x)
-        log_qz = torch.cat(log_qz, 1).view(bs, self.mc, self.iw, -1)
+        log_qz = torch.cat([l.view(l.size(0), -1) for l in log_qz], 1).view(bs, self.mc, self.iw, -1)
 
         prefactor_k = self.compute_prefactors(L_k, log_wk, ess, **kwargs)
 
