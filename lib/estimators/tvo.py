@@ -1,12 +1,40 @@
 from .vi import *
 
 
+def get_partition(num_partitions, partition_type, log_beta_min=-10,
+                  device=None):
+    """Create a non-decreasing sequence of values between zero and one.
+    See https://en.wikipedia.org/wiki/Partition_of_an_interval.
+    Args:
+        num_partitions: length of sequence minus one
+        partition_type: \'linear\' or \'log\'
+        log_beta_min: log (base ten) of beta_min. only used if partition_type
+            is log. default -10 (i.e. beta_min = 1e-10).
+        device: torch.device object (cpu by default)
+    Returns: tensor of shape [num_partitions + 1]
+    """
+    if device is None:
+        device = torch.device('cpu')
+    if num_partitions == 1:
+        partition = torch.tensor([0, 1], dtype=torch.float, device=device)
+    else:
+        if partition_type == 'linear':
+            partition = torch.linspace(0, 1, steps=num_partitions + 1,
+                                       device=device)
+        elif partition_type == 'log':
+            partition = torch.zeros(num_partitions + 1, device=device,
+                                    dtype=torch.float)
+            partition[1:] = torch.logspace(
+                log_beta_min, 0, steps=num_partitions, device=device,
+                dtype=torch.float)
+    return partition
+
+
 class ThermoVariationalObjective(VariationalInference):
     """
     Thermovariational Inference. Based on https://arxiv.org/pdf/1907.00031.pdf / https://github.com/vmasrani/tvo
     Currently implemed for discrete VAEs.
 
-    TODO: Continuous VAEs?
     """
 
     def __init__(self, *args, **kwargs):
@@ -15,37 +43,37 @@ class ThermoVariationalObjective(VariationalInference):
         assert self.mc == 1
 
         # Partitions of unit interval
-        partitions = [[0.0000e+00, 1.0000e-10, 1.0000e+00],  # 0 (Poor)
-                      [0.0000e+00, 3.0000e-10, 1.0000e+00],  # 1 (Poor)
-                      [0.0000e+00, 1.0000e-9, 1.0000e+00],  # 2 (Poor)
-                      [0.0000e+00, 3.0000e-9, 1.0000e+00],  # 3 (Poor)
-                      [0.0000e+00, 1.0000e-8, 1.0000e+00],  # 4 (Poor)
-                      [0.0000e+00, 3.0000e-8, 1.0000e+00],  # 5 (Poor)
-                      [0.0000e+00, 1.0000e-7, 1.0000e+00],  # 6 (Poor)
-                      [0.0000e+00, 3.0000e-7, 1.0000e+00],  # 7 (Poor)
-                      [0.0000e+00, 1.0000e-6, 1.0000e+00],  # 8 (Poor)
-                      [0.0000e+00, 3.0000e-6, 1.0000e+00],  # 9 (Poor)
-                      [0.0000e+00, 1.0000e-5, 1.0000e+00],  # 10 (Poor)
-                      [0.0000e+00, 3.0000e-5, 1.0000e+00],  # 11 (Poor)
-                      [0.0000e+00, 1.0000e-4, 1.0000e+00],  # 12 (Poor)
-                      [0.0000e+00, 3.0000e-4, 1.0000e+00],  # 13 (Poor)
-                      [0.0000e+00, 1.0000e-3, 1.0000e+00],  # 14 (Poor)
-                      [0.0000e+00, 3.0000e-3, 1.0000e+00],  # 15 (Poor)
-                      [0.0000e+00, 1.0000e-2, 1.0000e+00],  # 16 (Poor)
-                      [0.0000e+00, 5.0000e-2, 1.0000e+00],  # 17 (Maybe useful)
-                      [0.0000e+00, 1.0000e-1, 1.0000e+00],  # 18 (Recommended)
-                      [0.0000e+00, 2.0000e-1, 1.0000e+00],  # 19 (Recommended)
-                      [0.0000e+00, 2.5000e-1, 1.0000e+00],  # 20 (Recommended)
-                      [0.0000e+00, 3.0000e-1, 1.0000e+00],  # 21 (Recommended)
-                      [0.0000e+00, 3.5000e-1, 1.0000e+00],  # 22 (Maybe useful)
-                      [0.0000e+00, 4.0000e-1, 1.0000e+00],  # 23 (Maybe useful)
-                      # [0.0000e+00, 1.0000e-1, 3.0000e-1, 1.0000e+00]  # 24 (Test) # todo: is it used somewhere? commenting out for now
-                      ]
-
-        self.register_buffer("partitions", torch.tensor(partitions, dtype=torch.float))
+        # partitions = [[0.0000e+00, 1.0000e-10, 1.0000e+00],  # 0 (Poor)
+        #               [0.0000e+00, 3.0000e-10, 1.0000e+00],  # 1 (Poor)
+        #               [0.0000e+00, 1.0000e-9, 1.0000e+00],  # 2 (Poor)
+        #               [0.0000e+00, 3.0000e-9, 1.0000e+00],  # 3 (Poor)
+        #               [0.0000e+00, 1.0000e-8, 1.0000e+00],  # 4 (Poor)
+        #               [0.0000e+00, 3.0000e-8, 1.0000e+00],  # 5 (Poor)
+        #               [0.0000e+00, 1.0000e-7, 1.0000e+00],  # 6 (Poor)
+        #               [0.0000e+00, 3.0000e-7, 1.0000e+00],  # 7 (Poor)
+        #               [0.0000e+00, 1.0000e-6, 1.0000e+00],  # 8 (Poor)
+        #               [0.0000e+00, 3.0000e-6, 1.0000e+00],  # 9 (Poor)
+        #               [0.0000e+00, 1.0000e-5, 1.0000e+00],  # 10 (Poor)
+        #               [0.0000e+00, 3.0000e-5, 1.0000e+00],  # 11 (Poor)
+        #               [0.0000e+00, 1.0000e-4, 1.0000e+00],  # 12 (Poor)
+        #               [0.0000e+00, 3.0000e-4, 1.0000e+00],  # 13 (Poor)
+        #               [0.0000e+00, 1.0000e-3, 1.0000e+00],  # 14 (Poor)
+        #               [0.0000e+00, 3.0000e-3, 1.0000e+00],  # 15 (Poor)
+        #               [0.0000e+00, 1.0000e-2, 1.0000e+00],  # 16 (Poor)
+        #               [0.0000e+00, 5.0000e-2, 1.0000e+00],  # 17 (Maybe useful)
+        #               [0.0000e+00, 1.0000e-1, 1.0000e+00],  # 18 (Recommended)
+        #               [0.0000e+00, 2.0000e-1, 1.0000e+00],  # 19 (Recommended)
+        #               [0.0000e+00, 2.5000e-1, 1.0000e+00],  # 20 (Recommended)
+        #               [0.0000e+00, 3.0000e-1, 1.0000e+00],  # 21 (Recommended)
+        #               [0.0000e+00, 3.5000e-1, 1.0000e+00],  # 22 (Maybe useful)
+        #               [0.0000e+00, 4.0000e-1, 1.0000e+00],  # 23 (Maybe useful)
+        #               # [0.0000e+00, 1.0000e-1, 3.0000e-1, 1.0000e+00]  # 24 (Test) # todo: is it used somewhere? commenting out for now
+        #               ]
+        #
+        # self.register_buffer("partitions", torch.tensor(partitions, dtype=torch.float))
 
     def compute_loss(self, log_px_z: Tensor, log_pzs: List[Tensor], log_qzs: List[Tensor], integration: str = 'left',
-                     partition=21, auto_partition=False, **kwargs:Any) -> Dict[str, Tensor]:
+                     num_partition=2, partition_type='log', log_beta_min=-10, auto_partition=False, **kwargs:Any) -> Dict[str, Tensor]:
         """
         Computes the covariance gradient estimator for the TVO bound.
 
@@ -72,13 +100,13 @@ class ThermoVariationalObjective(VariationalInference):
         if auto_partition:
             # map K to a partition accodingly to the figure 3. in the TVO paper
             if self.iw < 10:
-                partition = 17 # beta = 5e-2
+                log_beta_min = np.log(5e-2)
             elif self.iw < 30:
-                partition = 19 # beta = 2e-1
+                log_beta_min = np.log(2e-1)
             else:
-                partition = 21 # beta = 3e-1
+                log_beta_min = np.log(3e-1)
 
-        partition = self.partitions[partition]
+        partition = get_partition(num_partition, partition_type, log_beta_min=log_beta_min, device=log_px_z.device)
         num_particles = self.iw
 
         iw_data = self.compute_iw_bound(log_px_z, log_pzs, log_qzs, detach_qlogits=False,

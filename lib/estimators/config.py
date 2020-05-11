@@ -38,6 +38,8 @@ def get_config(estimator):
                 mode = 'copt-uniform'
             elif 'copt' in estimator:
                 mode = 'copt'
+            elif 'vimco-geometric' in estimator:
+                mode = 'vimco-geometric'
             elif 'vimco' in estimator:
                 mode = 'vimco'
             elif 'ww' in estimator:
@@ -103,15 +105,27 @@ def get_config(estimator):
         config = {'tau': 0.5, 'zgrads': True}
 
     elif 'tvo' in estimator:
+        # argument for automatic partition
         auto_partition = "-auto" in estimator
-        partition_args = [arg for arg in estimator.split('-') if 'part' in arg]
-        partition = parse_numbers(partition_args[0])[0] if len(partition_args) else 21
+
+        # number of partitions
+        partition_args = [arg for arg in estimator.split('-') if 'S' in arg]
+        num_partition = parse_numbers(partition_args[0])[0] if len(partition_args) else 2
+
+        # parse `log_beta_min` from as - log beta_min
+        partition_args = [arg for arg in estimator.split('-') if 'beta' in arg]
+        log_beta_min =  - parse_numbers(partition_args[0])[0] if len(partition_args) else -10
+
+
+        # integration
         _integrations = ['left', 'right', 'trapz']
         integration = [x for x in _integrations if x in estimator.split("-")]
         integration = integration[0] if len(integration) else "left"
+
+        # define config and Estimator
         Estimator = ThermoVariationalObjective
-        config = {'tau': 0, 'zgrads': False, 'partition': partition, 'integration': integration,
-                  'auto_partition': auto_partition}
+        config = {'tau': 0, 'zgrads': False, 'num_partition': num_partition, 'integration': integration,
+                  'auto_partition': auto_partition, 'log_beta_min': log_beta_min}
 
     else:
         raise ValueError(f"Unknown estimator {estimator}.")
