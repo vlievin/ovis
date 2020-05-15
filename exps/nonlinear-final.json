@@ -1,0 +1,37 @@
+{
+  "description": "Training a 3 layers Hierarchical VAE with non-linear connections.",
+  "args": [
+    "--estimator pathwise-iwae",
+    "--estimator copt-alpha0",
+    "--estimator copt-autoalpha",
+    "--estimator tvo-S20",
+    "--estimator ww"
+  ],
+  "global": "--silent --deterministic --nsteps 1000000",
+  "parameters": {
+    "model":["hierarchical"],
+    "prior": ["normal"],
+    "learn_prior" : [true],
+    "N": [16],
+    "nlayers" :[1,2,3],
+    "norm": ["none"],
+    "dropout": [0.2],
+    "hdim" : [128],
+    "depth" : [3],
+    "freebits": [2.0],
+    "iw" : [64],
+    "seed":[1, 2, 3],
+    "dataset" : ["binmnist"],
+    "grad_samples" : [100],
+    "iw_valid" : [5000],
+    "iw_test" : [5000],
+    "eval_freq": [20],
+    "bs": [64],
+    "lr": [1e-3],
+    "lr_reduce_steps":[0],
+    "valid_bs": [2],
+    "test_bs": [2],
+    "grad_bs": [20],
+    "grad_key" : ["tensor:qlogits"]
+  }
+}

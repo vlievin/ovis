@@ -66,12 +66,15 @@ class HierarchicalVae(Template):
         """
         super().__init__()
 
-        # define prior family
+        # define prior family p_{\theta}(z | * )
         self.prior_dist = {'bernoulli': PseudoBernoulli,
                            'categorical': PseudoCategorical,
                            'normal': NormalFromLogits
                            }[prior]
 
+
+        # special cases depending on the choice of the prior
+        # z_post is a function applied to the latent sample `z` before feeding it to the next layer
         if prior == 'normal':
             K = 2
             kdim = 0
@@ -88,23 +91,23 @@ class HierarchicalVae(Template):
 
         # input preprocessing
         self.register_buffer("x_mean", x_mean if isinstance(x_mean, Tensor) else 0.5 * torch.ones((1, *xdim)))
-        self.x_pre = lambda x: (x - self.x_mean + 1) / 2
-        self.x_post = lambda x: x # TODO [debug] - torch.log(1. / torch.clamp(self.x_mean, 0.001, 0.999) - 1)
+        self.x_pre = lambda x: (x - self.x_mean + 1) / 2 # function applied to the input `x`
+        self.x_post = lambda x: x  # function applied to the output
 
         # parameters
-        self.xdim = xdim
-        self.zdim = (N, 1,) if prior == 'normal' else (N, K,)
-        self.prior_dim = (N, 2,) if prior == 'normal' else (N, K,)
-        self.N = N
-        self.K = K
-        self.hdim = hdim
-        self.kdim = kdim
+        self.xdim = xdim # dimension of the observation
+        self.zdim = (N, 1,) if prior == 'normal' else (N, K,) # dimension of the latent samples
+        self.prior_dim = (N, 2,) if prior == 'normal' else (N, K,) # dimension of the paramters of the prior distribution
+        self.N = N # number of idependent latent variables for each layer
+        self.K = K # number of categories when using categorical priors
+        self.hdim = hdim # hidden dimension used in the MLPs
+        self.kdim = kdim # key dimension when using a categorical prior with a key/query model
         self.dropout = dropout
         self.nlayers = nlayers
         self.bias = bias
         self.normalization = normalization
 
-        # prior
+        # define the parameters of the prior
         prior = torch.zeros((1, *self.prior_dim))
         if learn_prior:
             self.prior = nn.Parameter(prior)
@@ -120,12 +123,13 @@ class HierarchicalVae(Template):
             self.qdim = (N, K)
             self.keys = None
 
+        # arguments for all MLPs
         mlp_args = {'nlayers': nlayers,
                     'bias': bias,
                     'normalization': normalization,
                     'dropout': dropout}
 
-        # define the encoder
+        # define the inference network
         q_stages = []
         h = prod(xdim)
         for l in range(depth):
@@ -134,14 +138,13 @@ class HierarchicalVae(Template):
             q_stages += [stage]
         self.encoder = nn.ModuleList(q_stages)
 
-        # define the decoder
+        # define the generative model
         p_stages = []
         for l in range(depth):
             nout = prod(self.qdim) if l < depth - 1 else prod(xdim)
             stage = MLP(prod(self.zdim), hdim, nout, **mlp_args)
             p_stages += [stage]
         self.decoder = nn.ModuleList(p_stages)
-
 
         # https://github.com/vmasrani/tvo/blob/f7a3229d954274e1d920bf4fe98dcb18f837f825/discrete_vae/models.py:
         # ``https://github.com/duvenaud/relax/blob/master/binary_vae_multilayer_per_layer.py#L273
