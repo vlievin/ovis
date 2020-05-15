@@ -63,18 +63,18 @@ def get_datasets(opt):
     else:
         raise ValueError(f"Unknown data: {opt.dataset}")
 
-    if opt.only_train_set:
-        def use_only_training(dset_train, dset_valid, dset_test):
-            return dset_train, dset_train, dset_train
-
-        output = use_only_training(*output)
-
     if opt.mini:
         def wrapper(dset_train, dset_valid, dset_test):
             return MiniDataset(dset_train, _train_mini, opt.seed), \
                    MiniDataset(dset_valid, _valid_mini, opt.seed), \
                    MiniDataset(dset_test, _test_mini, opt.seed + 1)
 
-        return wrapper(*output)
-    else:
-        return output
+        output = wrapper(*output)
+
+    if opt.only_train_set:
+        def use_only_training(dset_train, dset_valid, dset_test):
+            return dset_train, dset_train, dset_train
+
+        output = use_only_training(*output)
+
+    return output

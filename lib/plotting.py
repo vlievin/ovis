@@ -24,25 +24,24 @@ PLOT_HEIGHT = 3
 colors = sns.color_palette()
 
 
-def set_log_scale(ax, metric, log_rules, force_linear_x=False):
-    m = metric.split(':')[-1]
-    rule = log_rules.get(m, 'linear')
+def set_log_scale(ax, label, log_rules, axis='y'):
+    if ':' in label:
+        label = label.split(':')[-1]
+    rule = log_rules.get(label, 'linear')
     if rule == 'linear':
         pass
-    elif rule == 'loglog':
-        if not force_linear_x:
+    elif rule == 'log':
+        if axis == 'y':
+            ax.set_yscale('log')
+        elif axis == 'x':
             ax.set_xscale('log')
-        ax.set_yscale('log')
-    elif rule == 'logx':
-        if not force_linear_x:
-            ax.set_xscale('log')
-    elif rule == 'logy':
-        ax.set_yscale('log')
+        else:
+            raise ValueError(f"Unknown axis type `{axis}`")
     else:
         raise ValueError(f"Unknown log rule `{rule}`")
 
 
-def update_labels(axes, metric_dict):
+def update_labels(axes, metric_dict, agg_fns=dict()):
     def _parse(label):
         return label.split(':')[-1]
 
@@ -57,16 +56,21 @@ def update_labels(axes, metric_dict):
 
         if ylabel in metric_dict.keys():
             label = metric_dict[ylabel]
-
+            _label = ax.get_ylabel()
             # append `^{header}$` to `$\mathcal{L}`
+
             for k in ['loss/L_k', 'loss/elbo', 'loss/kl_q_p']:
                 if k in ylabel:
-                    if 'train:' in ax.get_ylabel():
+                    if 'train:' in _label:
                         label = label[:-1] + "^{train}$"
-                    elif 'valid:' in ax.get_ylabel():
+                    elif 'valid:' in _label:
                         label = label[:-1] + "^{valid}$"
-                    elif 'test:' in ax.get_ylabel():
+                    elif 'test:' in _label:
                         label = label[:-1] + "^{test}$"
+
+            if len(agg_fns):
+                if _label in agg_fns.keys():
+                    label = f"{agg_fns[_label]}. {label}"
 
             ax.set_ylabel(label)
 
@@ -120,7 +124,7 @@ def plot_logs(logs, path, metrics, main_key, style_key=None, ylims=dict(), log_r
                      )
 
         # set log scale
-        set_log_scale(ax, k, log_rules, force_linear_x=True)
+        set_log_scale(ax, k, log_rules, axis='y')
 
         ax.set_ylabel(k)
         # y lims
@@ -191,7 +195,7 @@ def detailed_plot(logs, path, metrics, main_key, auxiliary_key, style_key=None, 
                              )
 
                 # set log scale
-                set_log_scale(ax, metric, log_rules, force_linear_x=True)
+                set_log_scale(ax, metric, log_rules, axis='y')
 
                 # define axis labels and hide x,y axis in the middle plots
                 if i == 0:
@@ -235,7 +239,7 @@ def detailed_plot(logs, path, metrics, main_key, auxiliary_key, style_key=None, 
 
 
 def pivot_plot(df, path, metrics, cat_key, hue_key, x_key, style_key=None, ylims=dict(), log_rules=dict(),
-               metric_dict=dict(), **kwargs):
+               metric_dict=dict(), agg_fns=[], **kwargs):
     """make grid of pointplot [metric x dataset], where each point plot is [aux_key vs. metric] (e.g. iw vs. avg log_snr) """
 
     df = df.dropna()
@@ -269,7 +273,6 @@ def pivot_plot(df, path, metrics, cat_key, hue_key, x_key, style_key=None, ylims
     if nrows == 0 or ncols == 0:
         return None
 
-    print(">>> pivot: ", key_name, df[key_name].unique())
     hue_order = {l: i for i, l in enumerate(sorted(df[key_name].unique()))}
     if len(categories) > 1:
         legend_ncols = ncols
@@ -312,10 +315,12 @@ def pivot_plot(df, path, metrics, cat_key, hue_key, x_key, style_key=None, ylims
                             markersize=markersize, linewidth=linewidth, alpha=alpha)
                     plot_cis(ax, series[x_key], ci_low, ci_high, color, capsize, linewidth=linewidth, alpha=alpha)
 
+                # ylabel
                 ax.set_xlabel(x_key)
                 ax.set_ylabel(metric)
                 # set log scale
-                set_log_scale(ax, metric, log_rules)
+                set_log_scale(ax, x_key, log_rules, axis='x')
+                set_log_scale(ax, metric, log_rules, axis='y')
 
                 if len(categories) > 1:
                     if i == 0:
@@ -343,7 +348,7 @@ def pivot_plot(df, path, metrics, cat_key, hue_key, x_key, style_key=None, ylims
                 print("\nException: ", ex, "\n")
 
     # update axis labels
-    update_labels(axes, metric_dict)
+    update_labels(axes, metric_dict, agg_fns=agg_fns)
 
     # create legend
     legend_infos = {label: handle for handle, label in legend_infos}

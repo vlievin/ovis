@@ -24,20 +24,16 @@ except:
     exit()
 
 log_rules = {
-    'loss/elbo': 'logx',
-    'loss/kl': 'logx',
-    'loss/nll': 'logx',
-    'loss/r_eff': 'logx',
-    'grads/snr': 'loglog',
-    'grads/dsnr': 'loglog',
-    'grads/variance': 'loglog',
-    'grads/magnitude': 'loglog',
-    'grads/direction': 'logx',
-    'gmm/posterior_mse': 'loglog',
-    'gmm/prior_mse': 'loglog',
-    'gaussian_toy/mse_A': 'loglog',
-    'gaussian_toy/mse_b': 'loglog',
-    'gaussian_toy/mse_mu': 'loglog'
+    'iw': 'log',
+    'grads/snr': 'log',
+    'grads/dsnr': 'log',
+    'grads/variance': 'log',
+    'grads/magnitude': 'log',
+    'gmm/posterior_mse': 'log',
+    'gmm/prior_mse': 'log',
+    'gaussian_toy/mse_A': 'log',
+    'gaussian_toy/mse_b': 'log',
+    'gaussian_toy/mse_mu': 'log'
 }
 
 metric_dict = {
@@ -165,14 +161,19 @@ if detailed_metrics[0] == "":
 # define the `pivot table` metrics
 def _parse_pivot_metric(u):
     """a metric is expressed as a `:` separated string with syntax `agg_fn:header:key`, e.g. `avg:train:loss/elbo`"""
-    agg_fn, header, key = u.split(":")
-    agg_fn = {'min': np.min, 'max': np.max, 'avg': np.mean}[agg_fn]
-    return agg_fn, f"{header}:{key}"
+    agg_fn_id, header, key = u.split(":")
+    return agg_fn_id, f"{header}:{key}"
 
 
-pivot_metrics_agg_fns, pivot_metrics = zip(
+def _get_agg_fn(agg_fn_id):
+    return {'min': np.min, 'max': np.max, 'avg': np.mean, 'mean': np.mean}[agg_fn_id]
+
+
+pivot_metrics_agg_ids, pivot_metrics = zip(
     *[_parse_pivot_metric(u) for u in opt.pivot_metrics.replace(" ", "").split(",")])
 pivot_metrics = list(pivot_metrics)
+pivot_metrics_agg_fns = map(_get_agg_fn, pivot_metrics_agg_ids)
+pivot_metrics_agg_ids = {m: f for m, f in zip(pivot_metrics, pivot_metrics_agg_ids)}
 
 # define the metrics to read from tensorboard
 all_metrics = list(set(curves_metrics + detailed_metrics + pivot_metrics))
@@ -527,7 +528,7 @@ aux_key = _keys[2] if len(_keys) > 2 else None  # line style (in main plot)
 third_key = _keys[3] if len(_keys) > 3 else None  # line style (in auxiliary plots)
 fourth_key = _keys[4] if len(_keys) > 4 else None
 
-meta = {'log_rules': log_rules, 'metric_dict': metric_dict}
+meta = {'log_rules': log_rules, 'metric_dict': metric_dict, 'agg_fns': pivot_metrics_agg_ids}
 
 if logs[cat_key].nunique() > 0:
     # pivot plot
@@ -564,7 +565,8 @@ for cat in logs[cat_key].unique():
         if len(detailed_metrics):
             logger.info(f"|- Generating spot-on plots for aux. key = {aux_key}")
             _path = os.path.join(output_path, f"{level}-{cat_key}={cat}-detailed.png")
-            detailed_plot(cat_logs, _path, detailed_metrics, main_key, aux_key, style_key=third_key, ylims=ylims, **meta)
+            detailed_plot(cat_logs, _path, detailed_metrics, main_key, aux_key, style_key=third_key, ylims=ylims,
+                          **meta)
 
         # on plot for each auxiliary key
         # for each aux key..

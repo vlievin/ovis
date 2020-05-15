@@ -24,7 +24,7 @@ parser = argparse.ArgumentParser()
 
 
 # debug
-# python asymptotic_variance.py --estimators pathwise-iwae,copt-uniform --iw_steps 3 --iw_max 100 --npoints 100 --mc_samples 100 --mc_oracle 100 --iw_oracle 100 --grads_dist --id debug
+# python asymptotic_variance.py --estimators pathwise-iwae,copt-uniform,copt --iw_steps 3 --iw_max 100 --npoints 100 --mc_samples 100 --mc_oracle 100 --iw_oracle 100 --grads_dist --id debug
 # python asymptotic_variance.py --estimators pathwise-iwae,vimco,copt-uniform --iw_steps 5 --iw_max 300 --npoints 100 --mc_samples 1000 --mc_oracle 10000 --iw_oracle 1000 --grads_dist --id debug
 
 

@@ -528,6 +528,12 @@ if __name__ == '__main__':
         model = init_model(opt, x, mean_over_dset)
         base_logger.info(f"Model: Number of parameters = {sum(p.numel() for p in model.parameters()):.3E}")
 
+
+        print(_sep)
+        for k, v in model.named_parameters():
+            print(f"{k} : N = {v.numel()}, mean = {v.mean().item():.3f}, std = {v.std().item():.3f}")
+        print(_sep)
+
         # define a neural baseline that can be used for the different estimators
         baseline = init_neural_baseline(opt, x) if use_baseline else None
 
