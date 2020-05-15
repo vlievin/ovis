@@ -1,8 +1,8 @@
-from .__init__ import *
 from lib.utils import parse_numbers
+from .__init__ import *
+
 
 def get_config(estimator):
-
     if estimator == 'safe-vi':
         Estimator = SafeVariationalInference
         config = {'tau': 0, 'zgrads': True}
@@ -61,9 +61,11 @@ def get_config(estimator):
 
             handle_low_ess = '-ess' in estimator
             use_second_largest = '-ess2' in estimator
+            autoalpha = "-autoalpha" in estimator
 
             Estimator = AirReinforce if "air-" in estimator else VimcoPlus
-            config = {'mode': mode, 'alpha': alpha, 'truncation': trunc, 'handle_low_ess': handle_low_ess,
+            config = {'mode': mode, 'alpha': alpha, 'truncation': trunc, 'autoalpha': autoalpha,
+                      'handle_low_ess': handle_low_ess,
                       'use_second_largest': use_second_largest, **reinforce_args}
 
         # keep legacy test if other tests are needed
@@ -114,8 +116,7 @@ def get_config(estimator):
 
         # parse `log_beta_min` from as - log beta_min
         partition_args = [arg for arg in estimator.split('-') if 'beta' in arg]
-        log_beta_min =  - parse_numbers(partition_args[0])[0] if len(partition_args) else -10
-
+        log_beta_min = - parse_numbers(partition_args[0])[0] if len(partition_args) else -10
 
         # integration
         _integrations = ['left', 'right', 'trapz']

@@ -174,6 +174,7 @@ class Vimco(Reinforce):
         log_wk = data['log_wk']
         log_wk = log_wk.view(-1, self.mc, self.iw)
         _dtype = log_wk.dtype
+        log_mc_iw_m1 = np.log(self.iw - 1)
 
         if self.iw == 1:
             return torch.zeros_like(log_wk[:, :, 0]), {}, 0
@@ -198,7 +199,7 @@ class Vimco(Reinforce):
 
                 sum_exp = torch.sum(mask * torch.exp(_log_wk - max), dim=2)
                 log_wk_hat = max.squeeze(2) + torch.log(
-                    sum_exp) - self.log_mc_iw_m1  # adding eps should be necessary since the sum should be at least = exp(0)
+                    sum_exp) - log_mc_iw_m1  # adding eps should not be necessary since the sum should be at least = exp(0)
                 log_wk_hat = log_wk_hat.view(log_wk.size(0), self.mc, self.iw)
 
             else:
@@ -213,7 +214,7 @@ class Vimco(Reinforce):
                 max, idx = _log_wk.max(dim=3, keepdim=True)
 
                 sum_exp = torch.sum(mask * torch.exp(_log_wk - max), dim=3)
-                log_wk_hat = max.squeeze(3) + torch.log(sum_exp) - self.log_iw_m1
+                log_wk_hat = max.squeeze(3) + torch.log(sum_exp) - log_mc_iw_m1
 
         else:  # log \hat{f}(x, h^{-j}) using the geometric mean
             if use_outer_samples:
@@ -262,10 +263,16 @@ class VimcoPlus(Reinforce):
                            ess: Tensor,
                            mode: str = 'vimco',
                            truncation: float = 0,
-                           alpha: float = 1.,
+                           alpha: float = 1.0,
+                           autoalpha: bool = False,
+                           alpha_mu: float = 2.5,
+                           alpha_sigma: float = 1.0,
                            handle_low_ess: bool = False,
                            use_second_largest: bool = False,
                            **kwargs):
+
+        if autoalpha:
+            alpha = (((ess - alpha_mu) / alpha_sigma).sigmoid())[:, :, None]
 
         # compute v_k = w_k / \sum_l w_l
         v_k = self.normalized_importance_weights(log_wk)
@@ -309,12 +316,11 @@ class VimcoPlus(Reinforce):
                 _max, idx = log_wk.max(dim=2, keepdim=True)
                 mask = (log_wk == _max).float()
 
-                # log \gamma = log Z - log Z^{-k} = log Z - log Z_{-k}
-                log_gamma = self.log_1_m_uniform - torch.log1p(- v_k_safe)
                 # c_k = log Z-k - 1_{k = argmax w_k}
-                # log Z - c_k - v_k = log (1 - 1/K) - log(1 - v_k) + 1_{k = argmax w_k} (1+logK) - v_k
-                _prefactor_k = log_gamma - mask * (-1 - self.log_iw) - alpha * v_k
+                # log Z - c_k - v_k = log (1 - 1/K) - log(1 - v_k) + \delta_{k = argmax w_k} - v_k
+                _prefactor_k = prefactor_k + alpha * mask
             else:
+                # todo: update to match with above version
                 # use the second largest w_k instead of the average log Z^{-k}
 
                 # mask = 1_{k = argmax w_k}
@@ -324,14 +330,10 @@ class VimcoPlus(Reinforce):
                 _second_max = _topk[:, :, 1][..., None]
                 mask = (log_wk == _max).float()
 
-                # log \gamma = log Z - log Z^{-k} = log Z - log Z_{-k}
-                log_gamma = self.log_1_m_uniform - torch.log1p(- v_k_safe)
-
                 # c_k = {log w_i}_{i \neq k}.max() - 1_{k = argmax w_k}
-                # log Z - c_k - v_k = L_k - {log w_i}_{i \neq k}.max() + 1_{k = argmax w_k} (1+logK) - v_k
-                _prefactor_k = (1 - mask) * log_gamma \
-                               + mask * (L_k[:, :, None] - _second_max + (1 + self.log_iw)) \
-                               - alpha * v_k
+                # log Z - c_k - v_k = L_k - {log w_i}_{i \neq k}.max() + 1_{k = argmax w_k} - v_k
+                _prefactor_k = (1 - mask) * prefactor_k + mask * (
+                            L_k[:, :, None] - _second_max + self.log_iw + alpha * (1 - v_k))
 
             # use the low ESS estimate only when ess \approx 1
             ess = ess[:, :, None].expand(-1, self.mc, self.iw)
