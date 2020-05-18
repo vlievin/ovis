@@ -9,6 +9,18 @@ class Flatten(nn.Module):
         return flatten(x)
 
 
+class BatchDropout(nn.Module):
+    """a small class to synchronize dropout across the batch dimension"""
+
+    def __init__(self, prob):
+        super().__init__()
+        self.prob = prob
+
+    def forward(self, x):
+        mask = x.data.new(x.data.size()[1:]).fill_(1 - self.prob).bernoulli()
+        return mask[None] * x
+
+
 class MLP(nn.Module):
 
     def __init__(self, ninp, nhid, nout, nlayers=1, bias=True, act_in=False, normalization='batchnorm', dropout=0):
