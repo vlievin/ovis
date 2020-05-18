@@ -333,7 +333,7 @@ class VimcoPlus(Reinforce):
                 # c_k = {log w_i}_{i \neq k}.max() - 1_{k = argmax w_k}
                 # log Z - c_k - v_k = L_k - {log w_i}_{i \neq k}.max() + 1_{k = argmax w_k} - v_k
                 _prefactor_k = (1 - mask) * prefactor_k + mask * (
-                            L_k[:, :, None] - _second_max + self.log_iw + alpha * (1 - v_k))
+                        L_k[:, :, None] - _second_max + self.log_iw + alpha * (1 - v_k))
 
             # use the low ESS estimate only when ess \approx 1
             ess = ess[:, :, None].expand(-1, self.mc, self.iw)
@@ -346,6 +346,7 @@ class VimcoPlus(Reinforce):
                 backward: bool = False,
                 debug: bool = False,
                 beta=1.0,
+                return_diagnostics: bool = True,
                 **kwargs: Any) -> Tuple[Tensor, Dict, Dict]:
 
         bs = x.size(0)
@@ -375,17 +376,20 @@ class VimcoPlus(Reinforce):
             output.update(**iw_data)
 
         # prepare diagnostics
-        diagnostics = Diagnostic({
-            'loss': {
-                'loss': loss,
-                **self._loss_diagnostics(**iw_data, **output)
-            },
-            'reinforce': {
-                'loss': reinforce_loss,
-            },
-        })
+        diagnostics = Diagnostic()
 
-        diagnostics.update(self._diagnostics(output))
+        if return_diagnostics:
+            diagnostics.update({
+                'loss': {
+                    'loss': loss,
+                    **self._loss_diagnostics(**iw_data, **output)
+                },
+                'reinforce': {
+                    'loss': reinforce_loss,
+                },
+            })
+
+            diagnostics.update(self._diagnostics(output))
 
         if backward:
             loss.mean().backward()

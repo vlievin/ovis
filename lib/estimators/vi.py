@@ -197,7 +197,7 @@ class VariationalInference(Estimator):
 
         return output
 
-    def forward(self, model: nn.Module, x: Tensor, backward: bool = False, beta: float = 1.0, **kwargs: Any) -> Tuple[
+    def forward(self, model: nn.Module, x: Tensor, backward: bool = False, beta: float = 1.0, return_diagnostics:bool=True, **kwargs: Any) -> Tuple[
         Tensor, Dict, Dict]:
         """
         Perform a forward pass through the VAE model, evaluate the Importance-Weighted bound and [optional]
@@ -226,13 +226,16 @@ class VariationalInference(Estimator):
         loss = - L_k
 
         # prepare diagnostics
-        diagnostics = Diagnostic({
-            'loss': {'loss': loss,
-                     **self._loss_diagnostics(**iw_data, **output)}
-        })
+        diagnostics = Diagnostic()
 
-        # add auxiliary diagnostics that can customized through the method _diagnostics
-        diagnostics.update(self._diagnostics(output))
+        if return_diagnostics:
+            diagnostics.update({
+                'loss': {'loss': loss,
+                         **self._loss_diagnostics(**iw_data, **output)}
+            })
+
+            # add auxiliary diagnostics that can customized through the method _diagnostics
+            diagnostics.update(self._diagnostics(output))
 
         if backward:
             loss.mean().backward()

@@ -162,7 +162,7 @@ class ThermoVariationalObjective(VariationalInference):
 
         return {'tvo': tvo, **iw_data}
 
-    def forward(self, model: nn.Module, x: Tensor, backward: bool = False, **kwargs: Any) -> Tuple[
+    def forward(self, model: nn.Module, x: Tensor, backward: bool = False, return_diagnostics:bool=True, **kwargs: Any) -> Tuple[
         Tensor, Dict, Dict]:
         # From VariationalInference estimator.
         # Removed '.mean(1)'s and changed namings for TVO
@@ -180,12 +180,15 @@ class ThermoVariationalObjective(VariationalInference):
         loss = - tvo_data.get('tvo').mean(1)
 
         # prepare diagnostics
-        diagnostics = Diagnostic({
-            'loss': {'loss': loss,
-                     **self._loss_diagnostics(**tvo_data, **output)}
-        })
+        diagnostics = Diagnostic()
 
-        diagnostics.update(self._diagnostics(output))
+        if return_diagnostics:
+            diagnostics.update({
+                'loss': {'loss': loss,
+                         **self._loss_diagnostics(**tvo_data, **output)}
+            })
+
+            diagnostics.update(self._diagnostics(output))
 
         if backward:
             loss.mean().backward()

@@ -20,7 +20,8 @@ from lib.estimators import VariationalInference, AirReinforce
 from lib.estimators.config import get_config
 from lib.gradients import get_gradients_statistics
 from lib.logging import sample_model, get_loggers, log_summary, save_model_and_update_best_elbo, load_model
-from lib.models import VAE, Baseline, ConvVAE, GaussianToyVAE, GaussianMixture, BernoulliToyModel, HierarchicalVae, SigmoidBeliefNetwork, AIR
+from lib.models import VAE, Baseline, ConvVAE, GaussianToyVAE, GaussianMixture, BernoulliToyModel, HierarchicalVae, \
+    SigmoidBeliefNetwork, AIR
 from lib.ops import training_step, test_step
 from lib.utils import notqdm
 
@@ -57,7 +58,7 @@ def parse_args():
     parser.add_argument('--baseline_lr', default=5e-3, type=float, help='learning rate for the weight of the baseline')
     parser.add_argument('--bs', default=32, type=int, help='batch size')
     parser.add_argument('--valid_bs', default=50, type=int, help='evaluation batch size')
-    parser.add_argument('--test_bs', default=1, type=int, help='evaluation batch size')
+    parser.add_argument('--test_bs', default=50, type=int, help='evaluation batch size')
     parser.add_argument('--grad_bs', default=10, type=int, help='grads evaluation batch size')
     parser.add_argument('--lr_reduce_steps', default=0, type=int, help='number of learning rate reduce steps')
     parser.add_argument('--only_train_set', action='store_true',
@@ -277,7 +278,7 @@ def init_main_estimator(opt, baseline):
     return estimator, config
 
 
-def init_valid_estimator(opt):
+def init_test_estimator(opt):
     """
     Initialize the 2 validation estimators.
     * a. estimator_valid: used to compute L_K_valid
@@ -285,13 +286,13 @@ def init_valid_estimator(opt):
 
     The two estimators are used toe estimate KL(q||p) = log \hat{p(x)} - L_K_train considering log \hat{p(x)} = L_K_valid
     """
-    Estimator_valid = AirReinforce if 'air' == opt.dataset else VariationalInference
-    config_valid = {'tau': 0, 'zgrads': False}
+    Estimator = AirReinforce if 'air' == opt.dataset else VariationalInference
+    config = {'tau': 0, 'zgrads': False}
 
-    # the main validatio estimator with K = opt.iw_valid
-    estimator_valid = Estimator_valid(mc=1, iw=opt.iw_valid, sequential_computation=opt.sequential_computation)
+    # the main test estimator with K = opt.iw_test
+    estimator = Estimator(mc=1, iw=opt.iw_test, sequential_computation=opt.sequential_computation)
 
-    return estimator_valid, config_valid
+    return estimator, config
 
 
 def init_oracle_estimator(opt):
@@ -408,42 +409,22 @@ def perform_gradients_analysis(opt, global_step, writer_train, loader_train, mod
             )
 
 
-def evaluation(model, estimator_valid, config_valid, loader_valid, best_elbo, valid_logger,
-               writer_valid, logdir, epoch, global_step, exp_id, device='cpu', summary_train=None):
-    # temporary refactoring
-    # todo: refactor using context object
-    _sep = os.get_terminal_size().columns * "-"
-    # evaluation epoch
-    print(_sep)
-    # validation epoch to estimate the marginal log-likelihood: L_K_valid \approx log \hat{p(x)}
-    with torch.no_grad():
-        model.eval()
-        agg_valid = Aggregator()
-        for batch in tqdm(loader_valid, desc=f"{exp_id}-L_{opt.iw_valid}"):
-            x, y = preprocess(batch, device)
-            diagnostics = test_step(x, model, estimator_valid, y=y, **config_valid)
-            agg_valid.update(diagnostics)
-        summary_valid = agg_valid.data.to('cpu')
+@torch.no_grad()
+def evaluation(model, estimator, config, loader, exp_id, device='cpu', ref_summary=None):
+    """evaluation epoch to estimate the marginal log-likelihood: L_K \approx log \hat{p(x)}, K -> \infty"""
+    model.eval()
+    agg = Aggregator()
+    for batch in tqdm(loader, desc=f"{exp_id}-K={estimator.iw}-M={estimator.mc}-eval"):
+        x, y = preprocess(batch, device)
+        diagnostics = test_step(x, model, estimator, y=y, **config)
+        agg.update(diagnostics)
+    summary = agg.data.to('cpu')
 
     # compute overfitting L_K^{train} - L_K^{valid}
-    if summary_train is not None:
-        summary_valid['loss']['overfitting'] = summary_train['loss']['elbo'].mean() - \
-                                               summary_valid['loss']['elbo'].mean()
+    if ref_summary is not None:
+        summary['loss']['overfitting'] = ref_summary['loss']['L_k'].mean() - summary['loss']['L_k'].mean()
 
-    # update best elbo and save model
-    best_elbo = save_model_and_update_best_elbo(model, summary_valid, global_step,
-                                                epoch, best_elbo, logdir)
-
-    # log marginal valid summary to console and tensorboarf
-    log_summary(summary_valid, global_step, epoch, logger=valid_logger, best=best_elbo,
-                writer=writer_valid,
-                exp_id=f"{exp_id}-L_{opt.iw_valid}")
-
-    # sample model
-    sample_model("prior-sample", model, logdir, global_step=global_step, writer=writer_valid, seed=opt.seed)
-    print(_sep)
-
-    return best_elbo
+    return summary
 
 
 def preprocess(batch, device):
@@ -509,10 +490,11 @@ if __name__ == '__main__':
         # dataloaders
         loader_train = DataLoader(dset_train, batch_size=opt.bs, shuffle=True, num_workers=opt.workers, pin_memory=True)
 
-        # use the test set for validation as in:
-        # https://github.com/vmasrani/tvo/blob/f7a3229d954274e1d920bf4fe98dcb18f837f825/discrete_vae/run.py
-        loader_valid = DataLoader(dset_test, batch_size=opt.valid_bs, shuffle=True, num_workers=opt.workers,
-                                  pin_memory=True)
+        # test loaders
+        loader_eval_train = DataLoader(dset_train, batch_size=opt.test_bs, shuffle=False, num_workers=opt.workers,
+                                       pin_memory=True)
+        loader_eval_test = DataLoader(dset_test, batch_size=opt.test_bs, shuffle=False, num_workers=opt.workers,
+                                      pin_memory=True)
 
         # compute mean value of train set
         mean_over_dset = get_dataset_mean(loader_train)
@@ -528,7 +510,6 @@ if __name__ == '__main__':
         model = init_model(opt, x, mean_over_dset)
         base_logger.info(f"Model: Number of parameters = {sum(p.numel() for p in model.parameters()):.3E}")
 
-
         print(_sep)
         for k, v in model.named_parameters():
             print(f"{k} : N = {v.numel()}, mean = {v.mean().item():.3f}, std = {v.std().item():.3f}")
@@ -540,8 +521,8 @@ if __name__ == '__main__':
         # training estimator
         estimator, config = init_main_estimator(opt, baseline)
 
-        # valid estimator (it is important that all models are evaluated using the same evaluator)
-        estimator_valid, config_valid = init_valid_estimator(opt)
+        # test estimator (it is important that all models are evaluated using the same evaluator)
+        estimator_test, config_test = init_test_estimator(opt)
 
         # oracle estimator to establish the true gradients direction
         estimator_oracle, config_oracle = init_oracle_estimator(opt)
@@ -560,7 +541,7 @@ if __name__ == '__main__':
 
         # tensorboard writers used to log the summary
         writer_train = SummaryWriter(os.path.join(logdir, 'train'))
-        writer_valid = SummaryWriter(os.path.join(logdir, 'valid'))
+        writer_test = SummaryWriter(os.path.join(logdir, 'test'))
         counterfactual_writers = [SummaryWriter(os.path.join(logdir, c)) for c in counterfactual_estimators_ids]
 
         # define the run length based on either
@@ -568,38 +549,26 @@ if __name__ == '__main__':
         base_logger.info(f"Dataset = {opt.dataset}: running for {epochs} epochs,"
                          f" {iter_per_epoch * epochs} steps, {iter_per_epoch} steps / epoch")
 
-
         # sample model at initialization
-        sample_model("prior-sample", model, logdir, global_step=0, writer=writer_valid, seed=opt.seed)
+        sample_model("prior-sample", model, logdir, global_step=0, writer=writer_test, seed=opt.seed)
 
         # run
         best_elbo = (-1e20, 0, 0)
         global_step = 0
 
-        # # initial evaluation
-        # best_elbo = evaluation(model, estimator_valid, config_valid,
-        #                        loader_valid, best_elbo, valid_logger, writer_valid, logdir, 0,
-        #                        global_step, exp_id, device=device, summary_train=None)
-
         for epoch in range(1, epochs + 1):
-            # train epoch
+
+            """training epoch"""
             [o.zero_grad() for o in optimizers]
             model.train()
-            agg_train = Aggregator()
-            for batch in tqdm(loader_train, desc=f"{exp_id}-L_{opt.iw}"):
+            for batch in tqdm(loader_train, desc=f"{exp_id}-K={estimator.iw}-M={estimator.mc}-training"):
                 x, y = preprocess(batch, device)
-                diagnostics = training_step(x, model, estimator, optimizers, y=y, **config)
-                agg_train.update(diagnostics)
-
+                training_step(x, model, estimator, optimizers, y=y, return_diagnostics=False, **config)
                 global_step += 1
-            summary_train = agg_train.data.to('cpu')
-
-            # log train summary to console and tensorboar
-            log_summary(summary_train, global_step, epoch, logger=train_logger, writer=writer_train,
-                        exp_id=f"{exp_id}-L_{opt.iw}")
 
             if epoch % opt.eval_freq == 0:
 
+                """Analyse Gradients"""
                 if opt.grad_samples > 0:
                     print(_sep)
                     perform_gradients_analysis(opt, global_step, writer_train, loader_train, model, estimator, config,
@@ -607,11 +576,33 @@ if __name__ == '__main__':
                                                counterfactual_writers=counterfactual_writers, c_estimators=c_estimators,
                                                c_configs=c_configs, counterfactual_estimators=counterfactual_estimators)
 
-                best_elbo = evaluation(model, estimator_valid, config_valid,
-                                       loader_valid, best_elbo, valid_logger, writer_valid, logdir, epoch,
-                                       global_step, exp_id, device=device, summary_train=summary_train)
+                """Eval on the train set"""
+                # log train summary to console and tensorboar
+                summary_train = evaluation(model, estimator_test, config_test, loader_eval_train, exp_id,
+                                           device=device, ref_summary=None)
 
-            # reduce learning rate
+                # log train summary to console and tensorboar
+                log_summary(summary_train, global_step, epoch, logger=train_logger, best=None, writer=writer_train,
+                            exp_id=exp_id)
+
+                """eval on the test set"""
+                summary_test = evaluation(model, estimator_test, config_test,
+                                          loader_eval_test, exp_id, device=device, ref_summary=summary_train)
+
+                # update best elbo and save model
+                best_elbo = save_model_and_update_best_elbo(model, summary_test, global_step,
+                                                            epoch, best_elbo, logdir)
+
+                # log marginal test summary to console and tensorboar
+                log_summary(summary_test, global_step, epoch, logger=test_logger, best=best_elbo,
+                            writer=writer_test,
+                            exp_id=exp_id)
+
+                """sample model"""
+                sample_model("prior-sample", model, logdir, global_step=global_step, writer=writer_test, seed=opt.seed)
+                print(_sep)
+
+            """reduce learning rate"""
             if opt.lr_reduce_steps > 0:
                 lr_freq = (epochs // (opt.lr_reduce_steps + 1))
                 if epoch % lr_freq == 0:
@@ -622,34 +613,32 @@ if __name__ == '__main__':
                             param_group['lr'] = new_lr
                             base_logger.info(f"Reducing lr, group = {i} : {lr:.2E} -> {new_lr:.2E}")
 
-        # final testing given the parameters from the best validatin score
-        print(f"{_sep}\nFinal testing with best valid "
-              f"L_{opt.iw_valid} = {best_elbo[0]:.3f} at step {best_elbo[1]}, epoch = {best_elbo[2]}\n{_sep}")
+        """final testing given the parameters from the best test score"""
+        print(f"{_sep}\nFinal validation with best test "
+              f"L_{opt.iw_test} = {best_elbo[0]:.3f} at step {best_elbo[1]}, epoch = {best_elbo[2]}\n{_sep}")
 
-        writer_test = SummaryWriter(os.path.join(logdir, 'test'))
-        # use the validation set for testing as in:
-        # https://github.com/vmasrani/tvo/blob/f7a3229d954274e1d920bf4fe98dcb18f837f825/discrete_vae/run.py
-        loader_test = DataLoader(dset_valid, batch_size=opt.test_bs, shuffle=True, num_workers=1)
+        writer_valid = SummaryWriter(os.path.join(logdir, 'valid'))
+        loader_valid = DataLoader(dset_valid, batch_size=opt.test_bs, shuffle=True, num_workers=1)
 
-        config_test = {'tau': 0, 'zgrads': False}
+        config_valid = {'tau': 0, 'zgrads': False}
         Estimator_valid = AirReinforce if 'air' == opt.dataset else VariationalInference
-        estimator_test = Estimator_valid(mc=1, iw=opt.iw_test,
-                                         sequential_computation=opt.test_sequential_computation)
+        estimator_valid = Estimator_valid(mc=1, iw=opt.iw_valid,
+                                          sequential_computation=opt.test_sequential_computation)
 
         # load best model and run over the test set
         load_model(model, logdir)
         model.eval()
-        agg_test = Aggregator()
+        agg = Aggregator()
         with torch.no_grad():
-            for batch in tqdm(loader_test, desc=f"{exp_id}-L_{opt.iw_test}"):
+            for batch in tqdm(loader_valid, desc=f"{exp_id}-K={estimator_valid.iw}-M={estimator_valid.mc}"):
                 x, y = preprocess(batch, device)
-                diagnostics = test_step(x, model, estimator_test, y=y, **config_test)
-                agg_test.update(diagnostics)
-            summary_test = agg_test.data.to('cpu')
+                diagnostics = test_step(x, model, estimator_valid, y=y, **config_test)
+                agg.update(diagnostics)
+            summary = agg.data.to('cpu')
 
         # log
         _, global_step, epoch = best_elbo
-        log_summary(summary_test, global_step, epoch, logger=test_logger, best=None, writer=writer_test, exp_id=exp_id)
+        log_summary(summary, global_step, epoch, logger=valid_logger, best=None, writer=writer_valid, exp_id=exp_id)
 
         # write outcome to a file (success, interrupted, error)
         print(f"{_sep}\nSucces.\n{_sep}")
