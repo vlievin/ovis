@@ -11,8 +11,7 @@ class VariationalInference(Estimator):
 
     def compute_iw_bound(self, log_px_z: Tensor, log_pzs: List[Tensor], log_qzs: List[Tensor],
                          detach_qlogits: bool = False, beta: float = 1.0, auxiliary_samples: int = 0,
-                         request: List[str] = list()) -> Dict[
-        str, Tensor]:
+                         request: List[str] = list()) -> Dict[str, Tensor]:
         """
         Compute the importance weighted bound:
 
@@ -118,6 +117,7 @@ class VariationalInference(Estimator):
             a = 2 * torch.logsumexp(log_w, dim=2)
             b = torch.logsumexp(2 * log_w, dim=2)
             ess = torch.exp(a - b)
+
         else:
             x = (log_w).view(-1, self.mc, self.iw)
             ess = torch.ones_like(x[:, :, 0])
@@ -200,8 +200,7 @@ class VariationalInference(Estimator):
         return output
 
     def forward(self, model: nn.Module, x: Tensor, backward: bool = False, beta: float = 1.0,
-                return_diagnostics: bool = True, **kwargs: Any) -> Tuple[
-        Tensor, Dict, Dict]:
+                return_diagnostics: bool = True, **kwargs: Any) -> Tuple[Tensor, Dict, Dict]:
         """
         Perform a forward pass through the VAE model, evaluate the Importance-Weighted bound and [optional]
         perform the backward pass.
@@ -257,7 +256,7 @@ class VariationalInference(Estimator):
 
     @torch.no_grad()
     def _diagnostics(self, output):
-        """A function to append additional diagnostics from the model otuput"""
+        """A function to append additional diagnostics from the model output"""
 
         prior = {}
         if 'Hp' in output.keys():
@@ -280,6 +279,10 @@ class VariationalInference(Estimator):
             if 'mse_A' in output.keys():
                 gaussian_toy[key] = output[key]
 
+        bernoulli_toy = {}
+        if 'bernoulli_loss' in output.keys():
+            bernoulli_toy[key] = output['bernoulli_loss']
+
         kls = {}
         if 'log_qz' in output.keys() and 'log_pz' in output.keys():
             # log KL for each layer
@@ -291,7 +294,7 @@ class VariationalInference(Estimator):
                 for i, (lq, lp) in enumerate(zip(log_qz, log_pz)):
                     kls[f"kl_{i + 1}"] = batch_reduce(lq - lp).mean()
 
-        return {'prior': prior, 'gmm': gmm, 'loss': loss, 'gaussian_toy': gaussian_toy, 'kls': kls}
+        return {'prior': prior, 'gmm': gmm, 'loss': loss, 'gaussian_toy': gaussian_toy, 'bernoulli_toy': bernoulli_toy, 'kls': kls}
 
 
 class PathwiseVAE(VariationalInference):
