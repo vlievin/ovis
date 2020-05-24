@@ -48,7 +48,7 @@ def get_datasets(opt):
         _test_dset = GaussianMixtureDataset(N=100, C=opt.N)
         output = _train_dset, _valid_dset, _test_dset
     elif 'bernoulli-toy' in opt.dataset:
-        output = get_bernoulli_toy_datasets(target=opt.toy_target, N=opt.N)
+        output = get_bernoulli_toy_datasets(target=opt.toy_target, N=opt.N, bs=opt.bs)
     elif "binmnist" in opt.dataset:
         output = get_binmnist_datasets(opt.data_root, transform=transform)
     elif "omniglot" in opt.dataset:
