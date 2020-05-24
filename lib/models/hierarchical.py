@@ -46,7 +46,8 @@ class HierarchicalVae(Template):
                  normalization: str = 'none',
                  likelihood: Distribution = Bernoulli,
                  x_mean: Tensor = 0.,
-                 prior: str = 'categorical'):
+                 prior: str = 'categorical',
+                 skip: bool = False, ):
         """
         Initialize a one layer VAE model.
 
@@ -72,7 +73,6 @@ class HierarchicalVae(Template):
                            'normal': NormalFromLogits
                            }[prior]
 
-
         # special cases depending on the choice of the prior
         # z_post is a function applied to the latent sample `z` before feeding it to the next layer
         if prior == 'normal':
@@ -91,21 +91,23 @@ class HierarchicalVae(Template):
 
         # input preprocessing
         self.register_buffer("x_mean", x_mean if isinstance(x_mean, Tensor) else 0.5 * torch.ones((1, *xdim)))
-        self.x_pre = lambda x: (x - self.x_mean + 1) / 2 # function applied to the input `x`
+        self.x_pre = lambda x: (x - self.x_mean + 1) / 2  # function applied to the input `x`
         self.x_post = lambda x: x  # function applied to the output
 
         # parameters
-        self.xdim = xdim # dimension of the observation
-        self.zdim = (N, 1,) if prior == 'normal' else (N, K,) # dimension of the latent samples
-        self.prior_dim = (N, 2,) if prior == 'normal' else (N, K,) # dimension of the paramters of the prior distribution
-        self.N = N # number of idependent latent variables for each layer
-        self.K = K # number of categories when using categorical priors
-        self.hdim = hdim # hidden dimension used in the MLPs
-        self.kdim = kdim # key dimension when using a categorical prior with a key/query model
+        self.xdim = xdim  # dimension of the observation
+        self.zdim = (N, 1,) if prior == 'normal' else (N, K,)  # dimension of the latent samples
+        self.prior_dim = (N, 2,) if prior == 'normal' else (
+        N, K,)  # dimension of the paramters of the prior distribution
+        self.N = N  # number of idependent latent variables for each layer
+        self.K = K  # number of categories when using categorical priors
+        self.hdim = hdim  # hidden dimension used in the MLPs
+        self.kdim = kdim  # key dimension when using a categorical prior with a key/query model
         self.dropout = dropout
         self.nlayers = nlayers
         self.bias = bias
         self.normalization = normalization
+        self.skip = skip
 
         # define the parameters of the prior
         prior = torch.zeros((1, *self.prior_dim))
@@ -133,16 +135,23 @@ class HierarchicalVae(Template):
         q_stages = []
         h = prod(xdim)
         for l in range(depth):
-            stage = MLP(h, hdim, prod(self.qdim), **mlp_args)
+            out = prod(self.qdim)
+            stage = MLP(h, hdim, out, **mlp_args)
             h = prod(self.zdim)
+            if skip:
+                h += out
             q_stages += [stage]
         self.encoder = nn.ModuleList(q_stages)
 
         # define the generative model
         p_stages = []
+        hskip = 0
         for l in range(depth):
             nout = prod(self.qdim) if l < depth - 1 else prod(xdim)
-            stage = MLP(prod(self.zdim), hdim, nout, **mlp_args)
+            ninp = prod(self.zdim) + hskip
+            stage = MLP(ninp, hdim, nout, **mlp_args)
+            if skip:
+                hskip = nout
             p_stages += [stage]
         self.decoder = nn.ModuleList(p_stages)
 
@@ -161,10 +170,10 @@ class HierarchicalVae(Template):
         return chain(self.decoder.parameters(), self.prior)
 
     def encode(self, x, tau=0, zgrads=False) -> DataCollector:
-        h = x
+        h_prev = x
         out = DataCollector()
         for layer in self.encoder:
-            h = layer(h)
+            h = layer(h_prev)
             # q(z|h)
             qlogits = self.get_logits(h)
             qz = self.prior_dist(logits=qlogits, tau=tau)
@@ -174,9 +183,14 @@ class HierarchicalVae(Template):
             if not zgrads:
                 z_l = z_l.detach()
 
-            h = flatten(z_l)
+            h_prev = flatten(z_l)
             if self.z_post is not None:
-                h = self.z_post(h)
+                h_prev = self.z_post(h_prev)
+
+            # skip connection
+            if self.skip:
+                h_prev = torch.cat([h, h_prev], 1)
+
             out.extend({'qz': [qz], 'z': [z_l], 'qlogits': [qlogits]})
 
         # reorder data as L..1
@@ -195,14 +209,14 @@ class HierarchicalVae(Template):
 
         # generative process
         assert len(z) == len(self.decoder)
-        h = None
+        h_prev = None
         out = DataCollector()
         for l, (z_l, layer) in enumerate(zip(z, self.decoder)):
             out_l = {}
             if l == 0:
                 plogits = self.prior.expand(bs, *self.prior_dim)
             else:
-                plogits = self.get_logits(h)
+                plogits = self.get_logits(h_prev)
             pz = self.prior_dist(logits=plogits, tau=tau)
 
             if z_l is None:
@@ -216,10 +230,13 @@ class HierarchicalVae(Template):
             if self.z_post is not None:
                 h = self.z_post(h)
 
-            h = layer(h)
+            if self.skip and h_prev is not None:
+                h = torch.cat([h, h_prev], 1)
+
+            h_prev = layer(h)
             out.extend({'pz': [pz], 'plogits': [plogits], **out_l})
 
-        px_logits = h.view(-1, *self.xdim)
+        px_logits = h_prev.view(-1, *self.xdim)
         px_logits = self.x_post(px_logits)
         px = self.likelihood(logits=px_logits)
         return px, out
