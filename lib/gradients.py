@@ -5,7 +5,7 @@ import torch
 from tqdm import tqdm
 
 eps = 1e-15
-min_var = 1e-9
+min_var = 1e-10
 
 
 def covariance(x):
@@ -108,7 +108,7 @@ def get_grads_from_parameters(model, loss, key_filter=''):
         yield grads
 
 
-def get_individual_gradients_statistics(estimator, model, x, batch_size=32, n_samples=100, seed=None,
+def get_individual_gradients_statistics(estimator, model, x, batch_size=32, n_samples=100,
                                         key_filter='qlogits',
                                         true_grads=None, return_grads=False, use_dsnr=False, **config):
     """
@@ -120,11 +120,6 @@ def get_individual_gradients_statistics(estimator, model, x, batch_size=32, n_sa
     iterations = n_samples // effective_batch_size + int(n_samples % effective_batch_size > 0)
 
     _start = time()
-
-    # set specific seed
-    if seed is not None:
-        _seed = int(torch.randint(1, sys.maxsize, (1,)).item())
-        torch.manual_seed(seed)
 
     # init statistics for each datapoint
     grads_snr = Mean()
@@ -172,7 +167,7 @@ def get_individual_gradients_statistics(estimator, model, x, batch_size=32, n_sa
                 # update statistics
                 for grads in gradients:
                     with torch.no_grad():
-                        grads = grads.detach()
+                        grads = grads.detach().cpu()
 
                         if return_grads or use_dsnr:
                             all_grads_i = grads[None] if all_grads_i is None else torch.cat([all_grads_i, grads[None]],
@@ -235,9 +230,6 @@ def get_individual_gradients_statistics(estimator, model, x, batch_size=32, n_sa
     grads_dsnr = grads_dsnr()
     if true_grads is not None:
         grads_dir = grads_dir()
-
-    if seed is not None:
-        torch.manual_seed(_seed)
 
     # reduce fn: keep only parameter with variance > 0
     mask = (grads_variance > min_var).float()
@@ -307,18 +299,13 @@ def get_batch_grads_from_parameters(model, loss, key_filter=''):
     return torch.cat(grads, 0)
 
 
-def get_batch_gradients_statistics(estimator, model, x, n_samples=100, seed=None, key_filter='qlogits',
+def get_batch_gradients_statistics(estimator, model, x, n_samples=100, key_filter='qlogits',
                                    true_grads=None, return_grads=False, use_dsnr=False, **config):
     """
     Compute the variance, magnitude and SNR of the gradients averaged over a batch of data.
     """
 
     _start = time()
-
-    # set specific seed
-    if seed is not None:
-        _seed = int(torch.randint(1, sys.maxsize, (1,)).item())
-        torch.manual_seed(seed)
 
     # init statistics for each datapoint
     grads_dsnr = None
@@ -346,7 +333,7 @@ def get_batch_gradients_statistics(estimator, model, x, n_samples=100, seed=None
 
         # gather statistics
         with torch.no_grad():
-            gradients = gradients.detach()
+            gradients = gradients.detach().cpu()
 
             if return_grads or use_dsnr:
                 all_grads = gradients[None] if all_grads is None else torch.cat([all_grads, gradients[None]], 0)
@@ -384,9 +371,6 @@ def get_batch_gradients_statistics(estimator, model, x, n_samples=100, seed=None
     # reinitialize grads
     model.zero_grad()
 
-    if seed is not None:
-        torch.manual_seed(_seed)
-
     # reduce fn: keep only parameter with variance > 0
     mask = (grads_variance > min_var).float()
     _reduce = lambda x: (x * mask).sum() / mask.sum()
@@ -417,8 +401,20 @@ def get_batch_gradients_statistics(estimator, model, x, n_samples=100, seed=None
     return output, meta
 
 
-def get_gradients_statistics(*args, use_individual_grads=False, **kwargs):
+def get_gradients_statistics(*args, use_individual_grads=False, seed=None, **kwargs):
+    # set specific seed
+
+    if seed is not None:
+        _seed = int(torch.randint(1, sys.maxsize, (1,)).item())
+        torch.manual_seed(seed)
+
     if use_individual_grads:
-        return get_individual_gradients_statistics(*args, **kwargs)
+        output = get_individual_gradients_statistics(*args, **kwargs)
     else:
-        return get_batch_gradients_statistics(*args, **kwargs)
+        output = get_batch_gradients_statistics(*args, **kwargs)
+
+
+    if seed is not None:
+        torch.manual_seed(_seed)
+
+    return output
