@@ -4,6 +4,8 @@ from time import time
 import torch
 from tqdm import tqdm
 
+from .models import BernoulliToyModel
+
 eps = 1e-15
 min_var = 1e-10
 
@@ -271,7 +273,7 @@ def get_batch_grads_from_tensor(model, loss, output, tensor_id, mc, iw):
     loss.sum().backward(create_graph=True, retain_graph=True)
 
     # get the tensor of interest
-    tensors = output[tensor_id] if isinstance(output[tensor_id], list) else output[tensor_id]
+    tensors = output[tensor_id] if isinstance(output[tensor_id], list) else [output[tensor_id]]
     bs = tensors[0].shape[0] // (mc * iw)
     # get the gradients, flatten and concat across the feature dimension
     gradients = [p.grad for p in tensors]
@@ -282,8 +284,10 @@ def get_batch_grads_from_tensor(model, loss, output, tensor_id, mc, iw):
 
     # compute gradients estimate for each individual grads
     # sum individual gradients because x_expanded = x.expand(bs, mc, iw)
-    gradients = torch.cat([g.view(bs, mc * iw, -1).sum(1) for g in gradients], 1)
-
+    if isinstance(model, BernoulliToyModel):
+        gradients = torch.cat([g.view(model.num_latents, -1) for g in gradients], 1)
+    else:
+        gradients = torch.cat([g.view(bs, mc * iw, -1).sum(1) for g in gradients], 1)
     # return each MC average of the grads
     return gradients.mean(0)
 
@@ -400,7 +404,6 @@ def get_batch_gradients_statistics(estimator, model, x, n_samples=100, key_filte
 
     return output, meta
 
-
 def get_gradients_statistics(*args, use_individual_grads=False, seed=None, **kwargs):
     # set specific seed
 
@@ -412,7 +415,6 @@ def get_gradients_statistics(*args, use_individual_grads=False, seed=None, **kwa
         output = get_individual_gradients_statistics(*args, **kwargs)
     else:
         output = get_batch_gradients_statistics(*args, **kwargs)
-
 
     if seed is not None:
         torch.manual_seed(_seed)
