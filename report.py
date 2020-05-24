@@ -41,16 +41,16 @@ metric_dict = {
     'c_iw': r"$K$",
     'loss/L_k': r"$\log p_{\theta}(x)$",
     'loss/elbo': r"$\operatorname{ELBO}$",
-    'loss/kl': r"$\operatorname{KL}(q_{\phi}(z | x) | p(z))$",
-    'loss/nll': r"$- \log p_{\theta}(z | x)$",
+    'loss/kl': r"$\operatorname{KL}(q_{\phi}(z | x) || p(z))$",
+    'loss/nll': r"$- \log p_{\theta}(x | z)$",
     'loss/r_ess': r"$\operatorname{ESS} / K$",
     'loss/ess': r"$\operatorname{ESS}$",
-    'loss/kl_q_p': r"$\mathrm{KL}\left(Q \| P\right)$",
-    'grads/variance': r"$\operatorname{Var}(\Delta_K(\phi))$",
-    'grads/snr': r"$\operatorname{SNR}(\Delta_K(\phi))$",
-    'grads/dsnr': r"$\operatorname{DSNR}(\Delta_K(\phi))$",
-    'grads/magnitude': r"$ | E[\Delta_K(\phi)] | $",
-    'grads/direction': r"$\operatorname{cosine}( \Delta_K(\phi) ,  \Delta_K^{oracle}(\phi) )$",
+    'loss/kl_q_p': r"$\mathrm{KL}\left(Q || P\right)$",
+    'grads/variance': r"$\operatorname{Var}(\Delta(\phi))$",
+    'grads/snr': r"$\operatorname{SNR}(\Delta(\phi))$",
+    'grads/dsnr': r"$\operatorname{DSNR}(\Delta(\phi))$",
+    'grads/magnitude': r"$ | E[\Delta(\phi)] | $",
+    'grads/direction': r"$\operatorname{cosine}( \Delta(\phi) ,  \Delta^{oracle}(\phi) )$",
     'gmm/posterior_mse': r"$\left\| q_{\phi}(z | x) - p_{\theta_{true}}(z | x) \right\| $",
     'gmm/prior_mse': r"$\left\| p_{\theta}(z) - p_{\theta_{true}}(z) \right\| $",
     'gaussian_toy/mse_A': r"$\left\| A - A^*  \right\|_2$",
@@ -85,12 +85,14 @@ parser.add_argument('--counterfactuals', action='store_true',
 parser.add_argument('--latex', action='store_true', help='print as latex table')
 parser.add_argument('--float_format', default=".2f", help='float format')
 parser.add_argument('--nsamples', default=64, type=int, help='target number of points in the line plot (downsampling)')
+parser.add_argument('--ema', default=0, type=float, help='exponential moving average')
 parser.add_argument('--non_completed', action='store_true', help='also keep runs that are not yet completed.')
 parser.add_argument('--max_records', default=-1, type=int,
                     help='only read the first `max_records` data point (`-1` = no limit)')
 parser.add_argument('--skip_level', default=-1, type=int,
                     help='skip nesting levels while plotting')
 parser.add_argument('--merge_args', default='', type=str, help='list of args to merge into one')
+parser.add_argument('--adjust_ess', action='store_true', help='use ess = ess/K_test * K')
 opt = parser.parse_args()
 
 _sep = os.get_terminal_size().columns * "-"
@@ -107,6 +109,8 @@ if len(opt.exclude):
     _id += f"-exc={opt.exclude}"
 if opt.counterfactuals:
     _id += f"-counterfactuals"
+if opt.ema > 0:
+    _id += f"-ema{opt.ema}"
 output_path = os.path.join(opt.output, _id)
 if os.path.exists(output_path):
     rmtree(output_path)
@@ -325,6 +329,15 @@ logs = pd.DataFrame(logs)
 _keys_to_merge = [k for k in df.keys() if k not in pivot_metrics]
 logs = logs.merge(df[_keys_to_merge], left_on="id", right_on="id", how='left')
 
+if opt.adjust_ess:
+
+    print(">>> logs:", logs.keys())
+
+    for key in ['train']:
+        iw_test = args['iw_test']
+        _key = f"{key}:loss/ess"
+        logs.loc[logs["_key"] == _key, '_value'] = logs.loc[logs["_key"] == _key, '_value']  * logs.loc[logs["_key"] == _key, 'iw'] / iw_test
+
 # integrate counterfactuals data into the logs
 if len(counterfactual_logs):
 
@@ -474,28 +487,51 @@ df.to_csv(os.path.join(output_path, "pivot.csv"))
 plot line plots with uncertainty intervals
 """
 
+if opt.ema > 0:
+    # curve smoothing
+    logs.sort_values("step", inplace=True)
+    sort_index = [k for k in logs.keys() if k not in ['step', '_value', '_key']] + ['_key', 'step']
+
+    logs.set_index(keys = sort_index, inplace=True)
+    for idx in sort_index[::-1]:
+        logs.sort_index(level=idx, sort_remaining=False, inplace=True)
+
+    for k, (idx, record) in enumerate(logs.groupby(level=list(range(len(sort_index)-1)))):
+        steps = record.index.get_level_values(-1) # get `step` values
+        record = record['_value']
+
+        # exponential moving average
+        record = record.ewm(alpha=1 - opt.ema).mean()
+
+        logs.loc[idx, :] = record
+
+    logs.reset_index(inplace=True)
+
+
 _last_indexes = ['seed', '_key', 'step']
 _index = [k for k in logs.keys() if k != '_value' and k not in _last_indexes]
 _index += _last_indexes
 
-# get max step
-M = logs['step'].max()
-bins = [int(s) for s in range(0, M, M // opt.nsamples)]
+if opt.nsamples > 0:
+    # get max step
+    M = logs['step'].max()
+    bins = [int(s) for s in range(0, M, M // opt.nsamples)]
 
-n_full = len(logs['step'].unique())
-ratio = n_full // opt.nsamples
+    n_full = len(logs['step'].unique())
+    ratio = n_full // opt.nsamples
 
-# reshape data with index [..., seed, _key, step] and sort by steps
-# logs = logs.pivot_table(index=_index, values='_value', aggfunc=np.mean)
-# for idx in _index[::-1]:
-#     logs.sort_index(level=idx, sort_remaining=False, inplace=True)
+    # reshape data with index [..., seed, _key, step] and sort by steps
+    # logs = logs.pivot_table(index=_index, values='_value', aggfunc=np.mean)
+    # for idx in _index[::-1]:
+    #     logs.sort_index(level=idx, sort_remaining=False, inplace=True)
 
-logger.info(f"Downsampling data.. (n={opt.nsamples})")
-logs.reset_index(level=-1, inplace=True)
-_index.remove("step")
-logs = logs.groupby(_index + [pd.cut(logs.step, bins)]).mean()
-logs.index.rename(level=[-1], names=['step_bucket'], inplace=True)
-logs.reset_index(inplace=True)
+    logger.info(f"Downsampling data.. (n={opt.nsamples})")
+    logs.reset_index(level=-1, inplace=True)
+    _index.remove("step")
+    logs = logs.groupby(_index + [pd.cut(logs.step, bins)]).mean()
+    logs.index.rename(level=[-1], names=['step_bucket'], inplace=True)
+    logs.reset_index(inplace=True)
+    logs.drop("step_bucket", 1, inplace=True)
 
 # drop nan
 logs.dropna(inplace=True)
@@ -520,6 +556,7 @@ print(_sep)
 level = 1
 print(f">>> Level = {level}, Plotting with keys:", _keys)
 print(_sep)
+
 
 # define keys used for styling
 cat_key = _keys[0]
@@ -554,8 +591,8 @@ for cat in logs[cat_key].unique():
 
     logger.info(f"|- Generating merged curves plots..")
     # main plot
-    # _path = os.path.join(output_path, f"{level}-curves-all-{cat_key}={cat}.png")
-    # plot_logs(cat_logs, _path, curves_metrics, main_key, ylims=ylims, style_key=aux_key, **meta)
+    _path = os.path.join(output_path, f"{level}-curves-all-{cat_key}={cat}.png")
+    plot_logs(cat_logs, _path, curves_metrics, main_key, ylims=ylims, style_key=aux_key, **meta)
 
     if aux_key is not None:
 
@@ -563,7 +600,7 @@ for cat in logs[cat_key].unique():
 
         # spot on plots
         if len(detailed_metrics):
-            logger.info(f"|- Generating spot-on plots for aux. key = {aux_key}")
+            logger.info(f"|- Generating detailed plots for aux. key = {aux_key}")
             _path = os.path.join(output_path, f"{level}-{cat_key}={cat}-detailed.png")
             detailed_plot(cat_logs, _path, detailed_metrics, main_key, aux_key, style_key=third_key, ylims=ylims,
                           **meta)
