@@ -521,6 +521,9 @@ class VimcoPlus(Reinforce):
                 'reinforce': {
                     'loss': reinforce_loss,
                 },
+                'parameters': {
+                    'beta' : beta
+                }
             })
 
             diagnostics.update(self._diagnostics(output))

@@ -71,6 +71,7 @@ def parse_args():
     parser.add_argument('--iw', default=1, type=int, help='number of Importance-Weighted samples')
     parser.add_argument('--beta', default=1.0, type=float, help='Beta weight for the KL term (i.e. Beta-VAE)')
     parser.add_argument('--warmup', default=0, type=int, help='period of the deterministic warmup (Beta : 0 -> 1)')
+    parser.add_argument('--warmup_offset', default=0, type=int, help='number of steps before increasing beta')
     parser.add_argument('--beta_min', default=1e-6, type=float, help='minimum beta value')
 
     # evaluation
@@ -558,7 +559,8 @@ if __name__ == '__main__':
         optimizers = init_optimizers(opt, model, estimator)
 
         # Deterministic warmup
-        scheduler = LinearSchedule(opt.warmup, opt.beta_min, opt.beta) if opt.warmup > 0 else lambda x: opt.beta
+        scheduler = LinearSchedule(opt.warmup, opt.beta_min, opt.beta,
+                                   offset=opt.warmup_offset, alpha=np.exp(1)) if opt.warmup > 0 else lambda x: opt.beta
 
         # tensorboard writers used to log the summary
         writer_train = SummaryWriter(os.path.join(logdir, 'train'))
@@ -589,6 +591,7 @@ if __name__ == '__main__':
                 global_step += 1
 
             if epoch % opt.eval_freq == 0:
+                print(f">>>> beta : {beta:.3f}")
 
                 """Total derivatives Analysis"""
                 if opt.mc_analysis:
@@ -614,13 +617,15 @@ if __name__ == '__main__':
                                                 device=device, ref_summary=None, max_eval=1000)
 
                     summary_train['loss']['ess'] = summary_train_['loss']['ess']
-
-                    # log train summary to console and tensorboar
-                    log_summary(summary_train, global_step, epoch, logger=train_logger, best=None,
-                                writer=writer_train,
-                                exp_id=exp_id)
                 else:
-                    summary_train = None
+                    # eval ess using the training estimator
+                    summary_train = evaluation(model, estimator_test_ess, config_test, loader_eval_train, exp_id,
+                                               device=device, ref_summary=None, max_eval=1000)
+
+                # log train summary to console and tensorboar
+                log_summary(summary_train, global_step, epoch, logger=train_logger, best=None,
+                            writer=writer_train,
+                            exp_id=exp_id)
 
                 """eval on the test set"""
                 summary_test = evaluation(model, estimator_test, config_test, loader_eval_test, exp_id, device=device,

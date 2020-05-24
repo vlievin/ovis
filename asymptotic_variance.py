@@ -24,8 +24,10 @@ parser = argparse.ArgumentParser()
 
 
 # debug
-# python asymptotic_variance.py --estimators pathwise-iwae,copt-uniform,copt --iw_steps 3 --iw_max 100 --npoints 100 --mc_samples 100 --mc_oracle 100 --iw_oracle 100 --grads_dist --id debug
+# python asymptotic_variance.py --iw_steps 3 --iw_max 100 --npoints 100 --mc_samples 100 --mc_oracle 100 --iw_oracle 100 --grads_dist --id debug --estimators pathwise-iwae,copt
 # python asymptotic_variance.py --estimators pathwise-iwae,vimco,copt-uniform --iw_steps 5 --iw_max 300 --npoints 100 --mc_samples 1000 --mc_oracle 10000 --iw_oracle 1000 --grads_dist --id debug
+
+# python asymptotic_variance.py --iw_steps 3 --iw_min 20 --iw_max 200 --npoints 100 --mc_samples 100 --mc_oracle 100 --iw_oracle 100 --grads_dist --id debug --estimators vimco,copt,copt-aux10
 
 
 # run directory, id and seed
@@ -78,7 +80,9 @@ parser.add_argument('--D', default=20, type=int, help='number of latent variable
 
 opt = parser.parse_args()
 
-iws = [int(k) for k in np.geomspace(start=3, stop=opt.iw_max, num=opt.iw_steps)[::-1]]
+iws = [int(k) for k in np.geomspace(start=opt.iw_min, stop=opt.iw_max, num=opt.iw_steps)[::-1]]
+
+print(f">> Particles = {iws}")
 
 if opt.deterministic:
     torch.backends.cudnn.deterministic = True
@@ -128,7 +132,7 @@ try:
 
     # valid estimator (it is important that all models are evaluated using the same evaluator)
     Estimator, config_ref = get_config("pathwise-iwae")
-    estimator_ref = Estimator(mc=1, iw=opt.iw_valid)
+    estimator_ref = Estimator(mc=1, iw=opt.iw_valid, **config_ref)
     Estimator, config_oracle = get_config(opt.oracle)
     oracle = Estimator(mc=1, iw=opt.iw_oracle)
 

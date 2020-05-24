@@ -76,15 +76,15 @@ class NormalFromLogits(BaseDistribution):
         scale = log_std.mul(0.5).exp()
         return mu, scale
 
-    @property
-    def loc(self):
-        mu, _ = self._params
-        return mu
-
-    @property
-    def scale(self):
-        _, scale = self._params
-        return scale
+    # @property
+    # def loc(self):
+    #     mu, _ = self._params
+    #     return mu
+    #
+    # @property
+    # def scale(self):
+    #     _, scale = self._params
+    #     return scale
 
     @property
     def _torch_normal(self):
