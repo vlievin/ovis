@@ -104,14 +104,14 @@ def parse_args():
 
     # latent space
     parser.add_argument('--prior', default='categorical',
-                        help='family of the prior distribution : [categorcial | normal]')
+                        help='family of the prior distribution : [categorical | normal]')
     parser.add_argument('--N', default=8, type=int, help='number of latent variables')
     parser.add_argument('--K', default=8, type=int, help='number of categories for each latent variable')
     parser.add_argument('--kdim', default=0, type=int, help='dimension of the keys for each latent variable')
     parser.add_argument('--learn_prior', action='store_true', help='learn the prior')
 
     # model architecture
-    parser.add_argument('--model', default='vae', help='[vae, conv-vae, hierarchical, bernoulli_toy]')
+    parser.add_argument('--model', default='vae', help='[vae, conv-vae, hierarchical, bernoulli-toy]')
     parser.add_argument('--skip', action='store_true', help='use skip connections')
     parser.add_argument('--hdim', default=64, type=int, help='number of hidden units for each layer')
     parser.add_argument('--nlayers', default=3, type=int, help='number of hidden layers for the encoder and decoder')
@@ -188,15 +188,13 @@ def get_run_id(opt, counterfactual_estimators):
     if opt.learn_prior:
         run_id += "-learn-prior"
     run_id += f"-arch{opt.hdim}x{opt.nlayers}-L{opt.depth}"
-    if opt.skip:
-        run_id += "-skip"
     if opt.norm is not 'none':
         run_id += f"-{opt.norm}"
     if opt.dropout > 0:
         run_id += f"-drp{opt.dropout}"
     if opt.oracle != "":
         run_id += f"-oracle={opt.oracle}-iw{opt.oracle_iw_samples}"
-    if opt.model == 'bernoulli_toy':
+    if opt.model == 'bernoulli-toy':
         run_id += f"-tar{opt.toy_target}"
     if opt.skip:
         run_id += "-skip"
@@ -279,7 +277,7 @@ def init_model(opt, x, xmean=None):
 
 def init_neural_baseline(opt, x):
     """define a neural baseline"""
-    return Baseline(x.shape, opt.b_nlayers, opt.hdim)
+    return Baseline(x.shape, opt.b_nlayers, opt.hdim, batch_norm=opt.K-1)
 
 
 def init_main_estimator(opt, baseline):
@@ -470,9 +468,13 @@ if __name__ == '__main__':
     if opt.silent:
         tqdm = notqdm
 
-    if opt.model == 'bernoulli_toy' or opt.dataset == 'bernoulli_toy':
-        assert opt.model == 'bernoulli_toy'
-        assert opt.bs == 1 and opt.valid_bs == 1 and opt.test_bs == 1
+    if opt.model == 'bernoulli-toy' or opt.dataset == 'bernoulli-toy':
+        assert opt.model == 'bernoulli-toy'
+        assert opt.K == 1, 'Use K = 1 for Bernoulli toy special case'
+
+    if opt.estimator == 'bernoulli-exact':
+        assert opt.model == 'bernoulli-toy'
+        assert opt.dataset == 'bernoulli-toy'
 
     # define couterfactual estimators if any
     counterfactual_estimators, counterfactual_iw, counterfactual_estimators_ids = define_counterfactuals(opt)
