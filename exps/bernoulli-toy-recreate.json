@@ -1,0 +1,29 @@
+{
+  "description": "Bernoulli toy task from RELAX - recreation of results",
+  "args": [
+    "--estimator relax",
+    "--estimator rebar",
+    "--estimator bernoulli-exact",
+    "--estimator reinforce"
+  ],
+  "global": "--silent --deterministic --epochs 10000 --lr_reduce_steps 0 ",
+  "parameters": {
+    "K" : [1],
+    "N" : [1],
+    "mc" : [1],
+    "iw" : [1],
+    "seed": [14, 65, 48, 24, 79],
+    "dataset": ["bernoulli-toy"],
+    "model": ["bernoulli-toy"],
+    "grad_samples" : [250],
+    "bs" : [1],
+    "valid_bs" : [1],
+    "test_bs" : [1],
+    "lr": [0.01],
+    "baseline_lr": [0.01],
+    "iw_valid": [1],
+    "iw_test": [1],
+    "beta": [0]
+  }
+
+}
