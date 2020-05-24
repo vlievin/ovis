@@ -103,7 +103,7 @@ if __name__ == '__main__':
     opt = parser.parse_args()
 
     # get available devices
-    deviceIDs = GPUtil.getAvailable(order='load', limit=opt.max_gpus, maxLoad=opt.max_load, maxMemory=opt.max_memory,
+    deviceIDs = GPUtil.getAvailable(order='memory', limit=opt.max_gpus, maxLoad=opt.max_load, maxMemory=opt.max_memory,
                                     includeNan=False, excludeID=[], excludeUUID=[])
     if len(deviceIDs):
         deviceIDs = [f"cuda:{d}" for d in deviceIDs]
