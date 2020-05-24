@@ -59,13 +59,22 @@ def get_config(estimator):
             else:
                 trunc = 0.
 
+            # parse `-truncX`
+            if "aux" in estimator:
+                auxiliary_samples = int(eval([s for s in estimator.split("-") if 'aux' in s][0].replace("aux", "")))
+            else:
+                auxiliary_samples = 0
+
             handle_low_ess = '-ess' in estimator
             use_second_largest = '-ess2' in estimator
             autoalpha = "-autoalpha" in estimator
+            center = '-center' in estimator
+            biased = '-biased' in estimator
 
             Estimator = AirReinforce if "air-" in estimator else VimcoPlus
             config = {'mode': mode, 'alpha': alpha, 'truncation': trunc, 'autoalpha': autoalpha,
-                      'handle_low_ess': handle_low_ess,
+                      'handle_low_ess': handle_low_ess, 'center': center, 'biased': biased,
+                      'auxiliary_samples': auxiliary_samples,
                       'use_second_largest': use_second_largest, **reinforce_args}
 
         # keep legacy test if other tests are needed

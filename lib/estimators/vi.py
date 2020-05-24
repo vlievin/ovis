@@ -10,7 +10,8 @@ class VariationalInference(Estimator):
     """
 
     def compute_iw_bound(self, log_px_z: Tensor, log_pzs: List[Tensor], log_qzs: List[Tensor],
-                         detach_qlogits: bool = False, beta: float = 1.0, request: List[str] = list()) -> Dict[
+                         detach_qlogits: bool = False, beta: float = 1.0, auxiliary_samples: int = 0,
+                         request: List[str] = list()) -> Dict[
         str, Tensor]:
         """
         Compute the importance weighted bound:
@@ -62,7 +63,8 @@ class VariationalInference(Estimator):
         log_wk = log_wk.view(-1, self.mc, self.iw)
 
         # L_k
-        L_k = torch.logsumexp(log_wk, dim=2) - self.log_iw
+        # TODO: remove temporary `auxiliary_samples`
+        L_k = torch.logsumexp(log_wk[:, :, :self.iw-auxiliary_samples], dim=2) - np.log(self.iw - auxiliary_samples) # self.log_iw
 
         # elbo
         elbo = torch.mean(log_wk, dim=2)
@@ -197,7 +199,8 @@ class VariationalInference(Estimator):
 
         return output
 
-    def forward(self, model: nn.Module, x: Tensor, backward: bool = False, beta: float = 1.0, return_diagnostics:bool=True, **kwargs: Any) -> Tuple[
+    def forward(self, model: nn.Module, x: Tensor, backward: bool = False, beta: float = 1.0,
+                return_diagnostics: bool = True, **kwargs: Any) -> Tuple[
         Tensor, Dict, Dict]:
         """
         Perform a forward pass through the VAE model, evaluate the Importance-Weighted bound and [optional]
