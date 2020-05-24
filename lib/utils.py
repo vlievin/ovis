@@ -88,3 +88,15 @@ class FreeBits():
         freebits_kl = torch.max(freebits_kl, dim=-1)[0]
 
         return freebits_kl
+
+
+class LinearSchedule():
+    def __init__(self, period, init_value, end_value):
+        self.period = period
+        self.init_value = init_value
+        self.end_value = end_value
+
+    def __call__(self, step):
+        x = float(step) / self.period
+        x = max(0, min(1, x))
+        return self.init_value + x * (self.end_value - self.init_value)

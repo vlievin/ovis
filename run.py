@@ -16,6 +16,7 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from lib import get_datasets
+from lib.analysis import total_derivatives_analysis
 from lib.estimators import VariationalInference, AirReinforce
 from lib.estimators.config import get_config
 from lib.gradients import get_gradients_statistics
@@ -23,7 +24,7 @@ from lib.logging import sample_model, get_loggers, log_summary, save_model_and_u
 from lib.models import VAE, Baseline, ConvVAE, GaussianToyVAE, GaussianMixture, BernoulliToyModel, HierarchicalVae, \
     SigmoidBeliefNetwork, AIR
 from lib.ops import training_step, test_step
-from lib.utils import notqdm
+from lib.utils import notqdm, LinearSchedule
 
 
 def parse_args():
@@ -69,12 +70,19 @@ def parse_args():
     parser.add_argument('--mc', default=1, type=int, help='number of Monte-Carlo samples')
     parser.add_argument('--iw', default=1, type=int, help='number of Importance-Weighted samples')
     parser.add_argument('--beta', default=1.0, type=float, help='Beta weight for the KL term (i.e. Beta-VAE)')
+    parser.add_argument('--warmup', default=0, type=int, help='period of the deterministic warmup (Beta : 0 -> 1)')
+    parser.add_argument('--beta_min', default=1e-6, type=float, help='minimum beta value')
 
     # evaluation
     parser.add_argument('--eval_freq', default=10, type=int, help='frequency for the evaluation [test set + grads]')
+    parser.add_argument('--max_eval', default=None, type=int, help='maximum number of data points for evaluation')
     parser.add_argument('--iw_valid', default=100, type=int,
                         help='number of Importance-Weighted samples for validation')
     parser.add_argument('--iw_test', default=1000, type=int, help='number of Importance-Weighted samples for testing')
+
+    # total derivatives analysis
+    parser.add_argument('--mc_analysis', default=0, type=int,
+                        help='number of Monte-Carlo samples for the total derivatives analysis')
 
     # gradients analysis
     parser.add_argument('--grad_samples', default=100, type=int,
@@ -104,6 +112,7 @@ def parse_args():
 
     # model architecture
     parser.add_argument('--model', default='vae', help='[vae, conv-vae, hierarchical, bernoulli_toy]')
+    parser.add_argument('--skip', action='store_true', help='use skip connections')
     parser.add_argument('--hdim', default=64, type=int, help='number of hidden units for each layer')
     parser.add_argument('--nlayers', default=3, type=int, help='number of hidden layers for the encoder and decoder')
     parser.add_argument('--depth', default=3, type=int,
@@ -179,6 +188,8 @@ def get_run_id(opt, counterfactual_estimators):
     if opt.learn_prior:
         run_id += "-learn-prior"
     run_id += f"-arch{opt.hdim}x{opt.nlayers}-L{opt.depth}"
+    if opt.skip:
+        run_id += "-skip"
     if opt.norm is not 'none':
         run_id += f"-{opt.norm}"
     if opt.dropout > 0:
@@ -187,6 +198,10 @@ def get_run_id(opt, counterfactual_estimators):
         run_id += f"-oracle={opt.oracle}-iw{opt.oracle_iw_samples}"
     if opt.model == 'bernoulli_toy':
         run_id += f"-tar{opt.toy_target}"
+    if opt.skip:
+        run_id += "-skip"
+    if opt.warmup > 0:
+        run_id += f"-warmup{opt.warmup}"
 
     exp_id = f"{opt.exp}-{opt.estimator}"
 
@@ -238,7 +253,8 @@ def init_model(opt, x, xmean=None):
         'prior': opt.prior,
         'normalization': opt.norm,
         'dropout': opt.dropout,
-        'x_mean': xmean
+        'x_mean': xmean,
+        'skip': opt.skip
     }
 
     # get the right constructor
@@ -270,10 +286,7 @@ def init_main_estimator(opt, baseline):
     """initialize the training estimator and its configuration dict"""
     Estimator, config = get_config(opt.estimator)
     estimator = Estimator(baseline=baseline, mc=opt.mc, iw=opt.iw, N=opt.N, K=opt.K, hdim=opt.hdim,
-                          freebits=opt.freebits)
-
-    # add Beta parameter to the config (Beta-VAE)
-    config.update({'beta': opt.beta})
+                          freebits=opt.freebits, **config)
 
     return estimator, config
 
@@ -291,8 +304,9 @@ def init_test_estimator(opt):
 
     # the main test estimator with K = opt.iw_test
     estimator = Estimator(mc=1, iw=opt.iw_test, sequential_computation=opt.sequential_computation)
+    estimator_ess = Estimator(mc=1, iw=opt.iw, sequential_computation=opt.sequential_computation)
 
-    return estimator, config
+    return estimator, estimator_ess, config
 
 
 def init_oracle_estimator(opt):
@@ -350,7 +364,7 @@ def get_grads_analysis_config(opt, model, x_eval, estimator_oracle, config_oracl
     # compute oracle gradients (the true gradients direction)
     if estimator_oracle is not None:
         print(
-            f">> evaluating oracle `{opt.oracle}`, K = {opt.oracle_iw_samples} using {opt.oracle_mc_samples} MC samples (batch_grads = {opt.batch_grads})")
+            f">> evaluating oracle `{opt.oracle}`, K = {opt.oracle_iw_samples} using {opt.oracle_mc_samples} MC samples")
         # define args
         oracle_args = copy(grad_args)
         seed = oracle_args.pop('seed', 13) + 1
@@ -410,14 +424,18 @@ def perform_gradients_analysis(opt, global_step, writer_train, loader_train, mod
 
 
 @torch.no_grad()
-def evaluation(model, estimator, config, loader, exp_id, device='cpu', ref_summary=None):
+def evaluation(model, estimator, config, loader, exp_id, device='cpu', ref_summary=None, max_eval=None):
     """evaluation epoch to estimate the marginal log-likelihood: L_K \approx log \hat{p(x)}, K -> \infty"""
+    k = 0
     model.eval()
     agg = Aggregator()
     for batch in tqdm(loader, desc=f"{exp_id}-K={estimator.iw}-M={estimator.mc}-eval"):
         x, y = preprocess(batch, device)
         diagnostics = test_step(x, model, estimator, y=y, **config)
         agg.update(diagnostics)
+        k += x.size(0)
+        if max_eval is not None and k >= max_eval:
+            break
     summary = agg.data.to('cpu')
 
     # compute overfitting L_K^{train} - L_K^{valid}
@@ -491,10 +509,10 @@ if __name__ == '__main__':
         loader_train = DataLoader(dset_train, batch_size=opt.bs, shuffle=True, num_workers=opt.workers, pin_memory=True)
 
         # test loaders
-        loader_eval_train = DataLoader(dset_train, batch_size=opt.test_bs, shuffle=False, num_workers=opt.workers,
-                                       pin_memory=True)
-        loader_eval_test = DataLoader(dset_test, batch_size=opt.test_bs, shuffle=False, num_workers=opt.workers,
-                                      pin_memory=True)
+        loader_eval_train = DataLoader(dset_train, batch_size=opt.test_bs, shuffle=True, num_workers=1,
+                                       pin_memory=False)
+        loader_eval_test = DataLoader(dset_test, batch_size=opt.test_bs, shuffle=True, num_workers=1,
+                                      pin_memory=False)
 
         # compute mean value of train set
         mean_over_dset = get_dataset_mean(loader_train)
@@ -522,7 +540,7 @@ if __name__ == '__main__':
         estimator, config = init_main_estimator(opt, baseline)
 
         # test estimator (it is important that all models are evaluated using the same evaluator)
-        estimator_test, config_test = init_test_estimator(opt)
+        estimator_test, estimator_test_ess, config_test = init_test_estimator(opt)
 
         # oracle estimator to establish the true gradients direction
         estimator_oracle, config_oracle = init_oracle_estimator(opt)
@@ -538,6 +556,9 @@ if __name__ == '__main__':
 
         # define the optimizer for the model's parameters and the training estimator's parameters if any (baseline)
         optimizers = init_optimizers(opt, model, estimator)
+
+        # Deterministic warmup
+        scheduler = LinearSchedule(opt.warmup, opt.beta_min, opt.beta) if opt.warmup > 0 else lambda x: opt.beta
 
         # tensorboard writers used to log the summary
         writer_train = SummaryWriter(os.path.join(logdir, 'train'))
@@ -562,11 +583,17 @@ if __name__ == '__main__':
             [o.zero_grad() for o in optimizers]
             model.train()
             for batch in tqdm(loader_train, desc=f"{exp_id}-K={estimator.iw}-M={estimator.mc}-training"):
+                beta = scheduler(global_step)
                 x, y = preprocess(batch, device)
-                training_step(x, model, estimator, optimizers, y=y, return_diagnostics=False, **config)
+                training_step(x, model, estimator, optimizers, y=y, return_diagnostics=False, beta=beta, **config)
                 global_step += 1
 
             if epoch % opt.eval_freq == 0:
+
+                """Total derivatives Analysis"""
+                if opt.mc_analysis:
+                    summary = Diagnostic(total_derivatives_analysis(estimator, model, x, opt.mc_analysis, **config))
+                    summary.log(writer_train, global_step)
 
                 """Analyse Gradients"""
                 if opt.grad_samples > 0:
@@ -577,17 +604,27 @@ if __name__ == '__main__':
                                                c_configs=c_configs, counterfactual_estimators=counterfactual_estimators)
 
                 """Eval on the train set"""
-                # log train summary to console and tensorboar
-                summary_train = evaluation(model, estimator_test, config_test, loader_eval_train, exp_id,
-                                           device=device, ref_summary=None)
+                if not opt.only_train_set:
+                    # log train summary to console and tensorboar
+                    summary_train = evaluation(model, estimator_test, config_test, loader_eval_train, exp_id,
+                                               device=device, ref_summary=None, max_eval=opt.max_eval)
 
-                # log train summary to console and tensorboar
-                log_summary(summary_train, global_step, epoch, logger=train_logger, best=None, writer=writer_train,
-                            exp_id=exp_id)
+                    # eval ess using the training estimator
+                    summary_train_ = evaluation(model, estimator_test_ess, config_test, loader_eval_train, exp_id,
+                                                device=device, ref_summary=None, max_eval=1000)
+
+                    summary_train['loss']['ess'] = summary_train_['loss']['ess']
+
+                    # log train summary to console and tensorboar
+                    log_summary(summary_train, global_step, epoch, logger=train_logger, best=None,
+                                writer=writer_train,
+                                exp_id=exp_id)
+                else:
+                    summary_train = None
 
                 """eval on the test set"""
-                summary_test = evaluation(model, estimator_test, config_test,
-                                          loader_eval_test, exp_id, device=device, ref_summary=summary_train)
+                summary_test = evaluation(model, estimator_test, config_test, loader_eval_test, exp_id, device=device,
+                                          ref_summary=summary_train, max_eval=opt.max_eval)
 
                 # update best elbo and save model
                 best_elbo = save_model_and_update_best_elbo(model, summary_test, global_step,
