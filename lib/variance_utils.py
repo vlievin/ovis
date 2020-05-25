@@ -54,7 +54,7 @@ def get_estimator(estimator_id, iw):
         Estimator, config = get_config(estimator_id)
         _mc, _iw = 1, iw
 
-    return Estimator(baseline=None, mc=_mc, iw=_iw), config
+    return Estimator(baseline=None, mc=_mc, iw=_iw, **config), config
 
 
 def log_grads_data(analysis_data, base_logger, estimator_id, iw):
