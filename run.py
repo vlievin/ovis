@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import sys
 import socket
 import traceback
 from copy import copy
@@ -16,7 +17,7 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from lib import get_datasets
-from lib.analysis import total_derivatives_analysis
+from lib.analysis import total_derivatives_analysis, latent_activations
 from lib.estimators import VariationalInference, AirReinforce
 from lib.estimators.config import get_config
 from lib.gradients import get_gradients_statistics
@@ -70,9 +71,12 @@ def parse_args():
     parser.add_argument('--mc', default=1, type=int, help='number of Monte-Carlo samples')
     parser.add_argument('--iw', default=1, type=int, help='number of Importance-Weighted samples')
     parser.add_argument('--beta', default=1.0, type=float, help='Beta weight for the KL term (i.e. Beta-VAE)')
-    parser.add_argument('--warmup', default=0, type=int, help='period of the deterministic warmup (Beta : 0 -> 1)')
+    parser.add_argument('--gamma', default=1.0, type=float, help='Gamma weight for the unormalized weights: log w_k^gamma')
+    parser.add_argument('--warmup', default=0, type=int, help='period of the posterior warmup (Gamma : 0 -> 1)')
     parser.add_argument('--warmup_offset', default=0, type=int, help='number of steps before increasing beta')
-    parser.add_argument('--beta_min', default=1e-6, type=float, help='minimum beta value')
+    parser.add_argument('--warmup_mode', default='log', type=str, help='interpolation mode [linear | log]')
+    parser.add_argument('--gamma_min', default=1e-2, type=float, help='minimum gamma value')
+    parser.add_argument('--warmup_estimator', default='', help='estimator to use during the warm-up')
 
     # evaluation
     parser.add_argument('--eval_freq', default=10, type=int, help='frequency for the evaluation [test set + grads]')
@@ -84,6 +88,12 @@ def parse_args():
     # total derivatives analysis
     parser.add_argument('--mc_analysis', default=0, type=int,
                         help='number of Monte-Carlo samples for the total derivatives analysis')
+
+    # active units analysis
+    parser.add_argument('--mc_au_analysis', default=0, type=int,
+                        help='number of Monte-Carlo samples used to estimate the number of active units')
+    parser.add_argument('--npoints_au_analysis', default=1000, type=int,
+                        help='number of data points')
 
     # gradients analysis
     parser.add_argument('--grad_samples', default=100, type=int,
@@ -202,9 +212,12 @@ def get_run_id(opt, counterfactual_estimators):
     if opt.skip:
         run_id += "-skip"
     if opt.warmup > 0:
-        run_id += f"-warmup{opt.warmup}"
+        run_id += f"-{opt.warmup_mode}-warmup{opt.warmup}-{opt.gamma_min}-{opt.gamma}"
+    else:
+        if opt.gamma != 1:
+            run_id += f"-gamma{opt.gamma}"
 
-    exp_id = f"{opt.exp}-{opt.estimator}"
+    exp_id = f"{opt.exp}-{opt.estimator}-g={opt.gamma}-K={opt.iw}"
 
     return run_id, exp_id, use_baseline
 
@@ -289,7 +302,21 @@ def init_main_estimator(opt, baseline):
     estimator = Estimator(baseline=baseline, mc=opt.mc, iw=opt.iw, N=opt.N, K=opt.K, hdim=opt.hdim,
                           freebits=opt.freebits, **config)
 
+    # additionals arguments
+    config.update({'beta': opt.beta})
+
     return estimator, config
+
+def init_warnup_estimator(opt):
+    """initialize the training estimator and its configuration dict"""
+    if opt.warmup_estimator != "":
+        Estimator, config = get_config(opt.warmup_estimator)
+        estimator = Estimator(baseline=baseline, mc=opt.mc, iw=opt.iw, N=opt.N, K=opt.K, hdim=opt.hdim,
+                              freebits=opt.freebits, **config)
+
+        return estimator, config
+    else:
+        return None, None
 
 
 def init_test_estimator(opt):
@@ -425,8 +452,13 @@ def perform_gradients_analysis(opt, global_step, writer_train, loader_train, mod
 
 
 @torch.no_grad()
-def evaluation(model, estimator, config, loader, exp_id, device='cpu', ref_summary=None, max_eval=None):
+def evaluation(model, estimator, config, loader, exp_id, device='cpu', ref_summary=None, seed=None, max_eval=None):
     """evaluation epoch to estimate the marginal log-likelihood: L_K \approx log \hat{p(x)}, K -> \infty"""
+
+    if seed is not None:
+        _seed = int(torch.randint(1, sys.maxsize, (1,)).item())
+        torch.manual_seed(seed)
+
     k = 0
     model.eval()
     agg = Aggregator()
@@ -442,6 +474,9 @@ def evaluation(model, estimator, config, loader, exp_id, device='cpu', ref_summa
     # compute overfitting L_K^{train} - L_K^{valid}
     if ref_summary is not None:
         summary['loss']['overfitting'] = ref_summary['loss']['L_k'].mean() - summary['loss']['L_k'].mean()
+
+    if seed is not None:
+        torch.manual_seed(_seed)
 
     return summary
 
@@ -540,6 +575,9 @@ if __name__ == '__main__':
         # training estimator
         estimator, config = init_main_estimator(opt, baseline)
 
+        # warmup estimator
+        warmup_estimator, warmup_config = init_warnup_estimator(opt)
+
         # test estimator (it is important that all models are evaluated using the same evaluator)
         estimator_test, estimator_test_ess, config_test = init_test_estimator(opt)
 
@@ -559,8 +597,8 @@ if __name__ == '__main__':
         optimizers = init_optimizers(opt, model, estimator)
 
         # Deterministic warmup
-        scheduler = LinearSchedule(opt.warmup, opt.beta_min, opt.beta,
-                                   offset=opt.warmup_offset, alpha=np.exp(1)) if opt.warmup > 0 else lambda x: opt.beta
+        scheduler = LinearSchedule(opt.warmup, opt.gamma_min, opt.gamma,
+                                   offset=opt.warmup_offset, mode=opt.warmup_mode) if opt.warmup > 0 else lambda x: opt.gamma
 
         # tensorboard writers used to log the summary
         writer_train = SummaryWriter(os.path.join(logdir, 'train'))
@@ -585,18 +623,32 @@ if __name__ == '__main__':
             [o.zero_grad() for o in optimizers]
             model.train()
             for batch in tqdm(loader_train, desc=f"{exp_id}-K={estimator.iw}-M={estimator.mc}-training"):
-                beta = scheduler(global_step)
+
+                # get the estimator & config
+                if warmup_estimator is not None and global_step < opt.warmup:
+                    _estimator, _config = warmup_estimator, warmup_config
+                else:
+                    _estimator, _config = estimator, config
+
+                gamma = scheduler(global_step)
                 x, y = preprocess(batch, device)
-                training_step(x, model, estimator, optimizers, y=y, return_diagnostics=False, beta=beta, **config)
+                training_step(x, model, _estimator, optimizers, y=y, return_diagnostics=False, gamma=gamma, **_config)
                 global_step += 1
 
             if epoch % opt.eval_freq == 0:
-                print(f">>>> beta : {beta:.3f}")
+                parameters_diagnostics = {'parameters' : {'beta': _config.get('beta', 1.), 'gamma': gamma}}
+                print(f">>>> {global_step} | gamma : {gamma:.2E}")
 
                 """Total derivatives Analysis"""
                 if opt.mc_analysis:
                     summary = Diagnostic(total_derivatives_analysis(estimator, model, x, opt.mc_analysis, **config))
                     summary.log(writer_train, global_step)
+
+                """Active Units Analysis"""
+                if opt.mc_au_analysis:
+                    summary = Diagnostic(latent_activations(model, loader_eval_train, opt.mc_au_analysis, nsamples=opt.npoints_au_analysis, seed=opt.seed))
+                    summary.log(writer_train, global_step)
+
 
                 """Analyse Gradients"""
                 if opt.grad_samples > 0:
@@ -608,21 +660,23 @@ if __name__ == '__main__':
 
                 """Eval on the train set"""
                 if not opt.only_train_set:
-                    # log train summary to console and tensorboar
+                    # log train summary to console and tensorboad
+                    # seed evaluation such that the subset of `opt.max_eval` data points remains the same
                     summary_train = evaluation(model, estimator_test, config_test, loader_eval_train, exp_id,
-                                               device=device, ref_summary=None, max_eval=opt.max_eval)
+                                               device=device, ref_summary=None, max_eval=opt.max_eval, seed=opt.seed)
 
                     # eval ess using the training estimator
                     summary_train_ = evaluation(model, estimator_test_ess, config_test, loader_eval_train, exp_id,
-                                                device=device, ref_summary=None, max_eval=1000)
+                                                device=device, ref_summary=None, max_eval=1000, seed=opt.seed)
 
                     summary_train['loss']['ess'] = summary_train_['loss']['ess']
                 else:
                     # eval ess using the training estimator
                     summary_train = evaluation(model, estimator_test_ess, config_test, loader_eval_train, exp_id,
-                                               device=device, ref_summary=None, max_eval=1000)
+                                               device=device, ref_summary=None, max_eval=1000, seed=opt.seed)
 
-                # log train summary to console and tensorboar
+                # log train summary to console and tensorboard
+                summary_train.update(parameters_diagnostics)
                 log_summary(summary_train, global_step, epoch, logger=train_logger, best=None,
                             writer=writer_train,
                             exp_id=exp_id)
@@ -636,6 +690,7 @@ if __name__ == '__main__':
                                                             epoch, best_elbo, logdir)
 
                 # log marginal test summary to console and tensorboar
+                summary_test.update(parameters_diagnostics)
                 log_summary(summary_test, global_step, epoch, logger=test_logger, best=best_elbo,
                             writer=writer_test,
                             exp_id=exp_id)
