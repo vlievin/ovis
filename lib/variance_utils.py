@@ -4,7 +4,8 @@ import numpy as np
 
 from lib.estimators.config import *
 from .gradients import *
-from .plotting import PLOT_WIDTH, PLOT_HEIGHT, markers
+from .plotting import PLOT_WIDTH, PLOT_HEIGHT
+from lib.style import MARKERS
 
 _sep = os.get_terminal_size().columns * "-"
 
@@ -110,7 +111,7 @@ def plot_statistics(df, opt, logdir):
                     kwargs = {'alpha': 0.5, 'color': colors[e]}
                 else:
                     _metrics = [metric]
-                    kwargs = {'alpha': 0.9, 'color': colors[e], 'marker': markers[e], 'markersize': 6}
+                    kwargs = {'alpha': 0.9, 'color': colors[e], 'marker': MARKERS[e], 'markersize': 6}
 
                 for i, _metric in enumerate(_metrics):
 

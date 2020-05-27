@@ -1,7 +1,6 @@
 import argparse
 import json
 import os
-from collections import defaultdict
 from datetime import datetime
 from shutil import rmtree
 
@@ -10,11 +9,11 @@ from dotmap import DotMap
 
 from lib.logging import get_loggers
 from lib.plotting import *
+from lib.style import *
+from lib.style import LOG_PLOT_RULES, METRIC_DISPLAY_NAME
 from lib.utils import parse_numbers
 
-sns.set(style="whitegrid")
-sns.set(style="ticks")
-sns.set_context("paper", font_scale=1.2, rc={"lines.linewidth": 2})
+set_style()
 
 try:
     from tbparser.summary_reader import SummaryReader
@@ -23,41 +22,21 @@ except:
     print("You probably need to install tbparser:\n   pip install git+https://github.com/velikodniy/tbparser.git")
     exit()
 
-log_rules = {
-    'iw': 'log',
-    'grads/snr': 'log',
-    'grads/dsnr': 'log',
-    'grads/variance': 'log',
-    'grads/magnitude': 'log',
-    'gmm/posterior_mse': 'log',
-    'gmm/prior_mse': 'log',
-    'gaussian_toy/mse_A': 'log',
-    'gaussian_toy/mse_b': 'log',
-    'gaussian_toy/mse_mu': 'log'
-}
 
-metric_dict = {
-    'iw': r"$K$",
-    'c_iw': r"$K$",
-    'loss/L_k': r"$\log p_{\theta}(x)$",
-    'loss/elbo': r"$\operatorname{ELBO}$",
-    'loss/kl': r"$\operatorname{KL}(q_{\phi}(z | x) || p(z))$",
-    'loss/nll': r"$- \log p_{\theta}(x | z)$",
-    'loss/r_ess': r"$\operatorname{ESS} / K$",
-    'loss/ess': r"$\operatorname{ESS}$",
-    'loss/kl_q_p': r"$\mathrm{KL}\left(Q || P\right)$",
-    'grads/variance': r"$\operatorname{Var}(\Delta(\phi))$",
-    'grads/snr': r"$\operatorname{SNR}(\Delta(\phi))$",
-    'grads/dsnr': r"$\operatorname{DSNR}(\Delta(\phi))$",
-    'grads/magnitude': r"$ | E[\Delta(\phi)] | $",
-    'grads/direction': r"$\operatorname{cosine}( \Delta(\phi) ,  \Delta^{oracle}(\phi) )$",
-    'gmm/posterior_mse': r"$\left\| q_{\phi}(z | x) - p_{\theta_{true}}(z | x) \right\| $",
-    'gmm/prior_mse': r"$\left\| p_{\theta}(z) - p_{\theta_{true}}(z) \right\| $",
-    'gaussian_toy/mse_A': r"$\left\| A - A^*  \right\|_2$",
-    'gaussian_toy/mse_b': r"$\left\| b - b^*  \right\|_2$",
-    'gaussian_toy/mse_mu': r"$\left\| \mu - \mu^*  \right\|_2$",
+def format_estimator_name(name):
+    if name == 'copt':
+        return 'copt-alpha1'
+    elif name == 'vimco':
+        return 'vimco-arithmetic'
+    elif name == 'tvo-config1' or name == 'tvo-config2':
+        return 'tvo'
+    elif 'tvo' in name:
+        return 'tvo'
+    elif name == 'pathwise-iwae':
+        return 'pathwise'
+    else:
+        return name
 
-}
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--root', default='runs/', help='experiment directory')
@@ -336,7 +315,8 @@ if opt.adjust_ess:
     for key in ['train']:
         iw_test = args['iw_test']
         _key = f"{key}:loss/ess"
-        logs.loc[logs["_key"] == _key, '_value'] = logs.loc[logs["_key"] == _key, '_value']  * logs.loc[logs["_key"] == _key, 'iw'] / iw_test
+        logs.loc[logs["_key"] == _key, '_value'] = logs.loc[logs["_key"] == _key, '_value'] * logs.loc[
+            logs["_key"] == _key, 'iw'] / iw_test
 
 # integrate counterfactuals data into the logs
 if len(counterfactual_logs):
@@ -428,6 +408,12 @@ for m, agg_fn in zip(pivot_metrics, pivot_metrics_agg_fns):
 df.drop('id', 1, inplace=True)
 logs.drop('id', 1, inplace=True)
 
+# format estimator names
+print(">>>> ", df.keys())
+print(">>>> ", logs.keys())
+df['estimator'] = list(map(format_estimator_name, df['estimator'].values))
+logs['estimator'] = list(map(format_estimator_name, logs['estimator'].values))
+
 """
 print all results
 """
@@ -492,12 +478,12 @@ if opt.ema > 0:
     logs.sort_values("step", inplace=True)
     sort_index = [k for k in logs.keys() if k not in ['step', '_value', '_key']] + ['_key', 'step']
 
-    logs.set_index(keys = sort_index, inplace=True)
+    logs.set_index(keys=sort_index, inplace=True)
     for idx in sort_index[::-1]:
         logs.sort_index(level=idx, sort_remaining=False, inplace=True)
 
-    for k, (idx, record) in enumerate(logs.groupby(level=list(range(len(sort_index)-1)))):
-        steps = record.index.get_level_values(-1) # get `step` values
+    for k, (idx, record) in enumerate(logs.groupby(level=list(range(len(sort_index) - 1)))):
+        steps = record.index.get_level_values(-1)  # get `step` values
         record = record['_value']
 
         # exponential moving average
@@ -506,7 +492,6 @@ if opt.ema > 0:
         logs.loc[idx, :] = record
 
     logs.reset_index(inplace=True)
-
 
 _last_indexes = ['seed', '_key', 'step']
 _index = [k for k in logs.keys() if k != '_value' and k not in _last_indexes]
@@ -557,7 +542,6 @@ level = 1
 print(f">>> Level = {level}, Plotting with keys:", _keys)
 print(_sep)
 
-
 # define keys used for styling
 cat_key = _keys[0]
 main_key = _keys[1]  # color
@@ -565,7 +549,7 @@ aux_key = _keys[2] if len(_keys) > 2 else None  # line style (in main plot)
 third_key = _keys[3] if len(_keys) > 3 else None  # line style (in auxiliary plots)
 fourth_key = _keys[4] if len(_keys) > 4 else None
 
-meta = {'log_rules': log_rules, 'metric_dict': metric_dict, 'agg_fns': pivot_metrics_agg_ids}
+meta = {'log_rules': LOG_PLOT_RULES, 'metric_dict': METRIC_DISPLAY_NAME, 'agg_fns': pivot_metrics_agg_ids}
 
 if logs[cat_key].nunique() > 0:
     # pivot plot
