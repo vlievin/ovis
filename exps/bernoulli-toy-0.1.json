@@ -1,26 +1,36 @@
 {
   "description": "Bernoulli toy task from RELAX",
   "args": [
+    "--estimator relax",
+    "--estimator rebar",
+    "--estimator bernoulli-exact",
     "--estimator vimco",
     "--estimator copt",
     "--estimator copt-uniform",
-    "--estimator copt-ess",
-    "--estimator vimco-alpha0",
+    "--estimator copt-alpha0",
     "--estimator tvo-part21",
-    "--estimator wake-wake",
+    "--estimator ww",
+    "--estimator reinforce"
     "--estimator reinforce-baseline"
   ],
   "global": "--silent --deterministic --epochs 10000 --lr_reduce_steps 0",
   "parameters": {
-    "iw" : [20, 10, 5, 2],
-    "seed": [14, 65, 48, 24, 79],
+    "K" : [1],
+    "N" : [1],
+    "mc" : [1],
+    "iw" : [50, 20, 10, 5, 2],
+    "seed": [1, 2, 3, 4, 5],
     "dataset": ["bernoulli-toy"],
-    "grad_samples" : [250],
-    "bs" : [100],
+    "model": ["bernoulli-toy"],
+    "grad_samples" : [1000],
+    "eval_freq" : [100],
+    "bs" : [1],
     "valid_bs" : [100],
-    "lr": [1e-4 ],
+    "test_bs" : [100],
+    "lr": [0.01],
     "iw_valid": [100],
-    "iw_test": [1000]
+    "iw_test": [1000],
+    "beta": [1]
   }
 
 }
