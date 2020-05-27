@@ -96,8 +96,8 @@ def get_grads_from_tensor(model, loss, output, tensor_id, mc, iw):
 
 def get_grads_from_parameters(model, loss, key_filter=''):
     key_filters = key_filter.split(',')
-    params = [p for k, p in model.named_parameters() if any([(k in _key) for _key in key_filters])]
-    assert len(params) > 0, f"`No parameter matching the filter `{key_filter}`"
+    params = [p for k, p in model.named_parameters() if any([(_key in k) for _key in key_filters])]
+    assert len(params) > 0, f"No parameters matching filter = `{key_filters}`"
     for j, l in enumerate(loss):
         model.zero_grad()
         # backward individual gradients \nabla L[i]
@@ -292,7 +292,8 @@ def get_batch_grads_from_tensor(model, loss, output, tensor_id, mc, iw):
 
 def get_batch_grads_from_parameters(model, loss, key_filter=''):
     key_filters = key_filter.split(',')
-    params = [p for k, p in model.named_parameters() if any([(k in _key) for _key in key_filters])]
+    params = [p for k, p in model.named_parameters() if any([(_key in k) for _key in key_filters])]
+    assert len(params) > 0, f"No parameters matching filter = `{key_filters}`"
     model.zero_grad()
     # backward individual gradients \nabla L[i]
     loss.mean().backward(create_graph=True, retain_graph=True)
