@@ -73,7 +73,7 @@ class ThermoVariationalObjective(VariationalInference):
         # self.register_buffer("partitions", torch.tensor(partitions, dtype=torch.float))
 
     def compute_loss(self, log_px_z: Tensor, log_pzs: List[Tensor], log_qzs: List[Tensor], integration: str = 'left',
-                     num_partition=2, partition_type='log', log_beta_min=-10, auto_partition=False, **kwargs: Any) -> \
+                     num_partition=2, partition_type='log', log_beta_min=-10, partition_name=None, **kwargs: Any) -> \
             Dict[str, Tensor]:
         """
         Computes the covariance gradient estimator for the TVO bound.
@@ -98,14 +98,27 @@ class ThermoVariationalObjective(VariationalInference):
         :return: dictionary with outputs [tvo, elbo, kl, log_f_x,z, N_eff]
         """
 
-        if auto_partition:
+        if partition_name is not None:
             # map K to a partition accordingly to the figure 3. in the TVO paper
-            if self.iw < 10:
-                beta_min = 5e-2
-            elif self.iw < 30:
-                beta_min = 2e-1
+            if partition_name == 'config1':
+                # figure 3 in the TVO paper
+                if self.iw < 10:
+                    beta_min = 5e-2
+                elif self.iw < 30:
+                    beta_min = 2e-1
+                else:
+                    beta_min = 3e-1
+            elif partition_name == 'config2':
+                # figure 6 in the TVO paper
+                if self.iw < 10:
+                    beta_min = 1e-2
+                elif self.iw < 30:
+                    beta_min = 2e-2
+                else:
+                    beta_min = 3e-2
             else:
-                beta_min = 3e-1
+                raise ValueError(f"Unknown partition_name = `{partition_name}`")
+
 
             log_beta_min = torch.tensor(beta_min, device=log_px_z.device).log10()
 
@@ -113,7 +126,7 @@ class ThermoVariationalObjective(VariationalInference):
         num_particles = self.iw
 
         iw_data = self.compute_iw_bound(log_px_z, log_pzs, log_qzs, detach_qlogits=False,
-                                        request=['log_px_z', 'log_pz', 'log_qz'])
+                                        request=['log_px_z', 'log_pz', 'log_qz'], **kwargs)
         log_wk, log_px_z, log_pz, log_qz = [iw_data[k] for k in ['log_wk', 'log_px_z', 'log_pz', 'log_qz']]
         log_p = log_px_z + log_pz
 
