@@ -10,8 +10,8 @@ class VariationalInference(Estimator):
     """
 
     def compute_iw_bound(self, log_px_z: Tensor, log_pzs: List[Tensor], log_qzs: List[Tensor],
-                         detach_qlogits: bool = False, beta: float = 1.0, auxiliary_samples: int = 0,
-                         request: List[str] = list()) -> Dict[
+                         detach_qlogits: bool = False, beta: float = 1.0, gamma:float=1.0, auxiliary_samples: int = 0,
+                         request: List[str] = list(), **kwargs) -> Dict[
         str, Tensor]:
         """
         Compute the importance weighted bound:
@@ -58,6 +58,9 @@ class VariationalInference(Estimator):
 
         # compute log w_k = log p(x, z^k) - log q(z^k | x) (ELBO)
         log_wk = log_px_z - beta * kl
+
+        # log w_k^gamma = gamma * log w_k
+        log_wk = gamma * log_wk
 
         # view log_wk as shape [bs, mc, iw]
         log_wk = log_wk.view(-1, self.mc, self.iw)
@@ -222,7 +225,7 @@ class VariationalInference(Estimator):
             output = self.evaluate_model(model, x, **kwargs)
 
         log_px_z, log_pz, log_qz = [output[k] for k in ('log_px_z', 'log_pz', 'log_qz')]
-        iw_data = self.compute_iw_bound(log_px_z, log_pz, log_qz, beta=beta)
+        iw_data = self.compute_iw_bound(log_px_z, log_pz, log_qz, **kwargs)
 
         # compute the loss = - L_k using the reparametrization trick
         L_k = iw_data.get('L_k').mean(1)  # MC averaging
@@ -276,8 +279,8 @@ class VariationalInference(Estimator):
             loss['inferred_n'] = output['inferred_n']
 
         gaussian_toy = {}
-        for key in ['mse_A', 'mse_b', 'mse_mu']:
-            if 'mse_A' in output.keys():
+        for key in ['mse_A', 'mse_b', 'mse_mu', 'mse_phi']:
+            if key in output.keys():
                 gaussian_toy[key] = output[key]
 
         kls = {}

@@ -466,6 +466,7 @@ class VimcoPlus(Reinforce):
                 backward: bool = False,
                 debug: bool = False,
                 beta=1.0,
+                gamma=1.0,
                 return_diagnostics: bool = True,
                 center: bool = False,
                 analysis: bool = False,
@@ -475,7 +476,7 @@ class VimcoPlus(Reinforce):
         bs = x.size(0)
         output = self.evaluate_model(model, x, **kwargs)
         log_px_z, log_pz, log_qz = [output[k] for k in ('log_px_z', 'log_pz', 'log_qz')]
-        iw_data = self.compute_iw_bound(log_px_z, log_pz, log_qz, detach_qlogits=True, beta=beta, auxiliary_samples=auxiliary_samples)
+        iw_data = self.compute_iw_bound(log_px_z, log_pz, log_qz, detach_qlogits=True, beta=beta, gamma=gamma, auxiliary_samples=auxiliary_samples)
         L_k, ess, log_wk = [iw_data[k] for k in ('L_k', 'ess', 'log_wk')]
 
         # concatenate all q(z_l| *, x)
@@ -522,7 +523,7 @@ class VimcoPlus(Reinforce):
                     'loss': reinforce_loss,
                 },
                 'parameters': {
-                    'beta' : beta
+                    'beta' : beta, 'gamma': gamma,
                 }
             })
 

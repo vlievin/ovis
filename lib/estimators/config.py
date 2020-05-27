@@ -117,9 +117,14 @@ def get_config(estimator):
 
     elif 'tvo' in estimator:
         # argument for automatic partition
-        auto_partition = "-auto" in estimator
+        if "-config1" in estimator:
+            partition_name = "config1"
+        elif "-config2" in estimator:
+            partition_name = "config2"
+        else:
+            partition_name = None
 
-        # number of partitions
+                # number of partitions
         partition_args = [arg for arg in estimator.split('-') if 'S' in arg]
         num_partition = parse_numbers(partition_args[0])[0] if len(partition_args) else 2
 
@@ -135,7 +140,7 @@ def get_config(estimator):
         # define config and Estimator
         Estimator = ThermoVariationalObjective
         config = {'tau': 0, 'zgrads': False, 'num_partition': num_partition, 'integration': integration,
-                  'auto_partition': auto_partition, 'log_beta_min': log_beta_min}
+                  'partition_name': partition_name, 'log_beta_min': log_beta_min}
 
     else:
         raise ValueError(f"Unknown estimator {estimator}.")
