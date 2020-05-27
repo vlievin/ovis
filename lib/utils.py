@@ -1,5 +1,6 @@
 import operator
 import re
+import numpy as np
 from collections import defaultdict
 from functools import reduce
 from typing import *
@@ -91,16 +92,24 @@ class FreeBits():
 
 
 class LinearSchedule():
-    def __init__(self, period, init_value, end_value, offset=0, alpha=1):
-        self.alpha = alpha
+    def __init__(self, period, init_value, end_value, offset=0, mode='linear'):
         self.offset = offset
         self.period = period
         self.init_value = init_value
         self.end_value = end_value
+        self.mode = mode
 
     def __call__(self, step):
         x = max(0, step - self.offset)
         x = float(x) / self.period
-        x = x ** self.alpha
         x = max(0, min(1, x))
-        return self.init_value + x * (self.end_value - self.init_value)
+
+        if self.mode == 'linear':
+            return self.init_value + x * (self.end_value - self.init_value)
+        elif self.mode == 'log':
+            a = np.log(self.init_value)
+            b = np.log(self.end_value)
+            x = (1 - x) * a + x * b
+            return np.exp(x)
+        else:
+            raise ValueError(f"Unknown schedule mode = `{self.mode}`")
