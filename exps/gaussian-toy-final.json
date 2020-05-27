@@ -1,13 +1,16 @@
 {
   "description": "Fitting the Gaussian toy model from `Tighter Variational Bounds are not necessarily Better`",
   "args": [
-    "--estimator pathwise-vae",
     "--estimator pathwise-iwae",
-    "--estimator copt-uniform",
+    "--estimator tvo-S5-beta3",
     "--estimator copt",
-    "--estimator vimco",
-    "--estimator ww",
-    "--estimator tvo"
+    "--estimator copt-alpha0",
+    "--estimator copt-aux1",
+    "--estimator copt-aux10",
+    "--estimator copt-aux50",
+    "--estimator vimco-arithmetic",
+    "--estimator vimco-geometric",
+    "--estimator ww"
   ],
   "global": "--silent --deterministic",
   "parameters": {
@@ -15,8 +18,8 @@
     "lr_reduce_steps": [0],
     "lr": [1e-3],
     "optimizer": ["adam"],
-    "iw" : [1000, 300, 100, 30, 10],
-    "seed":[47, 45, 32, 73, 279],
+    "seed":[1,2,3,4,5],
+    "iw" : [100, 30, 10],
     "dataset" : ["gaussian-toy"],
     "N": [20],
     "iw_valid" : [5000],
@@ -26,6 +29,7 @@
     "bs": [100],
     "grad_bs" : [100],
     "valid_bs": [10],
-    "test_bs": [10]
+    "test_bs": [10],
+    "grad_key": ["A,b"]
   }
 }
