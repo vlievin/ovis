@@ -120,15 +120,16 @@ class FakeToyDist(Distribution):
     """ Fake probability distribution used for Toy example (run_bernoulli_toy.py)
         Usable with various estimators such that score function is MSE. """
 
-    def __init__(self, b: Tensor):
+    def __init__(self, b: Tensor, training: bool):
         super().__init__()
         self.b = b
+        self.training = training
 
     def log_prob(self, target):
-        target = target.data[0]
-        # log score ( log f_b )
-        MSE = (self.b - target)**2
-        return MSE.mean(-1)
+        if self.training:
+            target = target[0]  # Workaround for _expand_sample in base Estimator class
+        MSE = (self.b - target) ** 2  # log score ( log f_b )
+        return MSE
 
     def rsample(self):
         raise NotImplementedError

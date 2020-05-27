@@ -114,14 +114,6 @@ def get_config(estimator):
     elif estimator == 'relax':
         Estimator = Relax
         config = {'tau': 0.5, 'zgrads': True}
-       
-    elif estimator == 'rebar':
-        Estimator = Rebar
-        config = {'tau': 0.5, 'zgrads': True}
-    
-    elif estimator == 'bernoulli-exact':
-        Estimator = ExactGradientBernoulli
-        config = {}
 
     elif 'tvo' in estimator:
         # argument for automatic partition
@@ -148,12 +140,8 @@ def get_config(estimator):
         # define config and Estimator
         Estimator = ThermoVariationalObjective
         config = {'tau': 0, 'zgrads': False, 'num_partition': num_partition, 'integration': integration,
-
                   'partition_name': partition_name, 'log_beta_min': log_beta_min}
 
-
-                  'auto_partition': auto_partition, 'log_beta_min': log_beta_min}
-   
     else:
         raise ValueError(f"Unknown estimator {estimator}.")
 

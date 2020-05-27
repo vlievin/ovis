@@ -17,9 +17,6 @@ def sample_model(key, model, logdir, global_step=0, writer=None, N=100, seed=Non
     # sample model
     x_ = model.sample_from_prior(N, **kwargs).get('px')
     if x_ is None:
-        if seed is not None:
-            # set a new random seed
-            torch.manual_seed(_seed)
         return
     sample = x_.sample()
 
