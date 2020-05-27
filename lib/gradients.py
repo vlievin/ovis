@@ -5,7 +5,7 @@ import torch
 from tqdm import tqdm
 
 eps = 1e-15
-min_var = 1e-10
+min_var = 1e-15
 
 
 def covariance(x):
@@ -95,7 +95,8 @@ def get_grads_from_tensor(model, loss, output, tensor_id, mc, iw):
 
 
 def get_grads_from_parameters(model, loss, key_filter=''):
-    params = [p for k, p in model.named_parameters() if key_filter in k]
+    key_filters = key_filter.split(',')
+    params = [p for k, p in model.named_parameters() if any([(k in _key) for _key in key_filters])]
     assert len(params) > 0, f"`No parameter matching the filter `{key_filter}`"
     for j, l in enumerate(loss):
         model.zero_grad()
@@ -240,7 +241,8 @@ def get_individual_gradients_statistics(estimator, model, x, batch_size=32, n_sa
         'magnitude': _reduce(grads_mean.abs()),
         'snr': _reduce(grads_snr),
         'dsnr': grads_dsnr.mean() if grads_dsnr is not None else 0.,
-        'direction': grads_dir.mean() if true_grads is not None else 0.
+        'direction': grads_dir.mean() if true_grads is not None else 0.,
+        'keep_ratio': mask.sum() / torch.ones_like(mask).sum()
     },
         'snr': {
             'p25': _percentile(grads_snr, q=0.25), 'p50': _percentile(grads_snr, q=0.50),
@@ -289,8 +291,8 @@ def get_batch_grads_from_tensor(model, loss, output, tensor_id, mc, iw):
 
 
 def get_batch_grads_from_parameters(model, loss, key_filter=''):
-    params = [p for k, p in model.named_parameters() if key_filter in k]
-    assert len(params) > 0, f"`No parameter matching the filter `{key_filter}`"
+    key_filters = key_filter.split(',')
+    params = [p for k, p in model.named_parameters() if any([(k in _key) for _key in key_filters])]
     model.zero_grad()
     # backward individual gradients \nabla L[i]
     loss.mean().backward(create_graph=True, retain_graph=True)
@@ -380,7 +382,8 @@ def get_batch_gradients_statistics(estimator, model, x, n_samples=100, key_filte
         'magnitude': _reduce(grads_mean.abs()),
         'snr': _reduce(grads_snr),
         'dsnr': grads_dsnr.mean() if grads_dsnr is not None else 0.,
-        'direction': grads_dir.mean() if true_grads is not None else 0.
+        'direction': grads_dir.mean() if true_grads is not None else 0.,
+        'keep_ratio': mask.sum() / torch.ones_like(mask).sum()
     },
         'snr': {
             'p25': _percentile(grads_snr, q=0.25), 'p50': _percentile(grads_snr, q=0.50),
@@ -412,7 +415,6 @@ def get_gradients_statistics(*args, use_individual_grads=False, seed=None, **kwa
         output = get_individual_gradients_statistics(*args, **kwargs)
     else:
         output = get_batch_gradients_statistics(*args, **kwargs)
-
 
     if seed is not None:
         torch.manual_seed(_seed)

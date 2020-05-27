@@ -142,8 +142,17 @@ class GaussianToyVAE(Template):
         px = self.generate(z)
         return {'px': px, 'z': z}
 
+    @property
+    def phi(self):
+        return torch.cat([self.A.view(-1), self.b.view(-1)], 0)
+
+    @property
+    def opt_phi(self):
+        return torch.cat([self.opt_A.view(-1), self.opt_b.view(-1)], 0)
+
     @torch.no_grad()
     def _get_diagnostics(self):
-        return {'mse_A': (self.A- self.opt_A).norm(p=2),
-                'mse_b': (self.b- self.opt_b).norm(p=2),
-                'mse_mu': (self.mu- self.opt_mu).norm(p=2)}
+        return {'mse_A': (self.A - self.opt_A).norm(p=2),
+                'mse_b': (self.b - self.opt_b).norm(p=2),
+                'mse_phi': (self.phi - self.opt_phi).norm(p=2),
+                'mse_mu': (self.mu - self.opt_mu).norm(p=2)}

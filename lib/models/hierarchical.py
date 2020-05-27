@@ -141,7 +141,7 @@ class HierarchicalVae(Template):
             if skip:
                 h += out
             q_stages += [stage]
-        self.encoder = nn.ModuleList(q_stages)
+        self.inference_network = nn.ModuleList(q_stages)
 
         # define the generative model
         p_stages = []
@@ -153,26 +153,26 @@ class HierarchicalVae(Template):
             if skip:
                 hskip = nout
             p_stages += [stage]
-        self.decoder = nn.ModuleList(p_stages)
+        self.generative_model = nn.ModuleList(p_stages)
 
         # https://github.com/vmasrani/tvo/blob/f7a3229d954274e1d920bf4fe98dcb18f837f825/discrete_vae/models.py:
         # ``https://github.com/duvenaud/relax/blob/master/binary_vae_multilayer_per_layer.py#L273
         # https://github.com/tensorflow/models/blob/master/research/rebar/rebar.py#L49
         # this returns the logit function (inverse of sigmoid) of clamped
         # self.train_obs_mean (see https://en.wikipedia.org/wiki/Logit)``
-        self.decoder[-1].layers[-1].bias.data = - torch.log(
+        self.generative_model[-1].layers[-1].bias.data = - torch.log(
             1 / torch.clamp(self.x_mean.view(-1), 1e-4, 1 - 1e-4) - 1)
 
     def phi(self):
-        return self.encoder.parameters()
+        return self.inference_network.parameters()
 
     def theta(self):
-        return chain(self.decoder.parameters(), self.prior)
+        return chain(self.generative_model.parameters(), self.prior)
 
     def encode(self, x, tau=0, zgrads=False) -> DataCollector:
         h_prev = x
         out = DataCollector()
-        for layer in self.encoder:
+        for layer in self.inference_network:
             h = layer(h_prev)
             # q(z|h)
             qlogits = self.get_logits(h)
@@ -202,16 +202,16 @@ class HierarchicalVae(Template):
 
         # create z as [None, ..., None] if z is None
         if z is None:
-            z = [None for _ in self.decoder]
+            z = [None for _ in self.generative_model]
             bs = N
         else:
             bs = z[0].size(0)
 
         # generative process
-        assert len(z) == len(self.decoder)
+        assert len(z) == len(self.generative_model)
         h_prev = None
         out = DataCollector()
-        for l, (z_l, layer) in enumerate(zip(z, self.decoder)):
+        for l, (z_l, layer) in enumerate(zip(z, self.generative_model)):
             out_l = {}
             if l == 0:
                 plogits = self.prior.expand(bs, *self.prior_dim)
