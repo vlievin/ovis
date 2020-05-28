@@ -129,7 +129,7 @@ def parse_args():
     parser.add_argument('--depth', default=3, type=int,
                         help='number of stochastic layers when using hierarchical models')
     parser.add_argument('--b_nlayers', default=1, type=int, help='number of hidden layers for the baseline')
-    parser.add_argument('--norm', default='layernorm', type=str,
+    parser.add_argument('--norm', default='none', type=str,
                         help='normalization layer [none | layernorm | batchnorm]')
     parser.add_argument('--dropout', default=0, type=float, help='dropout value')
     parser.add_argument('--toy_target', default=0.499, type=float, help='target in Bernoulli toy example')
@@ -494,7 +494,6 @@ def preprocess(batch, device):
 
 if __name__ == '__main__':
     _sep = os.get_terminal_size().columns * "-"
-    print(_sep)
 
     opt = parse_args()
 
@@ -529,10 +528,11 @@ if __name__ == '__main__':
     try:
         # define logger
         base_logger, train_logger, valid_logger, test_logger = get_loggers(logdir)
+        print(_sep)
         base_logger.info(f"Run id: {run_id}")
         base_logger.info(f"Logging directory: {logdir}")
         base_logger.info(f"Torch version: {torch.__version__}")
-
+        print(_sep)
         # setting the random seed
         torch.manual_seed(opt.seed)
         np.random.seed(opt.seed)
@@ -562,12 +562,13 @@ if __name__ == '__main__':
             f"x.mean = {mean_over_dset.mean():1f}, x.dtype = {x.dtype}")
 
         model = init_model(opt, x, mean_over_dset)
-        base_logger.info(f"Model: Number of parameters = {sum(p.numel() for p in model.parameters()):.3E}")
+        base_logger.info(f"Number of parameters = {sum(p.numel() for p in model.parameters()):.3E}")
 
         print(_sep)
-        for k, v in model.named_parameters():
-            print(f"{k} : N = {v.numel()}, mean = {v.mean().item():.3f}, std = {v.std().item():.3f}")
+        print("Parameters")
         print(_sep)
+        for k, v in model.named_parameters():
+            base_logger.info(f"{k} : N = {v.numel()}, mean = {v.mean().item():.3f}, std = {v.std().item():.3f}")
 
         # define a neural baseline that can be used for the different estimators
         baseline = init_neural_baseline(opt, x) if use_baseline else None
@@ -607,8 +608,10 @@ if __name__ == '__main__':
 
         # define the run length based on either
         epochs, iter_per_epoch = get_number_of_epochs(opt)
+        print(_sep)
         base_logger.info(f"Dataset = {opt.dataset}: running for {epochs} epochs,"
-                         f" {iter_per_epoch * epochs} steps, {iter_per_epoch} steps / epoch")
+                         f" {iter_per_epoch * epochs} steps, {iter_per_epoch} steps / epoch, {epochs // opt.eval_freq} eval. steps")
+        print(_sep)
 
         # sample model at initialization
         sample_model("prior-sample", model, logdir, global_step=0, writer=writer_test, seed=opt.seed)
@@ -637,7 +640,6 @@ if __name__ == '__main__':
 
             if epoch % opt.eval_freq == 0:
                 parameters_diagnostics = {'parameters' : {'beta': _config.get('beta', 1.), 'gamma': gamma}}
-                print(f">>>> {global_step} | gamma : {gamma:.2E}")
 
                 """Total derivatives Analysis"""
                 if opt.mc_analysis:

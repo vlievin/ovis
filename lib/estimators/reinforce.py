@@ -260,9 +260,6 @@ class VimcoPlus(Reinforce):
         if auxiliary_samples > 0:
             self.iw += auxiliary_samples
 
-
-        print(">>> VimcoPlus:", self.iw, auxiliary_samples)
-
     @torch.no_grad()
     def compute_prefactors(self,
                            L_k: Tensor,
@@ -287,8 +284,8 @@ class VimcoPlus(Reinforce):
             alpha = (((ess - alpha_mu) / alpha_sigma).sigmoid())[:, :, None]
 
         if auxiliary_samples > 0:
-            log_wk_aux = log_wk[:, :, self.iw-auxiliary_samples:]
-            log_wk = log_wk[:, :, :self.iw-auxiliary_samples]
+            log_wk_aux = log_wk[:, :, self.iw - auxiliary_samples:]
+            log_wk = log_wk[:, :, :self.iw - auxiliary_samples]
 
         # compute v_k = w_k / \sum_l w_l
         v_k = self.normalized_importance_weights(log_wk)
@@ -318,7 +315,7 @@ class VimcoPlus(Reinforce):
                 gk = - torch.log1p(- v_k_safe) - alpha * v_k
 
             else:
-                gk =  L_k[:, :, None] - alpha * v_k
+                gk = L_k[:, :, None] - alpha * v_k
 
                 # remove the auxiliary samples
                 aux = auxiliary_samples
@@ -327,15 +324,14 @@ class VimcoPlus(Reinforce):
                 log_wk_aux = log_wk_aux.view(-1, self.mc, aux, 1, 1).expand(-1, self.mc, aux, iw, iw)
                 mask = 1 - torch.eye(iw, device=log_wk.device)
                 mask = mask.view(1, 1, 1, iw, iw)
-                log_wk_unbiased = mask * log_wk_ + (1-mask) * log_wk_aux
+                log_wk_unbiased = mask * log_wk_ + (1 - mask) * log_wk_aux
 
                 vk_ = log_wk_unbiased.softmax(-1)
-                L_k_= torch.logsumexp(log_wk_unbiased, dim=-1) - np.log(log_wk_unbiased.size(-1))
+                L_k_ = torch.logsumexp(log_wk_unbiased, dim=-1) - np.log(log_wk_unbiased.size(-1))
 
-                gk_ = L_k_[:,:,:,:,None] - alpha * vk_
+                gk_ = L_k_[:, :, :, :, None] - alpha * vk_
 
                 expected_gk = gk_.diagonal(dim1=3, dim2=4).mean(2)
-
 
                 # print(f">>> gk         : {gk.mean():.3f} [{gk.std():.3f} ]")
                 # print(f">>> expected_gk: {expected_gk.mean():.3f} [{expected_gk.std():.3f} ]")
@@ -470,13 +466,14 @@ class VimcoPlus(Reinforce):
                 return_diagnostics: bool = True,
                 center: bool = False,
                 analysis: bool = False,
-                auxiliary_samples:int=0,
+                auxiliary_samples: int = 0,
                 **kwargs: Any) -> Tuple[Tensor, Dict, Dict]:
 
         bs = x.size(0)
         output = self.evaluate_model(model, x, **kwargs)
         log_px_z, log_pz, log_qz = [output[k] for k in ('log_px_z', 'log_pz', 'log_qz')]
-        iw_data = self.compute_iw_bound(log_px_z, log_pz, log_qz, detach_qlogits=True, beta=beta, gamma=gamma, auxiliary_samples=auxiliary_samples)
+        iw_data = self.compute_iw_bound(log_px_z, log_pz, log_qz, detach_qlogits=True, beta=beta, gamma=gamma,
+                                        auxiliary_samples=auxiliary_samples)
         L_k, ess, log_wk = [iw_data[k] for k in ('L_k', 'ess', 'log_wk')]
 
         # concatenate all q(z_l| *, x)
@@ -487,7 +484,8 @@ class VimcoPlus(Reinforce):
         else:
             hk = None
 
-        prefactor_k, score_diagnostics = self.compute_prefactors(L_k, log_wk, ess, hk=hk, center=center, auxiliary_samples=auxiliary_samples,
+        prefactor_k, score_diagnostics = self.compute_prefactors(L_k, log_wk, ess, hk=hk, center=center,
+                                                                 auxiliary_samples=auxiliary_samples,
                                                                  analysis=analysis, **kwargs)
 
         log_qz = log_qz[:, :, :prefactor_k.size(2)]
@@ -523,7 +521,7 @@ class VimcoPlus(Reinforce):
                     'loss': reinforce_loss,
                 },
                 'parameters': {
-                    'beta' : beta, 'gamma': gamma,
+                    'beta': beta, 'gamma': gamma,
                 }
             })
 
