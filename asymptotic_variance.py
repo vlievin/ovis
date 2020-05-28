@@ -33,20 +33,17 @@ parser = argparse.ArgumentParser()
 # run directory, id and seed
 parser.add_argument('--root', default='runs/', help='directory to store training logs')
 parser.add_argument('--data_root', default='data/', help='directory to store the data')
-parser.add_argument('--exp', default='asymptotic-variance-0.1', help='experiment directory')
+parser.add_argument('--exp', default='asymptotic-variance-final', help='experiment directory')
 parser.add_argument('--id', default='', type=str, help='run id suffix')
-parser.add_argument('--seed', default=13, type=int, help='random seed')
-parser.add_argument('--workers', default=1, type=int, help='dataloader workers')
+parser.add_argument('--seed', default=1, type=int, help='random seed')
 parser.add_argument('--rm', action='store_true', help='delete previous run')
 parser.add_argument('--silent', action='store_true', help='silence tqdm')
 parser.add_argument('--deterministic', action='store_true', help='use deterministic backend')
-parser.add_argument('--sequential_computation', action='store_true',
-                    help='compute each iw sample sequential during validation')
 
 # estimator
 parser.add_argument('--estimators',
-                    default='copt-arithmetic,vimco-arithmetic,pathwise',
-                    help='[vi, reinforce, vimco, gs, st-gs]')
+                    default='copt,vimco-arithmetic,pathwise-iwae',
+                    help='[copt,vimco,tvo,ww,pathwise-iwae')
 
 parser.add_argument('--iw_min', default=5, type=float, help='min umber of Importance-Weighted samples')
 parser.add_argument('--iw_max', default=5e3, type=float, help='max number of Importance-Weighted samples')
@@ -240,15 +237,19 @@ try:
                             grads += [
                                 {'noise': noise, 'param': 'all', 'estimator': estimator_id, 'iw': iw, 'grad': g.item()}]
 
+    # convert into DataFrames
     df = pd.DataFrame(data)
-    print(df)
+    grads = pd.DataFrame(grads)
+
+    # Save to CSV
     df.to_csv(os.path.join(logdir, 'data.csv'))
-    base_logger.info(f"# path = {os.path.abspath(logdir)}")
+    grads.to_csv(os.path.join(logdir, 'grads.csv'))
+
+    base_logger.info(f">>> logging directory = {os.path.abspath(logdir)}")
 
     plot_statistics(df, opt, logdir)
 
     if len(grads):
-        grads = pd.DataFrame(grads)
         plot_gradients_distribution(grads, logdir)
 
 
