@@ -9,7 +9,8 @@ import pandas as pd
 from lib.logging import get_loggers
 from lib.models import GaussianToyVAE
 from lib.utils import notqdm
-from lib.variance_utils import *
+from lib.variance_plotting import *
+from lib.style import format_estimator_name
 
 colors = sns.color_palette()
 _sep = os.get_terminal_size().columns * "-"
@@ -41,31 +42,31 @@ parser.add_argument('--silent', action='store_true', help='silence tqdm')
 parser.add_argument('--deterministic', action='store_true', help='use deterministic backend')
 
 # estimator
-parser.add_argument('--estimators',
-                    default='copt,vimco-arithmetic,pathwise-iwae',
-                    help='[copt,vimco,tvo,ww,pathwise-iwae')
+parser.add_argument('--estimators', default='copt,vimco-arithmetic,pathwise-iwae',
+                    help='[copt,vimco,tvo,ww,pathwise-iwae] [accepts comma separated list]')
 
 parser.add_argument('--iw_min', default=5, type=float, help='min umber of Importance-Weighted samples')
 parser.add_argument('--iw_max', default=5e3, type=float, help='max number of Importance-Weighted samples')
 parser.add_argument('--iw_steps', default=5, type=int, help='number of Importance-Weighted samples samples')
 parser.add_argument('--iw_valid', default=5000, type=int, help='number of iw samples for testing')
 
-parser.add_argument('--oracle', default='pathwise-iwae', type=str, help='oracle estimator id')
+parser.add_argument('--use_oracle', action='store_true', help='use_oracle to estimate the true gradients direction')
+parser.add_argument('--oracle', default='copt', type=str, help='oracle estimator id')
 parser.add_argument('--iw_oracle', default=5000, type=int, help='number of iw samples to find the true gradients')
-parser.add_argument('--mc_oracle', default=10000, type=int,
+parser.add_argument('--mc_oracle', default=1000, type=int,
                     help='number of mc samples used to compute the estimae of the oracle gradients')
 
 # noise perturbation for the parameters
-parser.add_argument('--noise', default='0.01', type=str, help='scale of the noise added to the optimal parameters')
+parser.add_argument('--noise', default='0.01', type=str,
+                    help='scale of the noise added to the optimal parameters [accepts comma separated list]')
 
 # evaluation of the gradients
-parser.add_argument('--key_filter', default='tensor:b', type=str,
+parser.add_argument('--key_filter', default='b', type=str,
                     help='identifiant of the parameters/tensor for the gradients analysis')
-parser.add_argument('--mc_samples', default=1000, type=int, help='number of samples for gradients evaluation')
+parser.add_argument('--mc_samples', default=1000, type=float, help='number of Monte-Carlo samples used for gradients evaluations')
 parser.add_argument('--max_points', default=0, type=int, help='number of data points to evaluate the grads in')
-parser.add_argument('--batch_size', default=80000, type=int,
-                    help='number of samples per batch size used during evaluation')
-parser.add_argument('--grads_dist', action='store_true', help='plot distributions of gradients for each parameter')
+parser.add_argument('--samples_per_batch', default=80000, type=int,
+                    help='number of samples per batch [N = bs x ms x iw]')
 parser.add_argument('--use_all_params', action='store_true', help='look a the aggregated dist of grads')
 parser.add_argument('--individual_grads', action='store_true',
                     help='analyse gradients for each data-point separately instead of the mini-batch gradients')
@@ -79,7 +80,7 @@ opt = parser.parse_args()
 
 iws = [int(k) for k in np.geomspace(start=opt.iw_min, stop=opt.iw_max, num=opt.iw_steps)[::-1]]
 
-print(f">> Particles = {iws}")
+print(f">> K = {iws}")
 
 if opt.deterministic:
     torch.backends.cudnn.deterministic = True
@@ -89,7 +90,7 @@ if opt.silent:
     tqdm = notqdm
 
 # defining the run identifier
-run_id = f"toy-{opt.estimators}-iw{opt.iw_min}-{opt.iw_max}-{opt.iw_steps}-oracle={opt.oracle}-seed{opt.seed}-noise{opt.noise}-mc{opt.mc_samples}-key{opt.key_filter}-pts{opt.npoints}-D{opt.D}"
+run_id = f"toy-{opt.estimators}-iw{opt.iw_min}-{opt.iw_max}-{opt.iw_steps}-oracle={opt.oracle}-seed{opt.seed}-noise{opt.noise}-mc{int(opt.mc_samples)}-key{opt.key_filter}-pts{opt.npoints}-D{opt.D}"
 if opt.id != "":
     run_id += f"-{opt.id}"
 if opt.individual_grads:
@@ -151,7 +152,7 @@ try:
     grads = []
     noises = [eval(x) for x in opt.noise.split(",")]
     global_grad_args = {'seed': opt.seed,
-                        'batch_size': opt.batch_size,
+                        'samples_per_batch': opt.samples_per_batch,
                         'key_filter': opt.key_filter,
                         'use_individual_grads': opt.individual_grads}
     for noise in noises:
@@ -176,9 +177,9 @@ try:
         _, grads_idx = true_grads.abs().sort(descending=True)
 
         # gradients analysis args and config
-        meta = {'seed': opt.seed, 'noise': noise, 'mc_samples': opt.mc_samples,
+        meta = {'seed': opt.seed, 'noise': noise, 'mc_samples': int(opt.mc_samples),
                 **{k: v.mean().item() for k, v in diagnostics['loss'].items()}}
-        grad_args = {'n_samples': opt.mc_samples, 'true_grads': true_grads, **global_grad_args}
+        grad_args = {'n_samples': int(opt.mc_samples), 'true_grads': true_grads, **global_grad_args}
 
         for estimator_id in estimators:
             print(_sep)
@@ -191,51 +192,50 @@ try:
                 estimator.to(device)
 
                 # evalute variance of the gradients
-                analysis_data, grads_meta = get_batch_gradients_statistics(estimator, model, x,
-                                                                           return_grads=opt.grads_dist,
+                analysis_data, grads_meta = get_gradients_statistics(estimator, model, x,
+                                                                           return_grads=True,
                                                                            use_dsnr=True, **grad_args, **config)
 
                 # log grads info
                 log_grads_data(analysis_data, base_logger, estimator_id, iw)
 
                 # store results
+                identifier = {'estimator': estimator_id, 'iw': iw, **meta}
+
                 # get statistics for each parameter separately
                 individual_stats = {f"{k}-{i}": v_i for k, v in grads_meta.items() for i, v_i in enumerate(v) if
                                     k in ['magnitude', 'var', 'snr']}
                 data += [{
-                    'estimator': estimator_id,
-                    'iw': iw,
                     **{f"grads-{k}": v.item() if isinstance(v, torch.Tensor) else v for k, v in
                        analysis_data['grads'].items()},
                     **{f"individual-{k}": v.item() for k, v in individual_stats.items()},
                     **{f"snr-{k}": v.item() for k, v in analysis_data['snr'].items()},
-                    **meta
+                    **identifier
                 }]
 
                 # store grads
-                if opt.grads_dist:
-                    grads_ = grads_meta.get('grads')
-                    grads_ = grads_.view(-1, grads_.shape[-1]).transpose(1, 0)
+                grads_ = grads_meta.get('grads')
+                grads_ = grads_.view(-1, grads_.shape[-1]).transpose(1, 0)
 
-                    # reindex by `true_grads` magnitude so all grads expectations are positives
-                    grads_ = grads_[grads_idx]
+                # reindex by `true_grads` magnitude so all grads expectations are positives
+                grads_ = grads_[grads_idx]
 
-                    # get only positive biases using the sign of the true_grads as a reference.
-                    if opt.use_all_params:
-                        u = true_grads[None]
-                        dir = 2 * (u < 0).float() - 1.
-                        grads_ = grads_ * dir
+                # get only positive biases using the sign of the true_grads as a reference.
+                if opt.use_all_params:
+                    u = true_grads[None]
+                    dir = 2 * (u < 0).float() - 1.
+                    grads_ = grads_ * dir
 
-                    if opt.use_all_params:
-                        # return gradients for all parameters
-                        for g in grads_.view(-1):
-                            grads += [
-                                {'noise': noise, 'param': 'all', 'estimator': estimator_id, 'iw': iw, 'grad': g.item()}]
-                    else:
-                        # return gradients for the first param
-                        for g in grads_[0, :]:
-                            grads += [
-                                {'noise': noise, 'param': 'all', 'estimator': estimator_id, 'iw': iw, 'grad': g.item()}]
+                if opt.use_all_params:
+                    # return gradients for all parameters
+                    for g in grads_.view(-1):
+                        grads += [
+                            {'param': 'all', 'grad': g.item(), **identifier}]
+                else:
+                    # return gradients for the first param
+                    for g in grads_[0, :]:
+                        grads += [
+                            {'param': 'all', 'grad': g.item(), **identifier}]
 
     # convert into DataFrames
     df = pd.DataFrame(data)
@@ -247,9 +247,11 @@ try:
 
     base_logger.info(f">>> logging directory = {os.path.abspath(logdir)}")
 
+    df['estimator'] = list(map(format_estimator_name, df['estimator'].values))
     plot_statistics(df, opt, logdir)
 
     if len(grads):
+        grads['estimator'] = list(map(format_estimator_name, grads['estimator'].values))
         plot_gradients_distribution(grads, logdir)
 
 

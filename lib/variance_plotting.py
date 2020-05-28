@@ -4,15 +4,14 @@ import numpy as np
 
 from lib.estimators.config import *
 from .gradients import *
-from .plotting import PLOT_WIDTH, PLOT_HEIGHT
-from lib.style import MARKERS
+from .plotting import PLOT_WIDTH, PLOT_HEIGHT, ESTIMATOR_STYLE, Legend
+from .style import MARKERS
 
 _sep = os.get_terminal_size().columns * "-"
 
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-sns.set_context("paper", font_scale=1.2)
 colors = sns.color_palette()
 
 
@@ -37,7 +36,7 @@ def evaluate(estimator, model, x, config, seed, base_logger, desc):
 def compute_true_grads(estimator, model, x, mc_samples, seed=None, **kwargs):
     print(_sep)
     seed = seed + 1 if seed is not None else None  # make sure that the true grads is computed with a different seed to avoid spurious corelations
-    _, meta = get_batch_gradients_statistics(estimator, model, x, n_samples=mc_samples, return_grads=True, seed=seed,
+    _, meta = get_gradients_statistics(estimator, model, x, n_samples=mc_samples, return_grads=True, seed=seed,
                                              **kwargs)
     true_grads = meta['grads'].mean(dim=0)
 
@@ -69,11 +68,11 @@ def log_grads_data(analysis_data, base_logger, estimator_id, iw):
 
 def plot_statistics(df, opt, logdir):
     # plotting
-    param_name = {'tensor:b': "b", 'tensor:qlogits': "\phi"}.get(opt.key_filter, "\theta")
+    param_name = {'b': "b", 'tensor:b': "b", 'tensor:qlogits': "\phi"}.get(opt.key_filter, "\theta")
     if opt.draw_individual:
-        metrics = ['individual-snr', 'grads-dsnr', 'individual-var', 'individual-magnitude', 'grads-direction']
+        metrics = ['individual-snr', 'grads-dsnr', 'individual-var'] #, 'individual-magnitude', 'grads-direction']
     else:
-        metrics = ['grads-snr', 'grads-dsnr', 'grads-variance', 'grads-magnitude', 'grads-direction']
+        metrics = ['grads-snr', 'grads-dsnr', 'grads-variance'] # 'grads-magnitude', 'grads-direction'
 
     _true_grads_name = "\Delta_{" + f"{opt.iw_oracle}" + "}^{" + f"{str(opt.oracle).replace('pathwise-', '')}" + "}"
     metrics_formaters = [lambda p: f"$SNR_K({param_name}) $",
@@ -87,8 +86,9 @@ def plot_statistics(df, opt, logdir):
     estimators = df['estimator'].unique()
     nrows = len(noises)
     ncols = len(metrics)
-    fig, axes = plt.subplots(ncols=ncols, nrows=nrows, figsize=(PLOT_WIDTH * ncols, PLOT_HEIGHT * nrows), sharex='col',
+    fig, axes = plt.subplots(ncols=ncols, nrows=nrows, figsize=(PLOT_WIDTH * ncols, PLOT_HEIGHT * (0.5 + nrows)), sharex='col',
                              sharey='col', squeeze=False)
+    legend = Legend(fig)
     for n, noise in enumerate(sorted(noises)):
 
         noise_df = df[df['noise'] == noise]
@@ -105,13 +105,14 @@ def plot_statistics(df, opt, logdir):
             for e, estimator_id in enumerate(estimators):
                 sub_df = noise_df[noise_df['estimator'] == estimator_id]
                 iws = sub_df['iw'].values
+                color = ESTIMATOR_STYLE[estimator_id]['color']
 
                 if "individual-" in metric:
                     _metrics = [m for m in sub_df.keys() if metric in m]
-                    kwargs = {'alpha': 0.5, 'color': colors[e]}
+                    kwargs = {'alpha': 0.5, 'color': color}
                 else:
                     _metrics = [metric]
-                    kwargs = {'alpha': 0.9, 'color': colors[e], 'marker': MARKERS[e], 'markersize': 6}
+                    kwargs = {'alpha': 0.9, 'color': color, 'marker': ESTIMATOR_STYLE[estimator_id]['marker']}
 
                 for i, _metric in enumerate(_metrics):
 
@@ -137,10 +138,9 @@ def plot_statistics(df, opt, logdir):
             else:
                 ax.set_ylabel(f"")
 
-            if k == len(metrics) - 1 and n == len(noises) - 1:
-                ax.legend()
+            legend.update(ax)
 
-    plt.tight_layout()
+    legend.draw()
     plt.savefig(os.path.join(logdir, "gradients.png"))
     plt.close()
 
@@ -164,11 +164,12 @@ def plot_gradients_distribution(grads, logdir):
 
     if ncols > 1:
         fig, axes = plt.subplots(nrows=nrows, ncols=ncols,
-                                 figsize=(PLOT_WIDTH * ncols, PLOT_HEIGHT * nrows), sharex='col')
+                                 figsize=(PLOT_WIDTH * ncols, PLOT_HEIGHT * (nrows + 0.5) ), sharex='col')
     else:
         fig, axes = plt.subplots(nrows=1, ncols=nrows,
-                                 figsize=(PLOT_WIDTH * nrows, PLOT_HEIGHT * 1), sharex=False, sharey='row')
+                                 figsize=(PLOT_WIDTH * nrows, PLOT_HEIGHT * 1.5), sharex=False, sharey='row')
 
+    legend = Legend(fig)
     for j, noise in enumerate(noises):
         grads_p = grads[grads["noise"] == noise]
 
@@ -190,7 +191,7 @@ def plot_gradients_distribution(grads, logdir):
             ax.axvline(x=0, color="gray", alpha=0.9, linestyle="-")
 
             for e, estimator_id in enumerate(estimators):
-                color = colors[e]
+                color = ESTIMATOR_STYLE[estimator_id]['color']
 
                 filtered_data = filtered_grads_p_iw[filtered_grads_p_iw["estimator"] == estimator_id]['grad'].values
                 g = sns.distplot(filtered_data, ax=ax, label=estimator_id, color=color, rug=False, kde=True, bins=64,
@@ -203,7 +204,7 @@ def plot_gradients_distribution(grads, logdir):
                 raw_data = grads_p_iw[grads_p_iw["estimator"] == estimator_id]['grad'].values
                 _mean = np.mean(raw_data)
                 if _mean <= y_b and _mean >= y_a:
-                    ax.axvline(x=_mean, color=color, alpha=1, linestyle="--")
+                    ax.axvline(x=_mean, color=color, alpha=1, linestyle=":")
 
             if ncols > 1:
                 if i == 0:
@@ -226,10 +227,8 @@ def plot_gradients_distribution(grads, logdir):
                     ax.set_ylabel("")
                     ax.set_yticks([])
 
-            if not (i == nrows - 1 and j == ncols - 1):
-                legend = ax.get_legend()
-                if legend is not None:
-                    legend.remove()
+            ax.legend().remove()
+            legend.update(ax)
 
         # set y lims
         _, m = get_outliers_boundaries(bars)
@@ -237,8 +236,7 @@ def plot_gradients_distribution(grads, logdir):
             ax = axes[i, j] if ncols > 1 else axes[i]
             ax.set_ylim([-0.1 * m, m])
 
-    plt.legend()
-    plt.tight_layout()
+    legend.draw()
 
     plt.savefig(os.path.join(logdir, "gradients-dist.png"))
     plt.close()

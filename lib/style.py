@@ -69,7 +69,7 @@ ESTIMATOR_DISPLAY_NAME = {
     'vimco-geometric': r"$\operatorname{VIMCO}_{\operatorname{geometric}}}$",
     'tvo': r"$\operatorname{TVO}$",
     'ww': r"$\operatorname{RWS}$",
-    'pathwise': r"$\operatorname{PATHWISE}$"
+    'pathwise': r"$\operatorname{pathwise}$"
 }
 
 LINE_STYLES = 10 * ["-", "--", ":", "-."]
@@ -116,5 +116,21 @@ METRIC_DISPLAY_NAME = {
     'gaussian_toy/mse_A': r"$\Vert A - A^*  \Vert_2$",
     'gaussian_toy/mse_b': r"$\Vert b - b^*  \Vert_2$",
     'gaussian_toy/mse_mu': r"$\Vert \mu - \mu^*  \Vert_2$",
+    'gaussian_toy/mse_phi': r"$\Vert \phi - \phi^*  \Vert_2$",
 
 }
+
+
+def format_estimator_name(name):
+    if name == 'copt':
+        return 'copt-alpha1'
+    elif name == 'vimco':
+        return 'vimco-arithmetic'
+    elif name == 'tvo-config1' or name == 'tvo-config2':
+        return 'tvo'
+    elif 'tvo' in name:
+        return 'tvo'
+    elif name == 'pathwise-iwae':
+        return 'pathwise'
+    else:
+        return name

@@ -1,0 +1,22 @@
+{
+  "description": "Analysing the asymptotic variance as in `Tighter Variational Bounds are not necessarily Better`",
+  "script": "asymptotic_variance.py",
+  "args": [
+    "--estimator pathwise-iwae",
+    "--estimator copt-alpha1"
+  ],
+  "global": "--silent --deterministic",
+  "parameters": {
+    "mc_samples": [1e3],
+    "samples_per_batch": [10000],
+    "iw_steps": [3],
+    "iw_min": [3],
+    "iw_max": [1e2],
+    "npoints" : [100],
+    "D" : [20],
+    "seed" : [1],
+    "oracle": ["copt"],
+    "iw_oracle" : [1000],
+    "mc_oracle": [100]
+  }
+}
