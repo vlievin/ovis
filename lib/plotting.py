@@ -28,6 +28,9 @@ class Legend():
     def draw(self, group=False, nrows=None):
         # create legend
         legend_infos = {label: handle for handle, label in self.legend_infos}
+        if len(legend_infos) == 0:
+            return
+
         labels, handles = zip(*legend_infos.items())
 
         # legend for linestyles
@@ -87,18 +90,31 @@ class Legend():
             all_labels = [l for ls in all_labels.values() for l in ls]
             all_handles = [l for ls in all_handles.values() for l in ls]
 
+            # number of rows
+            nrow = max_length
+
         else:
             # append style legend
             all_labels = list(labels) + list(style_labels)
             all_handles = list(handles) + list(style_handles)
             ncol = len(labels)
+            nrow = 1
+
+
+        # infer sizes
+        width, height = self.figure.get_size_inches()
+        legend_base_size = 0.5
+        legend_row_size = 0.3
+        margin = 0.5
+        legend_height = legend_base_size + nrow * legend_row_size
+
 
 
         # set tight layout and add margin at the top for the legend
         plt.tight_layout()
-        self.figure.subplots_adjust(top=0.80)
+        self.figure.subplots_adjust(top= 1 - (legend_height + margin) / height)
         self.figure.legend(handles=all_handles, labels=all_labels, ncol=ncol, loc='lower center',
-                           bbox_to_anchor=(0, 0.85, 1, 0.98))  # ,fancybox=False, shadow=False), title=hue_key
+                           bbox_to_anchor=(0,  1 - (legend_height) / height, 1, 1) ,fancybox=False, shadow=False) #, title=hue_key
 
 
 def set_log_scale(ax, label, log_rules, axis='y'):
@@ -184,7 +200,7 @@ def plot_logs(logs, path, metrics, main_key, style_key=None, ylims=dict(), log_r
 
     hue_order = list(logs[main_key].unique())
     step_min = np.percentile(logs['step'].values.tolist(), 10) if len(logs['step']) else 0
-    fig, axes = plt.subplots(nrows, ncols, figsize=(PLOT_WIDTH * ncols, PLOT_HEIGHT * nrows), dpi=DPI)
+    fig, axes = plt.subplots(nrows, ncols, figsize=(PLOT_WIDTH * ncols, PLOT_HEIGHT * (nrows + 0.5)), dpi=DPI)
     legend = Legend(fig)
     for i, k in tqdm(list(enumerate(metrics)), desc="|    subplots"):
         u = i // ncols
@@ -257,7 +273,7 @@ def detailed_plot(logs, path, metrics, main_key, auxiliary_key, style_key=None, 
 
     hue_order = list(logs[main_key].unique())
     step_min = np.percentile(logs['step'].values.tolist(), 10) if len(logs['step']) else 0  # used to filter first steps
-    fig, axes = plt.subplots(nrows, ncols, figsize=(2 / 3 * PLOT_WIDTH * ncols, PLOT_HEIGHT * nrows), sharex='col',
+    fig, axes = plt.subplots(nrows, ncols, figsize=(2 / 3 * PLOT_WIDTH * ncols, PLOT_HEIGHT * (nrows+0.5)), sharex='col',
                              sharey='row', squeeze=False, dpi=DPI)
     legend = Legend(fig)
     for j, aux_key in tqdm(list(enumerate(sorted(aux_keys))), desc="|  aux. keys"):
@@ -280,7 +296,8 @@ def detailed_plot(logs, path, metrics, main_key, auxiliary_key, style_key=None, 
                              style=style_key,
                              data=data,
                              ax=ax,
-                             palette=palette
+                             palette=palette,
+                             alpha=0.8
                              )
 
                 # set log scale
@@ -366,12 +383,10 @@ def pivot_plot(df, path, metrics, cat_key, hue_key, x_key, style_key=None, ylims
 
     hue_index = {l: i for i, l in enumerate(sorted(df[hue_key].unique()))}
     if len(categories) > 1:
-        legend_ncols = ncols
-        fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(PLOT_WIDTH * ncols, 0.5 + PLOT_HEIGHT * nrows),
+        fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(PLOT_WIDTH * ncols, PLOT_HEIGHT * (nrows+0.5)),
                                  sharex='col', sharey='row' if cat_key != 'dataset' else False, dpi=DPI)
     else:
-        legend_ncols = nrows
-        fig, axes = plt.subplots(nrows=1, ncols=nrows, figsize=(PLOT_WIDTH * nrows, 0.5 + PLOT_HEIGHT * 1), dpi=DPI)
+        fig, axes = plt.subplots(nrows=1, ncols=nrows, figsize=(PLOT_WIDTH * nrows, PLOT_HEIGHT * 1.5), dpi=DPI)
 
     legend = Legend(fig)
 

@@ -10,7 +10,7 @@ from dotmap import DotMap
 from lib.logging import get_loggers
 from lib.plotting import *
 from lib.style import *
-from lib.style import LOG_PLOT_RULES, METRIC_DISPLAY_NAME
+from lib.style import LOG_PLOT_RULES, METRIC_DISPLAY_NAME, format_estimator_name
 from lib.utils import parse_numbers
 
 set_style()
@@ -21,22 +21,6 @@ try:
 except:
     print("You probably need to install tbparser:\n   pip install git+https://github.com/velikodniy/tbparser.git")
     exit()
-
-
-def format_estimator_name(name):
-    if name == 'copt':
-        return 'copt-alpha1'
-    elif name == 'vimco':
-        return 'vimco-arithmetic'
-    elif name == 'tvo-config1' or name == 'tvo-config2':
-        return 'tvo'
-    elif 'tvo' in name:
-        return 'tvo'
-    elif name == 'pathwise-iwae':
-        return 'pathwise'
-    else:
-        return name
-
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--root', default='runs/', help='experiment directory')
