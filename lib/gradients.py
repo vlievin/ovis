@@ -37,12 +37,15 @@ class Mean():
         self.mean = None
         self.n = 0
 
-    def update(self, x):
-        self.n += 1
+    def update(self, x, k=1):
+        """use k > 1 if x is averaged over `k` points, k > 1"""
+
         if self.mean is None:
             self.mean = x
         else:
-            self.mean = (self.n - 1) / self.n * self.mean + 1. / self.n * x
+            self.mean = self.n / (self.n + k) * self.mean + k / (self.n + k) * x
+
+        self.n += k
 
     def __call__(self):
         return self.mean
@@ -109,16 +112,17 @@ def get_grads_from_parameters(model, loss, key_filter=''):
         yield grads
 
 
-def get_individual_gradients_statistics(estimator, model, x, batch_size=32, n_samples=100,
+def get_individual_gradients_statistics(estimator, model, x, samples_per_batch=10000, n_samples=100,
                                         key_filter='qlogits',
                                         true_grads=None, return_grads=False, use_dsnr=False, **config):
     """
     Compute the variance, magnitude and SNR of the gradients for each data point. Each statistics is averaged on the values given by each point.
     """
 
-    n_individual_samples = n_samples * estimator.mc * estimator.iw
-    effective_batch_size = max(1, batch_size // (estimator.mc * estimator.iw))
-    iterations = n_samples // effective_batch_size + int(n_samples % effective_batch_size > 0)
+    # todo: redo batch size inference
+    n_individual_samples = 1 * estimator.mc * estimator.iw
+    effective_batch_size = max(1, samples_per_batch // (n_individual_samples))
+    iterations_per_x = -(-n_individual_samples // samples_per_batch) # ceiling division
 
     _start = time()
 
@@ -133,7 +137,7 @@ def get_individual_gradients_statistics(estimator, model, x, batch_size=32, n_sa
     all_grads = None
     grads_expected = None
 
-    with tqdm(total=x.shape[0] * iterations) as pbar:
+    with tqdm(total=x.shape[0] * iterations_per_x) as pbar:
 
         for i, x_i in enumerate(x):
             x_i = x_i[None].expand(effective_batch_size, *x.size()[1:]).contiguous()
@@ -303,7 +307,8 @@ def get_batch_grads_from_parameters(model, loss, key_filter=''):
 
 
 def get_batch_gradients_statistics(estimator, model, x, n_samples=100, key_filter='qlogits',
-                                   true_grads=None, return_grads=False, use_dsnr=False, **config):
+                                   true_grads=None, return_grads=False, use_dsnr=False, samples_per_batch=None,
+                                   **config):
     """
     Compute the variance, magnitude and SNR of the gradients averaged over a batch of data.
     """
@@ -321,22 +326,42 @@ def get_batch_gradients_statistics(estimator, model, x, n_samples=100, key_filte
 
     for i in tqdm(range(n_samples), desc="Batch Gradients Analysis"):
 
-        model.eval()
-        model.zero_grad()
-
-        # forward, backward to compute the gradients
-        loss, diagnostics, output = estimator(model, x, backward=False, **config)
-
-        # gather individual gradients
-        if 'tensor:' in key_filter:
-            tensor_id = key_filter.replace("tensor:", "")
-            gradients = get_batch_grads_from_tensor(model, loss, output, tensor_id, estimator.mc, estimator.iw)
+        # compute number of chuncks
+        if samples_per_batch is None:
+            chuncks = 1
         else:
-            gradients = get_batch_grads_from_parameters(model, loss, key_filter=key_filter)
+            bs = x.size(0)
+            mc = estimator.mc
+            iw = estimator.iw
+            # infer number of chunks
+            total_samples = bs * mc * iw
+            chuncks = max(1, -(-total_samples // samples_per_batch))  # ceiling division
+
+        gradients = Mean()
+        for k, x_ in enumerate(x.chunk(chuncks, dim=0)):
+
+            model.eval()
+            model.zero_grad()
+
+            # forward, backward to compute the gradients
+            loss, diagnostics, output = estimator(model, x_, backward=False, **config)
+
+            # gather individual gradients
+            if 'tensor:' in key_filter:
+                tensor_id = key_filter.replace("tensor:", "")
+                gradients_ = get_batch_grads_from_tensor(model, loss, output, tensor_id, estimator.mc, estimator.iw)
+            else:
+                gradients_ = get_batch_grads_from_parameters(model, loss, key_filter=key_filter)
+
+            # move to cpu
+            gradients_ = gradients_.detach().cpu()
+
+            # update average
+            gradients.update(gradients_, k=x_.size(0))
 
         # gather statistics
         with torch.no_grad():
-            gradients = gradients.detach().cpu()
+            gradients = gradients()
 
             if return_grads or use_dsnr:
                 all_grads = gradients[None] if all_grads is None else torch.cat([all_grads, gradients[None]], 0)
