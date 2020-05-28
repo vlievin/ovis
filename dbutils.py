@@ -154,21 +154,23 @@ if opt.check or opt.requeue:
 
 
                 results = db.search(query.arg.test(check))
-                if len(results) != 1:
-                    print(results)
-                assert len(results) == 1
+                if len(results) > 1:
+                    print(f">>>>> results: {results}")
+                    assert len(results) <= 1, "Found more than one matching result in db"
+                elif len(results) == 1:
+                    # re-queue experiments
+                    for r in results:
+                        r['queued'] = True
+                        n_requeued += 1
 
-                # re-queue experiments
-                for r in results:
-                    r['queued'] = True
-                    n_requeued += 1
+                    if opt.requeue:
 
-                if opt.requeue:
-
-                    db.write_back(results)
-                    # delete experiment run
-                    print("Deleting:", exp_path)
-                    shutil.rmtree(exp_path)
+                        db.write_back(results)
+                        # delete experiment run
+                        print("Deleting:", exp_path)
+                        shutil.rmtree(exp_path)
+                else:
+                    pass
 
     print(_sep)
     if opt.requeue:
