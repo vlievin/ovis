@@ -160,6 +160,10 @@ if __name__ == '__main__':
 
     experiment_args = read_experiment(opt.exp)
 
+    # replace script arg if available
+    if "script" in experiment_args.keys():
+        opt.script = experiment_args.pop("script")
+
     # define the args for each run
     args = experiment_args['args']
 
