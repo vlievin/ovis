@@ -50,6 +50,8 @@ def parse_args():
                         help='compute each iw sample sequential during validation')
     parser.add_argument('--test_sequential_computation', action='store_true',
                         help='compute each iw sample sequential during validation')
+    parser.add_argument('--load_checkpoint', action='store_true',
+                        help='load most recent checkpoint')
 
     # epochs, batch size, MC samples, lr
     parser.add_argument('--epochs', default=-1, type=int, help='number of epochs (use n_steps if `epochs` < 0)')
@@ -222,11 +224,13 @@ def get_run_id(opt, counterfactual_estimators):
     return run_id, exp_id, use_baseline
 
 
-def init_logging_directory(opt, run_id):
+def init_logging_directory(opt, run_id, load_checkpoint):
     """initialize the directory where will be saved the config, model's parameters and tensorboard logs"""
     logdir = os.path.join(opt.root, opt.exp)
     logdir = os.path.join(logdir, run_id)
     if os.path.exists(logdir):
+        if load_checkpoint:
+            return logdir
         if opt.rm:
             rmtree(logdir)
             os.makedirs(logdir)
@@ -516,7 +520,7 @@ if __name__ == '__main__':
     run_id, exp_id, use_baseline = get_run_id(opt, counterfactual_estimators)
 
     # defining the run directory
-    logdir = init_logging_directory(opt, run_id)
+    logdir = init_logging_directory(opt, run_id, opt.load_checkpoint)
 
     # save run configuration to the log directory
     with open(os.path.join(logdir, 'config.json'), 'w') as fp:
@@ -589,11 +593,6 @@ if __name__ == '__main__':
         # they are use to measure the variance of the gradients given other estimator without using them for optimization
         c_estimators, c_configs = init_counterfactual_estimators(opt, counterfactual_estimators, counterfactual_iw)
 
-        # get device and move models
-        device = "cuda:0" if torch.cuda.device_count() else "cpu"
-        model.to(device)
-        estimator.to(device)
-
         # define the optimizer for the model's parameters and the training estimator's parameters if any (baseline)
         optimizers = init_optimizers(opt, model, estimator)
 
@@ -606,6 +605,36 @@ if __name__ == '__main__':
         writer_test = SummaryWriter(os.path.join(logdir, 'test'))
         counterfactual_writers = [SummaryWriter(os.path.join(logdir, c)) for c in counterfactual_estimators_ids]
 
+        # run settings
+        best_elbo = (-1e20, 0, 0)
+        start_epoch = 0
+        global_step = 0
+
+        # load checkpoints
+        if opt.load_checkpoint:
+            with open(os.path.join(logdir, 'state_context.json'), 'r') as fp:
+                state_context = json.load(fp)
+            start_epoch = state_context['epoch']
+            global_step = state_context['global_step']
+            best_elbo = (torch.tensor(state_context['best_elbo']), global_step, start_epoch)
+            lrs = state_context['lrs']
+
+            for o in optimizers:
+                for i, param_group in enumerate(o.param_groups):
+                    lr = lrs.pop(0)
+                    param_group['lr'] = lr
+
+            state = torch.load(os.path.join(logdir, f'model-checkpoint.pt'))
+            model.load_state_dict(state)
+            if use_baseline:
+                state = torch.load(os.path.join(logdir, f'baseline-checkpoint.pt'))
+                baseline.load_state_dict(state)
+
+        # get device and move models
+        device = "cuda:0" if torch.cuda.device_count() else "cpu"
+        model.to(device)
+        estimator.to(device)
+
         # define the run length based on either
         epochs, iter_per_epoch = get_number_of_epochs(opt)
         print(_sep)
@@ -617,10 +646,7 @@ if __name__ == '__main__':
         sample_model("prior-sample", model, logdir, global_step=0, writer=writer_test, seed=opt.seed)
 
         # run
-        best_elbo = (-1e20, 0, 0)
-        global_step = 0
-
-        for epoch in range(1, epochs + 1):
+        for epoch in range(start_epoch + 1, epochs + 1):
 
             """training epoch"""
             [o.zero_grad() for o in optimizers]
@@ -690,6 +716,16 @@ if __name__ == '__main__':
                 # update best elbo and save model
                 best_elbo = save_model_and_update_best_elbo(model, summary_test, global_step,
                                                             epoch, best_elbo, logdir)
+                torch.save(model.state_dict(), os.path.join(logdir, f'model-checkpoint.pt'))
+                if use_baseline:
+                    torch.save(baseline.state_dict(), os.path.join(logdir, f'baseline-checkpoint.pt'))
+                lrs = []
+                for o in optimizers:
+                    for i, param_group in enumerate(o.param_groups):
+                        lrs.append(param_group['lr'])
+                state_context = {'epoch': epoch, 'global_step': global_step, 'best_elbo': best_elbo.cpu().numpy().tolist(), 'lrs': lrs}
+                with open(os.path.join(logdir, 'state_context.json'), 'w') as fp:
+                    json.dump(state_context, fp)
 
                 # log marginal test summary to console and tensorboar
                 summary_test.update(parameters_diagnostics)
