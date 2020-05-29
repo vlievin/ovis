@@ -269,6 +269,7 @@ class VimcoPlus(Reinforce):
                            mode: str = 'vimco',
                            truncation: float = 0,
                            alpha: float = 1.0,
+                           gamma: float = 1.0,
                            autoalpha: bool = False,
                            alpha_mu: float = 2.5,
                            alpha_sigma: float = 1.0,
@@ -299,23 +300,23 @@ class VimcoPlus(Reinforce):
         if mode == 'vimco-geometric':
             # c_k = log Z^{-k} = 1/K \sum{ l \neq k} w_l where log w_k = 1\(K-1) \sum {l \neq k} log w_l
             c_k, *_ = Vimco.compute_control_variate(self, None, arithmetic=False, log_wk=log_wk)
-            gk = L_k[:, :, None] - c_k.sum(-1) - alpha * v_k
+            gk = L_k[:, :, None] - c_k.sum(-1) - alpha * gamma * v_k
         elif mode == 'vimco':
             # c_k = log Z^{-k} = 1/K \sum{ l \neq k} w_l where w_k = 1\(K-1) \sum {l \neq k} w_l
             # g_k = log Z - c_k - v_k = log (1 - 1/K) - log(1 - v_k) - v_k
-            gk = self.log_1_m_uniform - torch.log1p(- v_k_safe) - alpha * v_k
+            gk = self.log_1_m_uniform - torch.log1p(- v_k_safe) - alpha * gamma * v_k
         elif mode == 'copt-uniform':
             # c_k = log Z^{-k} - 1/ K
             # g_k = log Z - c_k = log (1 - 1/K) - log(1 - v_k) + 1 / K - v_k
-            gk = self.log_1_m_uniform - torch.log1p(- v_k_safe) + alpha * (1 / self.iw - v_k)
+            gk = self.log_1_m_uniform - torch.log1p(- v_k_safe) + alpha * gamma * (1 / self.iw - v_k)
         elif mode == 'copt':
             # c_k = log 1/ K \sum_{l \neq k} w_l
             # g_k = log Z - c_k = - log(1-v_k) - v_k
             if auxiliary_samples == 0:
-                gk = - torch.log1p(- v_k_safe) - alpha * v_k
+                gk = - torch.log1p(- v_k_safe) - alpha * gamma * v_k
 
             else:
-                gk = L_k[:, :, None] - alpha * v_k
+                gk = L_k[:, :, None] - alpha * gamma * v_k
 
                 # remove the auxiliary samples
                 aux = auxiliary_samples
@@ -329,7 +330,7 @@ class VimcoPlus(Reinforce):
                 vk_ = log_wk_unbiased.softmax(-1)
                 L_k_ = torch.logsumexp(log_wk_unbiased, dim=-1) - np.log(log_wk_unbiased.size(-1))
 
-                gk_ = L_k_[:, :, :, :, None] - alpha * vk_
+                gk_ = L_k_[:, :, :, :, None] - alpha * gamma * vk_
 
                 expected_gk = gk_.diagonal(dim1=3, dim2=4).mean(2)
 
@@ -486,6 +487,7 @@ class VimcoPlus(Reinforce):
 
         prefactor_k, score_diagnostics = self.compute_prefactors(L_k, log_wk, ess, hk=hk, center=center,
                                                                  auxiliary_samples=auxiliary_samples,
+                                                                 gamma=gamma,
                                                                  analysis=analysis, **kwargs)
 
         log_qz = log_qz[:, :, :prefactor_k.size(2)]

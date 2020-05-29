@@ -10,7 +10,8 @@ class VariationalInference(Estimator):
     """
 
     def compute_iw_bound(self, log_px_z: Tensor, log_pzs: List[Tensor], log_qzs: List[Tensor],
-                         detach_qlogits: bool = False, beta: float = 1.0, gamma:float=1.0, auxiliary_samples: int = 0,
+                         detach_qlogits: bool = False, beta: float = 1.0, gamma: float = 1.0,
+                         auxiliary_samples: int = 0,
                          request: List[str] = list(), **kwargs) -> Dict[
         str, Tensor]:
         """
@@ -67,7 +68,8 @@ class VariationalInference(Estimator):
 
         # L_k
         # TODO: remove temporary `auxiliary_samples`
-        L_k = torch.logsumexp(log_wk[:, :, :self.iw-auxiliary_samples], dim=2) - np.log(self.iw - auxiliary_samples) # self.log_iw
+        L_k = torch.logsumexp(log_wk[:, :, :self.iw - auxiliary_samples], dim=2) - np.log(
+            self.iw - auxiliary_samples)  # self.log_iw
 
         # elbo
         elbo = torch.mean(log_wk, dim=2)
