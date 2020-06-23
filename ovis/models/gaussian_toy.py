@@ -4,7 +4,7 @@ import torch
 from torch import nn
 
 from .base import Template
-from ..distributions import NormalFromLoc, Normal
+from ovis.models.distributions import NormalFromLoc, Normal
 
 
 class SafeSeed():

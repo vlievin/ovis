@@ -6,11 +6,11 @@ from shutil import rmtree
 
 import pandas as pd
 
-from ovis.logging import get_loggers
+from ovis.training.logging import get_loggers
 from ovis.models import GaussianToyVAE
 from ovis.utils import notqdm
-from ovis.variance_plotting import *
-from ovis.style import format_estimator_name
+from ovis.plotting.variance_plotting import *
+from ovis.plotting.style import format_estimator_name
 
 colors = sns.color_palette()
 _sep = os.get_terminal_size().columns * "-"

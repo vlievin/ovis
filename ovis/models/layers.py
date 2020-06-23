@@ -1,6 +1,6 @@
 from torch import nn
 
-from ..utils import flatten
+from ovis.utils.utils import flatten
 
 
 class Flatten(nn.Module):

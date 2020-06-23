@@ -3,7 +3,7 @@ from torch import nn
 
 from .base import Template
 from .vae import BaseVAE
-from ..distributions import PseudoCategorical, NormalFromLoc
+from ovis.models.distributions import PseudoCategorical, NormalFromLoc
 
 
 class GaussianMixture(BaseVAE):

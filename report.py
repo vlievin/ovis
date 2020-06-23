@@ -7,10 +7,9 @@ from shutil import rmtree
 import pandas as pd
 from dotmap import DotMap
 
-from ovis.logging import get_loggers
-from ovis.plotting import *
-from ovis.style import *
-from ovis.style import LOG_PLOT_RULES, METRIC_DISPLAY_NAME, format_estimator_name
+from ovis.training.logging import get_loggers
+from ovis.plotting.style import *
+from ovis.plotting.style import LOG_PLOT_RULES, METRIC_DISPLAY_NAME, format_estimator_name
 from ovis.utils import parse_numbers
 
 set_style()

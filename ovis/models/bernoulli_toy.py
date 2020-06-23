@@ -1,7 +1,7 @@
 from torch import nn
 
 from .base import Template
-from ..distributions import *
+from ovis.models.distributions import *
 from ..utils import *
 
 

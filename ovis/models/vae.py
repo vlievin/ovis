@@ -6,8 +6,8 @@ from torch.distributions import Distribution, Bernoulli
 
 from .base import Template
 from .layers import MLP, ConvEncoder, ConvDecoder
-from ..distributions import PseudoCategorical, PseudoBernoulli, NormalFromLogits
-from ..utils import batch_reduce, prod, flatten
+from ovis.models.distributions import PseudoCategorical, PseudoBernoulli, NormalFromLogits
+from ovis.utils.utils import prod, flatten, batch_reduce
 
 
 class BaseVAE(Template):

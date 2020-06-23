@@ -58,7 +58,6 @@ class BinMNIST(Dataset):
 
 def get_binmnist_datasets(root, **kwargs):
     x_train, x_valid, x_test = load_mnist_binarized(root)
-    # x_train = np.append(x_train, x_valid, axis=0)  # https://github.com/casperkaae/LVAE/blob/master/run_models.py (line 401)
     train_dset = BinMNIST(x_train, **kwargs)
     valid_dset = BinMNIST(x_valid, **kwargs)
     test_dset = BinMNIST(x_test, **kwargs)

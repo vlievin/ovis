@@ -4,6 +4,7 @@ import torch
 
 
 def append_ellapsed_time(func):
+    """append the elapsed time to the diagnostics"""
     def wrapper(*args, **kwargs):
         start_time = time()
         diagnostics = func(*args, **kwargs)

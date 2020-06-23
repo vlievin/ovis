@@ -1,6 +1,7 @@
 from booster import Diagnostic
-
+import torch
 from .base import *
+from ..utils.utils import batch_reduce
 
 
 class VariationalInference(Estimator):

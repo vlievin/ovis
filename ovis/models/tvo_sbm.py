@@ -1,11 +1,13 @@
 # Using the Sigmoid Belief Network from `The Thermodynamic Variational Objective` [https://arxiv.org/abs/1907.00031]
 # original code at [https://github.com/vmasrani/tvo/blob/f7a3229d954274e1d920bf4fe98dcb18f837f825/discrete_vae/models.py]
 
+from typing import *
 
+import torch
 from torch import nn, Tensor
 from torch.distributions import Distribution
 
-from ..utils import *
+from ovis.utils.utils import prod
 
 
 class ChainDistribution(torch.distributions.Distribution):

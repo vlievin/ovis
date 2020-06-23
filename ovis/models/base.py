@@ -1,11 +1,11 @@
-from typing import Dict
+from typing import *
 
 import torch
 from torch import nn, Tensor
 from torch.distributions import Bernoulli
 
-from ..utils import prod, flatten
-from ..distributions import PseudoCategorical
+from ovis.models.distributions import PseudoCategorical
+from ovis.utils.utils import prod, flatten
 
 
 def H(z, dim=-1):

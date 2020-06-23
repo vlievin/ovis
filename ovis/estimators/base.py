@@ -1,7 +1,8 @@
 import numpy as np
 from torch import nn, Tensor
 
-from ovis.utils import *
+from typing import *
+from .freebits import FreeBits
 
 _EPS = 1e-18
 

@@ -2,31 +2,28 @@ import argparse
 import json
 import os
 import socket
-import sys
 import traceback
-from copy import copy
-from shutil import rmtree
 
 import numpy as np
 import torch
 from booster import Aggregator, Diagnostic
 from booster.utils import logging_sep
 from torch import Tensor
-from torch.optim import Adam, Adamax, SGD, RMSprop
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from ovis import get_datasets
-from ovis.analysis import latent_activations
+from ovis.analysis.active_units import latent_activations
 from ovis.estimators import VariationalInference
-from ovis.estimators.config import get_config
-from ovis.gradients import get_gradients_statistics
-from ovis.logging import sample_model, get_loggers, log_summary, save_model_and_update_best_elbo, load_model
-from ovis.models import VAE, Baseline, GaussianToyVAE, GaussianMixture, BernoulliToyModel, SigmoidBeliefNetwork, \
-    GaussianVAE
-from ovis.ops import training_step, test_step
-from ovis.utils import notqdm, Schedule
+from ovis.training.evaluation import perform_gradients_analysis, evaluation
+from ovis.training.init import init_model, init_neural_baseline, init_main_estimator, init_test_estimator, \
+    init_optimizers
+from ovis.training.logging import sample_model, get_loggers, log_summary, save_model_and_update_best_elbo, load_model, \
+    init_logging_directory
+from ovis.training.ops import training_step, test_step
+from ovis.training.utils import get_run_id, get_dataset_mean, get_number_of_epochs, preprocess
+from ovis.utils.utils import notqdm, Schedule, ManualSeed
 
 
 def parse_args():
@@ -43,14 +40,14 @@ def parse_args():
     parser.add_argument('--exp', default='sandbox', help='experiment directory')
     parser.add_argument('--id', default='', type=str, help='run id suffix')
     parser.add_argument('--seed', default=13, type=int, help='random seed')
-    parser.add_argument('--workers', default=1, type=int, help='dataloader workers')
-    parser.add_argument('--rm', action='store_true', help='delete previous run')
+    parser.add_argument('--workers', default=1, type=int, help='number of dataloader workers')
+    parser.add_argument('--rm', action='store_true', help='delete the previous run')
     parser.add_argument('--silent', action='store_true', help='silence tqdm')
     parser.add_argument('--deterministic', action='store_true', help='use deterministic backend')
     parser.add_argument('--sequential_computation', action='store_true',
-                        help='compute each iw sample sequential during validation')
+                        help='compute each iw sample sequentially during validation')
     parser.add_argument('--test_sequential_computation', action='store_true',
-                        help='compute each iw sample sequential during validation')
+                        help='compute each iw sample sequentially during validation')
 
     # epochs, batch size, MC samples, lr
     parser.add_argument('--epochs', default=-1, type=int, help='number of epochs (use n_steps if `epochs` < 0)')
@@ -90,7 +87,7 @@ def parse_args():
     parser.add_argument('--mc_au_analysis', default=0, type=int,
                         help='number of Monte-Carlo samples used to estimate the number of active units')
     parser.add_argument('--npoints_au_analysis', default=1000, type=int,
-                        help='number of data points')
+                        help='number of data points x')
 
     # gradients analysis
     parser.add_argument('--grad_samples', default=100, type=int,
@@ -98,7 +95,15 @@ def parse_args():
     parser.add_argument('--grad_key', default='tensor:qlogits', type=str,
                         help='identifiant of the parameters/tensor for the gradients analysis')
 
-    # latent space
+    # model architecture
+    parser.add_argument('--model', default='vae', help='[vae, conv-vae, hierarchical, bernoulli_toy]')
+    parser.add_argument('--hdim', default=64, type=int, help='number of hidden units for each layer')
+    parser.add_argument('--nlayers', default=3, type=int, help='number of hidden layers for the encoder and decoder')
+    parser.add_argument('--depth', default=3, type=int,
+                        help='number of stochastic layers when using hierarchical models')
+    parser.add_argument('--b_nlayers', default=1, type=int, help='number of hidden layers for the baseline')
+    parser.add_argument('--norm', default='none', type=str, help='normalization layer [none | layernorm | batchnorm]')
+    parser.add_argument('--dropout', default=0, type=float, help='dropout value')
     parser.add_argument('--prior', default='categorical',
                         help='family of the prior distribution : [categorcial | normal]')
     parser.add_argument('--N', default=8, type=int, help='number of latent variables')
@@ -106,281 +111,7 @@ def parse_args():
     parser.add_argument('--kdim', default=0, type=int, help='dimension of the keys for each latent variable')
     parser.add_argument('--learn_prior', action='store_true', help='learn the prior')
 
-    # model architecture
-    parser.add_argument('--model', default='vae', help='[vae, conv-vae, hierarchical, bernoulli_toy]')
-    parser.add_argument('--skip', action='store_true', help='use skip connections')
-    parser.add_argument('--hdim', default=64, type=int, help='number of hidden units for each layer')
-    parser.add_argument('--nlayers', default=3, type=int, help='number of hidden layers for the encoder and decoder')
-    parser.add_argument('--depth', default=3, type=int,
-                        help='number of stochastic layers when using hierarchical models')
-    parser.add_argument('--b_nlayers', default=1, type=int, help='number of hidden layers for the baseline')
-    parser.add_argument('--norm', default='none', type=str,
-                        help='normalization layer [none | layernorm | batchnorm]')
-    parser.add_argument('--dropout', default=0, type=float, help='dropout value')
-    parser.add_argument('--toy_target', default=0.499, type=float, help='target in Bernoulli toy example')
-
-    opt = parser.parse_args()
-
-    return opt
-
-
-def get_run_id(opt):
-    """define a unique identifier given on the parsed config"""
-    use_baseline = '-baseline' in opt.estimator
-    run_id = f"{opt.dataset}-{opt.optimizer}-{opt.model}-{opt.prior}-{opt.estimator}-seed{opt.seed}"
-    if opt.mini:
-        run_id = "mini-" + run_id
-    if len(opt.id) > 0:
-        run_id += f"-{opt.id}"
-    run_id += f"-lr{opt.lr:.1E}-bs{opt.bs}-mc{opt.mc}-iw{opt.iw}+{opt.iw_valid}+{opt.iw_test}"
-    if use_baseline:
-        run_id += f"-b{opt.b_nlayers}"
-    run_id += f"-N{opt.N}-K{opt.K}-kdim{opt.kdim}"
-    if opt.beta != 1:
-        run_id += f"-Beta{opt.beta}"
-    if opt.freebits is not None:
-        run_id += f"-fb{opt.freebits}"
-    if opt.learn_prior:
-        run_id += "-learn-prior"
-    run_id += f"-arch{opt.hdim}x{opt.nlayers}-L{opt.depth}"
-    if opt.skip:
-        run_id += "-skip"
-    if opt.norm is not 'none':
-        run_id += f"-{opt.norm}"
-    if opt.dropout > 0:
-        run_id += f"-drp{opt.dropout}"
-    if opt.model == 'bernoulli_toy':
-        run_id += f"-tar{opt.toy_target}"
-    if opt.skip:
-        run_id += "-skip"
-    if opt.warmup > 0:
-        run_id += f"-{opt.warmup_mode}-warmup{opt.warmup}-{opt.gamma_min}-{opt.gamma}"
-    else:
-        if opt.gamma != 1:
-            run_id += f"-gamma{opt.gamma}"
-
-    exp_id = f"{opt.exp}-{opt.estimator}-K={opt.iw}"
-    if opt.warmup > 0:
-        exp_id += f"-{opt.warmup_mode}-wp{opt.warmup}-{opt.gamma_min}-{opt.gamma}"
-    elif opt.gamma != 1:
-        exp_id += f"-gamma{opt.gamma}"
-
-    return run_id, exp_id, use_baseline
-
-
-def init_logging_directory(opt, run_id):
-    """initialize the directory where will be saved the config, model's parameters and tensorboard logs"""
-    logdir = os.path.join(opt.root, opt.exp)
-    logdir = os.path.join(logdir, run_id)
-    if os.path.exists(logdir):
-        if opt.rm:
-            rmtree(logdir)
-            os.makedirs(logdir)
-    else:
-        os.makedirs(logdir)
-
-    return logdir
-
-
-def get_dataset_mean(loader_train):
-    """Compute the mean over the dataset, this is used to initialize SBMs"""
-    _xmean = None
-    _n = 0.
-    for x in loader_train:
-        if not isinstance(x, Tensor):
-            x, *_ = x
-
-        k, m = x.size(0), x.sum(0)
-        _n += k
-        if _xmean is None:
-            _xmean = m / k
-        else:
-            _xmean += (m - k * _xmean) / _n
-    return _xmean.unsqueeze(0)
-
-
-def init_model(opt, x, xmean=None):
-    # define the hyperparameters
-    hyperparams = {
-        'xdim': x.shape,
-        'N': opt.N,
-        'K': opt.K,
-        'hdim': opt.hdim,
-        'kdim': opt.kdim,
-        'nlayers': opt.nlayers,
-        'depth': opt.depth,
-        'learn_prior': opt.learn_prior,
-        'prior': opt.prior,
-        'normalization': opt.norm,
-        'dropout': opt.dropout,
-        'x_mean': xmean,
-        'skip': opt.skip
-    }
-
-    # change the model id based on the chosen dataset if required
-    model_id = {'gmm-toy': 'gmm-toy',
-                'gaussian-toy': 'gaussian-toy',
-                'bernoulli-toy': 'bernoulli-toy',
-                'air': 'air'}.get(opt.dataset, opt.model)
-
-    # get the right constructor
-    _MODEL = {'vae': VAE,
-              'bernoulli-toy': BernoulliToyModel,
-              'gaussian-toy': GaussianToyVAE,
-              'gmm-toy': GaussianMixture,
-              'sbm': SigmoidBeliefNetwork,
-              'gaussian': GaussianVAE}[model_id]
-
-    # init the model
-    torch.manual_seed(opt.seed)
-    return _MODEL(**hyperparams)
-
-
-def init_neural_baseline(opt, x):
-    """define a neural baseline"""
-    return Baseline(x.shape, opt.b_nlayers, opt.hdim)
-
-
-def init_main_estimator(opt, baseline):
-    """initialize the training estimator and its configuration dict"""
-    Estimator, config = get_config(opt.estimator)
-    estimator = Estimator(baseline=baseline, mc=opt.mc, iw=opt.iw, N=opt.N, K=opt.K, hdim=opt.hdim,
-                          freebits=opt.freebits, **config)
-
-    # additionals arguments
-    config.update({'beta': opt.beta})
-
-    return estimator, config
-
-
-def init_test_estimator(opt):
-    """
-    Initialize the 2 validation estimators.
-    * a. estimator_valid: used to compute L_K_valid
-    * b. estimator_valid_as_training: used to compute L_K_train
-
-    The two estimators are used toe estimate KL(q||p) = log \hat{p(x)} - L_K_train considering log \hat{p(x)} = L_K_valid
-    """
-    Estimator = VariationalInference
-    config = {'tau': 0, 'zgrads': False}
-
-    # the main test estimator with K = opt.iw_test
-    estimator = Estimator(mc=1, iw=opt.iw_test, sequential_computation=opt.sequential_computation)
-    estimator_ess = Estimator(mc=1, iw=opt.iw, sequential_computation=opt.sequential_computation)
-
-    return estimator, estimator_ess, config
-
-
-def init_oracle_estimator(opt):
-    if len(opt.oracle):
-        Estimator, config_oracle = get_config(opt.oracle)
-        estimator_oracle = Estimator(mc=1, iw=opt.oracle_iw_samples)
-    else:
-        estimator_oracle = config_oracle = None
-
-    return estimator_oracle, config_oracle
-
-
-def init_counterfactual_estimators(opt, counterfactual_estimators, counterfactual_iw):
-    """initialize the so called `counterfactual` estimators"""
-    if len(counterfactual_estimators):
-        c_Estimators, c_configs = zip(*[get_config(c) for c in counterfactual_estimators])
-        c_estimators = [Est(baseline=baseline, mc=opt.mc, iw=c_iw, N=opt.N, K=opt.K, hdim=opt.hdim) for Est, c_iw in
-                        zip(c_Estimators, counterfactual_iw)]
-    else:
-        c_configs = c_estimators = []
-
-    return c_estimators, c_configs
-
-
-def init_optimizers(opt, model, estimator):
-    """Initialize estimators both for the model's parameters and the baselines/estimator's parameters"""
-    optimizers = []
-    _OPT = {'sgd': SGD, 'adam': Adam, 'adamax': Adamax, 'rmsprop': RMSprop}[opt.optimizer]
-    optimizers += [_OPT(model.parameters(), lr=opt.lr)]
-    if len(list(estimator.parameters())):
-        optimizers += [torch.optim.Adam(estimator.parameters(), lr=opt.baseline_lr)]
-
-    return optimizers
-
-
-def get_number_of_epochs(opt):
-    """define the number of training epochs based on the lenght of the dataset and the number of steps"""
-    epochs = opt.epochs
-    iter_per_epoch = len(loader_train.dataset) // opt.bs
-    if epochs < 0:
-        epochs = 1 + opt.nsteps // iter_per_epoch
-    return epochs, iter_per_epoch
-
-def perform_gradients_analysis(opt, global_step, writer_train, loader_train, model, estimator, config):
-    """
-    Perform the gradients analysis for the main estimator and the counterfactual estimators if available
-    """
-    device = next(iter(model.parameters())).device
-
-    # batch of data for the gradients variance evaluation (at maximum of size bs)
-    batch = next(iter(loader_train))
-    x, *_ = preprocess(batch, device)
-    x = x[:opt.grad_bs]
-
-    # get the configuration for the gradients analysis
-    grad_args = {'seed': opt.seed, 'batch_size': opt.bs * opt.mc * opt.iw,
-                 'n_samples': opt.grad_samples,
-                 'key_filter': opt.grad_key,
-                 'use_dsnr': True}
-
-    # gradients analysis for the training estimator
-    grad_data, _ = get_gradients_statistics(estimator, model, x, **grad_args, **config)
-    with torch.no_grad():
-        summary = Diagnostic(grad_data)
-        summary.log(writer_train, global_step)
-        train_logger.info(f"{exp_id} | grads | "
-                          f"snr = {grad_data.get('grads', {}).get('snr', 0.):.3E}, "
-                          f"variance = {grad_data.get('grads', {}).get('variance', 0.):.3E}, "
-                          f"magnitude = {grad_data.get('grads', {}).get('magnitude', 0.):.3E}, "
-                          f"dsnr = {grad_data.get('grads', {}).get('dsnr', -1):.3E}, "
-                          f"direction = {grad_data.get('grads', {}).get('direction', -1):.3E}")
-
-
-@torch.no_grad()
-def evaluation(model, estimator, config, loader, exp_id, device='cpu', ref_summary=None, seed=None, max_eval=None):
-    """evaluation epoch to estimate the marginal log-likelihood: L_K \approx log \hat{p(x)}, K -> \infty"""
-
-    if seed is not None:
-        _seed = int(torch.randint(1, sys.maxsize, (1,)).item())
-        torch.manual_seed(seed)
-
-    k = 0
-    model.eval()
-    agg = Aggregator()
-    for batch in tqdm(loader, desc=f"{exp_id}-K={estimator.iw}-M={estimator.mc}-eval"):
-        x, y = preprocess(batch, device)
-        diagnostics = test_step(x, model, estimator, y=y, **config)
-        agg.update(diagnostics)
-        k += x.size(0)
-        if max_eval is not None and k >= max_eval:
-            break
-    summary = agg.data.to('cpu')
-
-    # compute overfitting L_K^{train} - L_K^{valid}
-    if ref_summary is not None:
-        summary['loss']['overfitting'] = ref_summary['loss']['L_k'].mean() - summary['loss']['L_k'].mean()
-
-    if seed is not None:
-        torch.manual_seed(_seed)
-
-    return summary
-
-
-def preprocess(batch, device):
-    if isinstance(batch, Tensor):
-        x = batch.to(device)
-        return x, None
-    else:
-        x, y = batch  # assume tuple (x,y)
-        x = x.to(device)
-        y = y.to(device)
-        return x, y
+    return parser.parse_args()
 
 
 if __name__ == '__main__':
@@ -414,11 +145,12 @@ if __name__ == '__main__':
     try:
         # define logger
         base_logger, train_logger, valid_logger, test_logger = get_loggers(logdir)
-        print(logging_sep())
+        print(logging_sep("="))
         base_logger.info(f"Run id: {run_id}")
         base_logger.info(f"Logging directory: {logdir}")
         base_logger.info(f"Torch version: {torch.__version__}")
-        print(logging_sep())
+        print(logging_sep("="))
+
         # setting the random seed
         torch.manual_seed(opt.seed)
         np.random.seed(opt.seed)
@@ -427,17 +159,14 @@ if __name__ == '__main__':
         dset_train, dset_valid, dset_test = get_datasets(opt)
         base_logger.info(f"Dataset size: train = {len(dset_train)}, valid = {len(dset_valid)}, test = {len(dset_test)}")
 
-        # dataloaders
+        # training dataloader
         loader_train = DataLoader(dset_train, batch_size=opt.bs, shuffle=True, num_workers=opt.workers, pin_memory=True)
 
-        # test loaders
+        # evaluation loaders
         loader_eval_train = DataLoader(dset_train, batch_size=opt.test_bs, shuffle=True, num_workers=1,
                                        pin_memory=False)
         loader_eval_test = DataLoader(dset_test, batch_size=opt.test_bs, shuffle=True, num_workers=1,
                                       pin_memory=False)
-
-        # compute mean value of train set
-        mean_over_dset = get_dataset_mean(loader_train)
 
         # get a sample to evaluate the input shape
         x = dset_train[0]
@@ -447,7 +176,7 @@ if __name__ == '__main__':
             f"Sample: x.shape = {x.shape}, x.min = {x.min():.1f}, x.max = {x.max():.1f}, "
             f"x.mean = {mean_over_dset.mean():1f}, x.dtype = {x.dtype}")
 
-        model = init_model(opt, x, mean_over_dset)
+        model = init_model(opt, x, loader_train)
         base_logger.info(f"Number of parameters = {sum(p.numel() for p in model.parameters()):.3E}")
 
         print(logging_sep("="))
@@ -514,7 +243,7 @@ if __name__ == '__main__':
                 """Active Units Analysis"""
                 if opt.mc_au_analysis:
                     summary = Diagnostic(latent_activations(model, loader_eval_train, opt.mc_au_analysis,
-                                                            nsamples=opt.npoints_au_analysis, seed=opt.seed))
+                                                            nsamples=opt.npoints_au_analysis))
                     summary.log(writer_train, global_step)
 
                 """Analyse Gradients"""
@@ -522,30 +251,28 @@ if __name__ == '__main__':
                     print(logging_sep())
                     perform_gradients_analysis(opt, global_step, writer_train, loader_train, model, estimator, config)
 
-                """Eval on the train set"""
-                if not opt.only_train_set:
-                    # log train summary to console and tensorboad
-                    # seed evaluation such that the subset of `opt.max_eval` data points remains the same
-                    summary_train = evaluation(model, estimator_test, config_test, loader_eval_train, exp_id,
-                                               device=device, ref_summary=None, max_eval=opt.max_eval, seed=opt.seed)
+                """Estimate the ESS"""
+                summary_train_ess = evaluation(model, estimator_test_ess, config_test, loader_eval_train, exp_id,
+                                               device=device, ref_summary=None, max_eval=1000)
 
-                    # eval ess using the training estimator
-                    summary_train_ = evaluation(model, estimator_test_ess, config_test, loader_eval_train, exp_id,
-                                                device=device, ref_summary=None, max_eval=1000, seed=opt.seed)
-
-                    summary_train['loss']['ess'] = summary_train_['loss']['ess']
+                """Eval on the train set and logging"""
+                if opt.only_train_set:
+                    # if the test evaluation is performed on the test set, keep the summary from the evaluation
+                    summary_train = summary_train_ess
                 else:
-                    # eval ess using the training estimator
-                    summary_train = evaluation(model, estimator_test_ess, config_test, loader_eval_train, exp_id,
-                                               device=device, ref_summary=None, max_eval=1000, seed=opt.seed)
+                    # seed evaluation such that the subset of `opt.max_eval` data points remains the same
+                    with ManualSeed(seed=opt.seed):
+                        summary_train = evaluation(model, estimator_test, config_test, loader_eval_train, exp_id,
+                                                   device=device, ref_summary=None, max_eval=opt.max_eval)
+
+                    summary_train['loss']['ess'] = summary_train_ess['loss']['ess']
 
                 # log train summary to console and tensorboard
                 summary_train.update(parameters_diagnostics)
-                log_summary(summary_train, global_step, epoch, logger=train_logger, best=None,
-                            writer=writer_train,
+                log_summary(summary_train, global_step, epoch, logger=train_logger, best=None, writer=writer_train,
                             exp_id=exp_id)
 
-                """eval on the test set"""
+                """evaluation on the test set and logging"""
                 summary_test = evaluation(model, estimator_test, config_test, loader_eval_test, exp_id, device=device,
                                           ref_summary=summary_train, max_eval=opt.max_eval)
 
@@ -602,7 +329,7 @@ if __name__ == '__main__':
         log_summary(summary, global_step, epoch, logger=valid_logger, best=None, writer=writer_valid, exp_id=exp_id)
 
         # write outcome to a file (success, interrupted, error)
-        print(f"{logging_sep()}\nSucces.\n{logging_sep()}")
+        print(f"{logging_sep('=')}\nSucces.\n{logging_sep('=')}")
         with open(os.path.join(logdir, "success.txt"), 'w') as f:
             f.write(f"Success.")
 

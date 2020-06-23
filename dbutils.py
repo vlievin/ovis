@@ -5,7 +5,7 @@ import argparse
 import shutil
 import traceback
 from filelock import filelock
-from ovis.manager import open_db, snapshot_dir, read_experiment, get_abs_paths, get_filelock
+from ovis.utils.manager import open_db, snapshot_dir, read_experiment, get_abs_paths, get_filelock
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--root', default='runs/', help='experiment directory')

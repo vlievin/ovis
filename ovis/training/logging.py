@@ -2,6 +2,7 @@ import logging
 import math
 import os
 import sys
+from shutil import rmtree
 
 import matplotlib.image
 import torch
@@ -91,3 +92,17 @@ def save_model_and_update_best_elbo(model, eval_summary, global_step, epoch, bes
 def load_model(model, logdir):
     device = next(iter(model.parameters())).device
     model.load_state_dict(torch.load(os.path.join(logdir, "model.pt"), map_location=device))
+
+
+def init_logging_directory(opt, run_id):
+    """initialize the directory where will be saved the config, model's parameters and tensorboard logs"""
+    logdir = os.path.join(opt.root, opt.exp)
+    logdir = os.path.join(logdir, run_id)
+    if os.path.exists(logdir):
+        if opt.rm:
+            rmtree(logdir)
+            os.makedirs(logdir)
+    else:
+        os.makedirs(logdir)
+
+    return logdir

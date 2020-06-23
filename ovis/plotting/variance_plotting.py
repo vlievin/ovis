@@ -3,9 +3,9 @@ import os
 import numpy as np
 
 from ovis.estimators.config import *
-from .gradients import *
-from .plotting import PLOT_WIDTH, PLOT_HEIGHT, ESTIMATOR_STYLE, Legend
-from .style import MARKERS, DPI
+from ovis.analysis.gradients import *
+from ovis.plotting import PLOT_WIDTH, PLOT_HEIGHT, ESTIMATOR_STYLE, Legend
+from .style import DPI
 
 _sep = os.get_terminal_size().columns * "-"
 

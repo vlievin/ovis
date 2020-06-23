@@ -2,7 +2,7 @@ from torch import softmax
 
 from .base import _EPS
 from .vi import *
-from ..distributions import *
+from ovis.models.distributions import *
 from ..models import Baseline
 from ..models import VAE
 

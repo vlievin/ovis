@@ -6,9 +6,9 @@ from shutil import rmtree
 
 import pandas as pd
 
-from ovis.logging import get_loggers
-from ovis.style import *
-from ovis.variance_plotting import plot_statistics, plot_gradients_distribution
+from ovis.training.logging import get_loggers
+from ovis.plotting.style import *
+from ovis.plotting.variance_plotting import plot_statistics, plot_gradients_distribution
 
 # set custom plot style
 set_style()

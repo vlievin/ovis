@@ -73,19 +73,8 @@ class NormalFromLogits(BaseDistribution):
     def _params(self):
         # logits are of dimension (*, N, K,) with K = 2
         mu, log_std = self.logits.chunk(2, dim=self.dim)
-        #scale = log_std.mul(0.5).exp()
-        scale = log_std.exp() # TODO: added to match TVO Gaussian model
+        scale = log_std.exp()
         return mu, scale
-
-    # @property
-    # def loc(self):
-    #     mu, _ = self._params
-    #     return mu
-    #
-    # @property
-    # def scale(self):
-    #     _, scale = self._params
-    #     return scale
 
     @property
     def _torch_normal(self):

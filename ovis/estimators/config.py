@@ -1,4 +1,4 @@
-from ovis.utils import parse_numbers
+from ..utils.utils import parse_numbers
 from .__init__ import *
 
 
@@ -72,7 +72,7 @@ def get_config(estimator):
             biased = '-biased' in estimator
             only_phi = "-onlyphi" in estimator
 
-            Estimator = AirReinforce if "air-" in estimator else VimcoPlus
+            Estimator = VimcoPlus
             config = {'mode': mode, 'alpha': alpha, 'truncation': trunc, 'autoalpha': autoalpha,
                       'handle_low_ess': handle_low_ess, 'center': center, 'biased': biased,
                       'auxiliary_samples': auxiliary_samples, 'only_phi': only_phi,

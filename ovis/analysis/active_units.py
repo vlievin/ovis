@@ -16,15 +16,10 @@ def preprocess(batch, device):
 
 
 @torch.no_grad()
-def latent_activations(model, loader, mc_samples, nsamples=None, epsilon=1e-3, seed=None):
+def latent_activations(model, loader, mc_samples, nsamples=None, epsilon=1e-3):
     """
     Computing the activations of the latent variables
     """
-
-    if seed is not None:
-        _seed = int(torch.randint(1, sys.maxsize, (1,)).item())
-        torch.manual_seed(seed)
-
     zs = None
     model.eval()
     device = next(iter(model.parameters())).device
@@ -72,9 +67,6 @@ def latent_activations(model, loader, mc_samples, nsamples=None, epsilon=1e-3, s
 
     # AU = \sum_d \delta{ Cov_p(x) [ E_q(z|x) [z_d] ] > \epsilon }
     au = (cov_expected_z_given_x > epsilon).float().sum()
-
-    if seed is not None:
-        torch.manual_seed(_seed)
 
     return {'active_units': {'au': au,
                              'r_au': au / cov_expected_z_given_x.shape[0],
