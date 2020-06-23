@@ -42,36 +42,6 @@ class ThermoVariationalObjective(VariationalInference):
 
         assert self.mc == 1
 
-        # Partitions of unit interval
-        # partitions = [[0.0000e+00, 1.0000e-10, 1.0000e+00],  # 0 (Poor)
-        #               [0.0000e+00, 3.0000e-10, 1.0000e+00],  # 1 (Poor)
-        #               [0.0000e+00, 1.0000e-9, 1.0000e+00],  # 2 (Poor)
-        #               [0.0000e+00, 3.0000e-9, 1.0000e+00],  # 3 (Poor)
-        #               [0.0000e+00, 1.0000e-8, 1.0000e+00],  # 4 (Poor)
-        #               [0.0000e+00, 3.0000e-8, 1.0000e+00],  # 5 (Poor)
-        #               [0.0000e+00, 1.0000e-7, 1.0000e+00],  # 6 (Poor)
-        #               [0.0000e+00, 3.0000e-7, 1.0000e+00],  # 7 (Poor)
-        #               [0.0000e+00, 1.0000e-6, 1.0000e+00],  # 8 (Poor)
-        #               [0.0000e+00, 3.0000e-6, 1.0000e+00],  # 9 (Poor)
-        #               [0.0000e+00, 1.0000e-5, 1.0000e+00],  # 10 (Poor)
-        #               [0.0000e+00, 3.0000e-5, 1.0000e+00],  # 11 (Poor)
-        #               [0.0000e+00, 1.0000e-4, 1.0000e+00],  # 12 (Poor)
-        #               [0.0000e+00, 3.0000e-4, 1.0000e+00],  # 13 (Poor)
-        #               [0.0000e+00, 1.0000e-3, 1.0000e+00],  # 14 (Poor)
-        #               [0.0000e+00, 3.0000e-3, 1.0000e+00],  # 15 (Poor)
-        #               [0.0000e+00, 1.0000e-2, 1.0000e+00],  # 16 (Poor)
-        #               [0.0000e+00, 5.0000e-2, 1.0000e+00],  # 17 (Maybe useful)
-        #               [0.0000e+00, 1.0000e-1, 1.0000e+00],  # 18 (Recommended)
-        #               [0.0000e+00, 2.0000e-1, 1.0000e+00],  # 19 (Recommended)
-        #               [0.0000e+00, 2.5000e-1, 1.0000e+00],  # 20 (Recommended)
-        #               [0.0000e+00, 3.0000e-1, 1.0000e+00],  # 21 (Recommended)
-        #               [0.0000e+00, 3.5000e-1, 1.0000e+00],  # 22 (Maybe useful)
-        #               [0.0000e+00, 4.0000e-1, 1.0000e+00],  # 23 (Maybe useful)
-        #               # [0.0000e+00, 1.0000e-1, 3.0000e-1, 1.0000e+00]  # 24 (Test) # todo: is it used somewhere? commenting out for now
-        #               ]
-        #
-        # self.register_buffer("partitions", torch.tensor(partitions, dtype=torch.float))
-
     def compute_loss(self, log_px_z: Tensor, log_pzs: List[Tensor], log_qzs: List[Tensor], integration: str = 'left',
                      num_partition=2, partition_type='log', log_beta_min=-10, partition_name=None, gamma=1, **kwargs: Any) -> \
             Dict[str, Tensor]:
