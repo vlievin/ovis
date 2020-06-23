@@ -7,11 +7,11 @@ from shutil import rmtree
 import pandas as pd
 from dotmap import DotMap
 
-from lib.logging import get_loggers
-from lib.plotting import *
-from lib.style import *
-from lib.style import LOG_PLOT_RULES, METRIC_DISPLAY_NAME, format_estimator_name
-from lib.utils import parse_numbers
+from ovis.logging import get_loggers
+from ovis.plotting import *
+from ovis.style import *
+from ovis.style import LOG_PLOT_RULES, METRIC_DISPLAY_NAME, format_estimator_name
+from ovis.utils import parse_numbers
 
 set_style()
 

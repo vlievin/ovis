@@ -1,4 +1,4 @@
-from lib.utils import parse_numbers
+from ovis.utils import parse_numbers
 from .__init__ import *
 
 

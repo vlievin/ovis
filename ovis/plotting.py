@@ -10,7 +10,7 @@ import numpy as np
 import seaborn as sns
 from tqdm import tqdm
 
-from lib.style import MARKERS, DASH_STYLES, LINE_STYLES
+from ovis.style import MARKERS, DASH_STYLES, LINE_STYLES
 from .style import ESTIMATOR_STYLE, PLOT_WIDTH, PLOT_HEIGHT, STEP_FORMAT, ESTIMATOR_DISPLAY_NAME, ESTIMATOR_ORDER, \
     ESTIMATOR_GROUPS, DPI, PLOT_TOTAL_WIDTH
 

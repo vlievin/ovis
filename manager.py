@@ -13,8 +13,8 @@ from multiprocessing import Pool
 import GPUtil
 from tqdm import tqdm
 
-from lib.filelock import FileLock
-from lib.manager import open_db, snapshot_dir, read_experiment, get_abs_paths, get_filelock
+from ovis.filelock import FileLock
+from ovis.manager import open_db, snapshot_dir, read_experiment, get_abs_paths, get_filelock
 
 """
 NB: the scripts works fine on a single machine, on multiple machines the jobs may crash and that may be due to the shared 

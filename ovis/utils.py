@@ -91,7 +91,7 @@ class FreeBits():
         return freebits_kl
 
 
-class LinearSchedule():
+class Schedule():
     def __init__(self, period, init_value, end_value, offset=0, mode='linear'):
         self.offset = offset
         self.period = period

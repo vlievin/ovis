@@ -2,7 +2,7 @@ import os
 
 import numpy as np
 
-from lib.estimators.config import *
+from ovis.estimators.config import *
 from .gradients import *
 from .plotting import PLOT_WIDTH, PLOT_HEIGHT, ESTIMATOR_STYLE, Legend
 from .style import MARKERS, DPI

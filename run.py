@@ -1,8 +1,8 @@
 import argparse
 import json
 import os
-import sys
 import socket
+import sys
 import traceback
 from copy import copy
 from shutil import rmtree
@@ -10,22 +10,23 @@ from shutil import rmtree
 import numpy as np
 import torch
 from booster import Aggregator, Diagnostic
+from booster.utils import logging_sep
 from torch import Tensor
 from torch.optim import Adam, Adamax, SGD, RMSprop
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-from lib import get_datasets
-from lib.analysis import total_derivatives_analysis, latent_activations
-from lib.estimators import VariationalInference, AirReinforce
-from lib.estimators.config import get_config
-from lib.gradients import get_gradients_statistics
-from lib.logging import sample_model, get_loggers, log_summary, save_model_and_update_best_elbo, load_model
-from lib.models import VAE, Baseline, ConvVAE, GaussianToyVAE, GaussianMixture, BernoulliToyModel, HierarchicalVae, \
-    SigmoidBeliefNetwork, AIR, GaussianVAE
-from lib.ops import training_step, test_step
-from lib.utils import notqdm, LinearSchedule
+from ovis import get_datasets
+from ovis.analysis import latent_activations
+from ovis.estimators import VariationalInference
+from ovis.estimators.config import get_config
+from ovis.gradients import get_gradients_statistics
+from ovis.logging import sample_model, get_loggers, log_summary, save_model_and_update_best_elbo, load_model
+from ovis.models import VAE, Baseline, GaussianToyVAE, GaussianMixture, BernoulliToyModel, SigmoidBeliefNetwork, \
+    GaussianVAE
+from ovis.ops import training_step, test_step
+from ovis.utils import notqdm, Schedule
 
 
 def parse_args():
@@ -71,12 +72,12 @@ def parse_args():
     parser.add_argument('--mc', default=1, type=int, help='number of Monte-Carlo samples')
     parser.add_argument('--iw', default=1, type=int, help='number of Importance-Weighted samples')
     parser.add_argument('--beta', default=1.0, type=float, help='Beta weight for the KL term (i.e. Beta-VAE)')
-    parser.add_argument('--gamma', default=1.0, type=float, help='Gamma weight for the unormalized weights: log w_k^gamma')
+    parser.add_argument('--gamma', default=1.0, type=float,
+                        help='Gamma weight for the unormalized weights: log w_k^gamma')
     parser.add_argument('--warmup', default=0, type=int, help='period of the posterior warmup (Gamma : 0 -> 1)')
     parser.add_argument('--warmup_offset', default=0, type=int, help='number of steps before increasing beta')
     parser.add_argument('--warmup_mode', default='log', type=str, help='interpolation mode [linear | log]')
     parser.add_argument('--gamma_min', default=1e-1, type=float, help='minimum gamma value')
-    parser.add_argument('--warmup_estimator', default='', help='estimator to use during the warm-up')
 
     # evaluation
     parser.add_argument('--eval_freq', default=10, type=int, help='frequency for the evaluation [test set + grads]')
@@ -84,10 +85,6 @@ def parse_args():
     parser.add_argument('--iw_valid', default=100, type=int,
                         help='number of Importance-Weighted samples for validation')
     parser.add_argument('--iw_test', default=1000, type=int, help='number of Importance-Weighted samples for testing')
-
-    # total derivatives analysis
-    parser.add_argument('--mc_analysis', default=0, type=int,
-                        help='number of Monte-Carlo samples for the total derivatives analysis')
 
     # active units analysis
     parser.add_argument('--mc_au_analysis', default=0, type=int,
@@ -100,18 +97,6 @@ def parse_args():
                         help='number of samples used to evaluate the variance.')
     parser.add_argument('--grad_key', default='tensor:qlogits', type=str,
                         help='identifiant of the parameters/tensor for the gradients analysis')
-    parser.add_argument('--individual_grads', action='store_true',
-                        help='Compute expected gradients for single datapoints instead of over the mini-batch.')
-    parser.add_argument('--counterfactuals', default='',
-                        help='comma separated list of estimators for which the gradients will be evaluated without being used for optimization.'
-                             'example: `reinforce, covbaseline-arithmetic`')
-    parser.add_argument('--counterfactuals_iw', default='',
-                        help='comma separated list of number of samples.'
-                             'example: `8,16,32`')
-    parser.add_argument("--oracle", default="", type=str,
-                        help="oracle estimator to find the `true` gradients direction (estimator id)")
-    parser.add_argument("--oracle_iw_samples", default=32, type=int, help="IW samples")
-    parser.add_argument("--oracle_mc_samples", default=1000, type=int, help="MC samples")
 
     # latent space
     parser.add_argument('--prior', default='categorical',
@@ -139,50 +124,9 @@ def parse_args():
     return opt
 
 
-def define_counterfactuals(opt):
-    """
-    Counterfactual estimators are estimators that are only used for evaluation.
-    They are used to evaluate the gradients of another estimator (counterfactual) given the parameters obtained
-    following the optimization trajectory of the main estimator. Counterfactual estimators answer the question:
-    "What if we had used this estimator at that point of the parameter space?"
-
-    :param opt: parsed args
-    :return: ounterfactual estimator instances, samples for each estimator, ids
-    """
-    if len(opt.counterfactuals):
-        counterfactual_estimators_ids = opt.counterfactuals.replace(" ", "").split(",")
-
-        # construct product with the number of samples
-        if len(opt.counterfactuals_iw):
-            c_iws = opt.counterfactuals_iw.replace(" ", "").split(",")
-            counterfactual_estimators_ids = [f"{e}-iw{k}" for e in counterfactual_estimators_ids for k in c_iws]
-
-            print(">>> counterfactual_estimators_ids")
-            print(counterfactual_estimators_ids)
-            print("--------------------------------")
-
-        def _split(e):
-            """parse estimator name with key `-iw` else use opt.iw"""
-            if "-iw" in e:
-                arg = e.split("-")[-1]
-                if arg == "iwae":  # catch special case
-                    return e, opt.iw
-                iw = eval(arg.replace("iw", ""))
-                e = e.replace(f"-iw{iw}", "")
-                return e, iw
-            else:
-                return e, opt.iw
-
-        counterfactual_estimators, counterfactual_iw = zip(*[_split(e) for e in counterfactual_estimators_ids])
-    else:
-        counterfactual_estimators, counterfactual_iw, counterfactual_estimators_ids = [], [], []
-
-    return counterfactual_estimators, counterfactual_iw, counterfactual_estimators_ids
-
-
-def get_run_id(opt, counterfactual_estimators):
+def get_run_id(opt):
     """define a unique identifier given on the parsed config"""
-    use_baseline = any(['-baseline' in e for e in [opt.estimator] + list(counterfactual_estimators)])
+    use_baseline = '-baseline' in opt.estimator
     run_id = f"{opt.dataset}-{opt.optimizer}-{opt.model}-{opt.prior}-{opt.estimator}-seed{opt.seed}"
     if opt.mini:
         run_id = "mini-" + run_id
@@ -205,8 +149,6 @@ def get_run_id(opt, counterfactual_estimators):
         run_id += f"-{opt.norm}"
     if opt.dropout > 0:
         run_id += f"-drp{opt.dropout}"
-    if opt.oracle != "":
-        run_id += f"-oracle={opt.oracle}-iw{opt.oracle_iw_samples}"
     if opt.model == 'bernoulli_toy':
         run_id += f"-tar{opt.toy_target}"
     if opt.skip:
@@ -222,7 +164,6 @@ def get_run_id(opt, counterfactual_estimators):
         exp_id += f"-{opt.warmup_mode}-wp{opt.warmup}-{opt.gamma_min}-{opt.gamma}"
     elif opt.gamma != 1:
         exp_id += f"-gamma{opt.gamma}"
-
 
     return run_id, exp_id, use_baseline
 
@@ -259,7 +200,7 @@ def get_dataset_mean(loader_train):
 
 
 def init_model(opt, x, xmean=None):
-    # hyperparameters
+    # define the hyperparameters
     hyperparams = {
         'xdim': x.shape,
         'N': opt.N,
@@ -276,21 +217,19 @@ def init_model(opt, x, xmean=None):
         'skip': opt.skip
     }
 
-    # get the right constructor
+    # change the model id based on the chosen dataset if required
     model_id = {'gmm-toy': 'gmm-toy',
                 'gaussian-toy': 'gaussian-toy',
                 'bernoulli-toy': 'bernoulli-toy',
                 'air': 'air'}.get(opt.dataset, opt.model)
 
+    # get the right constructor
     _MODEL = {'vae': VAE,
-              'conv-vae': ConvVAE,
               'bernoulli-toy': BernoulliToyModel,
               'gaussian-toy': GaussianToyVAE,
               'gmm-toy': GaussianMixture,
-              'hierarchical': HierarchicalVae,
               'sbm': SigmoidBeliefNetwork,
-              'gaussian':GaussianVAE,
-              'air': AIR}[model_id]
+              'gaussian': GaussianVAE}[model_id]
 
     # init the model
     torch.manual_seed(opt.seed)
@@ -313,17 +252,6 @@ def init_main_estimator(opt, baseline):
 
     return estimator, config
 
-def init_warnup_estimator(opt):
-    """initialize the training estimator and its configuration dict"""
-    if opt.warmup_estimator != "":
-        Estimator, config = get_config(opt.warmup_estimator)
-        estimator = Estimator(baseline=baseline, mc=opt.mc, iw=opt.iw, N=opt.N, K=opt.K, hdim=opt.hdim,
-                              freebits=opt.freebits, **config)
-
-        return estimator, config
-    else:
-        return None, None
-
 
 def init_test_estimator(opt):
     """
@@ -333,7 +261,7 @@ def init_test_estimator(opt):
 
     The two estimators are used toe estimate KL(q||p) = log \hat{p(x)} - L_K_train considering log \hat{p(x)} = L_K_valid
     """
-    Estimator = AirReinforce if 'air' == opt.dataset else VariationalInference
+    Estimator = VariationalInference
     config = {'tau': 0, 'zgrads': False}
 
     # the main test estimator with K = opt.iw_test
@@ -384,38 +312,7 @@ def get_number_of_epochs(opt):
         epochs = 1 + opt.nsteps // iter_per_epoch
     return epochs, iter_per_epoch
 
-
-def get_grads_analysis_config(opt, model, x_eval, estimator_oracle, config_oracle):
-    """
-    Define the arguments for the gradients analysis and potentially compute the `oracle gradients`
-    """
-
-    grad_args = {'seed': opt.seed, 'batch_size': opt.bs * opt.mc * opt.iw,
-                 'n_samples': opt.grad_samples,
-                 'key_filter': opt.grad_key, 'use_individual_grads': opt.individual_grads,
-                 'use_dsnr': True}
-
-    # compute oracle gradients (the true gradients direction)
-    if estimator_oracle is not None:
-        print(
-            f">> evaluating oracle `{opt.oracle}`, K = {opt.oracle_iw_samples} using {opt.oracle_mc_samples} MC samples")
-        # define args
-        oracle_args = copy(grad_args)
-        seed = oracle_args.pop('seed', 13) + 1
-        oracle_args.update({'seed': seed, 'n_samples': opt.oracle_mc_samples})
-
-        _, oracle_grads = get_gradients_statistics(estimator_oracle, model, x_eval, **oracle_args,
-                                                   **config_oracle)
-        oracle_grads = oracle_grads['expected']
-        oracle_grads = oracle_grads / oracle_grads.norm(p=2, dim=-1, keepdim=True)
-        grad_args.update({'true_grads': oracle_grads})
-
-    return grad_args
-
-
-def perform_gradients_analysis(opt, global_step, writer_train, loader_train, model, estimator, config,
-                               estimator_oracle=None, config_oracle=None,
-                               counterfactual_writers=[], c_estimators=[], c_configs=[], counterfactual_estimators=[]):
+def perform_gradients_analysis(opt, global_step, writer_train, loader_train, model, estimator, config):
     """
     Perform the gradients analysis for the main estimator and the counterfactual estimators if available
     """
@@ -426,8 +323,11 @@ def perform_gradients_analysis(opt, global_step, writer_train, loader_train, mod
     x, *_ = preprocess(batch, device)
     x = x[:opt.grad_bs]
 
-    # get the configuration for the gradients analysis including computing the gradients for the oracle
-    grad_args = get_grads_analysis_config(opt, model, x, estimator_oracle, config_oracle)
+    # get the configuration for the gradients analysis
+    grad_args = {'seed': opt.seed, 'batch_size': opt.bs * opt.mc * opt.iw,
+                 'n_samples': opt.grad_samples,
+                 'key_filter': opt.grad_key,
+                 'use_dsnr': True}
 
     # gradients analysis for the training estimator
     grad_data, _ = get_gradients_statistics(estimator, model, x, **grad_args, **config)
@@ -440,21 +340,6 @@ def perform_gradients_analysis(opt, global_step, writer_train, loader_train, mod
                           f"magnitude = {grad_data.get('grads', {}).get('magnitude', 0.):.3E}, "
                           f"dsnr = {grad_data.get('grads', {}).get('dsnr', -1):.3E}, "
                           f"direction = {grad_data.get('grads', {}).get('direction', -1):.3E}")
-
-    # analsysis for the `counterfactual` estimators
-    for (c_writer, c_conf, c_est, c) in zip(counterfactual_writers, c_configs, c_estimators,
-                                            counterfactual_estimators):
-        grad_data, _ = get_gradients_statistics(c_est, model, x, **grad_args, **c_conf)
-        with torch.no_grad():
-            summary = Diagnostic(grad_data)
-            summary.log(c_writer, global_step)
-            train_logger.info(
-                f" | counterfactual | {c:{max(map(len, counterfactual_estimators))}s} K = {c_est.iw * c_est.mc} "
-                f"| snr = {grad_data.get('grads', {}).get('snr', 0.):.3f}, "
-                f"variance = {grad_data.get('grads', {}).get('variance', 0.):.3f}, "
-                f"dsnr = {grad_data.get('grads', {}).get('dsnr', -1):.3E}, "
-                f"direction = {grad_data.get('grads', {}).get('direction', -1):.3E}"
-            )
 
 
 @torch.no_grad()
@@ -499,8 +384,6 @@ def preprocess(batch, device):
 
 
 if __name__ == '__main__':
-    _sep = os.get_terminal_size().columns * "-"
-
     opt = parse_args()
 
     # deterministic backend, silent mode and checking args
@@ -515,11 +398,8 @@ if __name__ == '__main__':
         assert opt.model == 'bernoulli_toy'
         assert opt.bs == 1 and opt.valid_bs == 1 and opt.test_bs == 1
 
-    # define couterfactual estimators if any
-    counterfactual_estimators, counterfactual_iw, counterfactual_estimators_ids = define_counterfactuals(opt)
-
     # defining the run identifier
-    run_id, exp_id, use_baseline = get_run_id(opt, counterfactual_estimators)
+    run_id, exp_id, use_baseline = get_run_id(opt)
 
     # defining the run directory
     logdir = init_logging_directory(opt, run_id)
@@ -534,11 +414,11 @@ if __name__ == '__main__':
     try:
         # define logger
         base_logger, train_logger, valid_logger, test_logger = get_loggers(logdir)
-        print(_sep)
+        print(logging_sep())
         base_logger.info(f"Run id: {run_id}")
         base_logger.info(f"Logging directory: {logdir}")
         base_logger.info(f"Torch version: {torch.__version__}")
-        print(_sep)
+        print(logging_sep())
         # setting the random seed
         torch.manual_seed(opt.seed)
         np.random.seed(opt.seed)
@@ -570,11 +450,12 @@ if __name__ == '__main__':
         model = init_model(opt, x, mean_over_dset)
         base_logger.info(f"Number of parameters = {sum(p.numel() for p in model.parameters()):.3E}")
 
-        print(_sep)
+        print(logging_sep("="))
         print("Parameters")
-        print(_sep)
+        print(logging_sep())
         for k, v in model.named_parameters():
             base_logger.info(f"{k} : N = {v.numel()}, mean = {v.mean().item():.3f}, std = {v.std().item():.3f}")
+        print(logging_sep())
 
         # define a neural baseline that can be used for the different estimators
         baseline = init_neural_baseline(opt, x) if use_baseline else None
@@ -582,18 +463,8 @@ if __name__ == '__main__':
         # training estimator
         estimator, config = init_main_estimator(opt, baseline)
 
-        # warmup estimator
-        warmup_estimator, warmup_config = init_warnup_estimator(opt)
-
         # test estimator (it is important that all models are evaluated using the same evaluator)
         estimator_test, estimator_test_ess, config_test = init_test_estimator(opt)
-
-        # oracle estimator to establish the true gradients direction
-        estimator_oracle, config_oracle = init_oracle_estimator(opt)
-
-        # counterfactual estimators:
-        # they are use to measure the variance of the gradients given other estimator without using them for optimization
-        c_estimators, c_configs = init_counterfactual_estimators(opt, counterfactual_estimators, counterfactual_iw)
 
         # get device and move models
         device = "cuda:0" if torch.cuda.device_count() else "cpu"
@@ -604,20 +475,20 @@ if __name__ == '__main__':
         optimizers = init_optimizers(opt, model, estimator)
 
         # Deterministic warmup
-        scheduler = LinearSchedule(opt.warmup, opt.gamma_min, opt.gamma,
-                                   offset=opt.warmup_offset, mode=opt.warmup_mode) if opt.warmup > 0 else lambda x: opt.gamma
+        scheduler = Schedule(opt.warmup, opt.gamma_min, opt.gamma,
+                             offset=opt.warmup_offset, mode=opt.warmup_mode) \
+            if opt.warmup > 0 \
+            else lambda x: opt.gamma
 
         # tensorboard writers used to log the summary
         writer_train = SummaryWriter(os.path.join(logdir, 'train'))
         writer_test = SummaryWriter(os.path.join(logdir, 'test'))
-        counterfactual_writers = [SummaryWriter(os.path.join(logdir, c)) for c in counterfactual_estimators_ids]
 
         # define the run length based on either
         epochs, iter_per_epoch = get_number_of_epochs(opt)
-        print(_sep)
         base_logger.info(f"Dataset = {opt.dataset}: running for {epochs} epochs,"
                          f" {iter_per_epoch * epochs} steps, {iter_per_epoch} steps / epoch, {epochs // opt.eval_freq} eval. steps")
-        print(_sep)
+        print(logging_sep())
 
         # sample model at initialization
         sample_model("prior-sample", model, logdir, global_step=0, writer=writer_test, seed=opt.seed)
@@ -632,39 +503,24 @@ if __name__ == '__main__':
             [o.zero_grad() for o in optimizers]
             model.train()
             for batch in tqdm(loader_train, desc=f"{exp_id}-K={estimator.iw}-M={estimator.mc}-training"):
-
-                # get the estimator & config
-                if warmup_estimator is not None and global_step < opt.warmup:
-                    _estimator, _config = warmup_estimator, warmup_config
-                else:
-                    _estimator, _config = estimator, config
-
                 gamma = scheduler(global_step)
                 x, y = preprocess(batch, device)
-                training_step(x, model, _estimator, optimizers, y=y, return_diagnostics=False, gamma=gamma, **_config)
+                training_step(x, model, estimator, optimizers, y=y, return_diagnostics=False, gamma=gamma, **config)
                 global_step += 1
 
             if epoch % opt.eval_freq == 0:
-                parameters_diagnostics = {'parameters' : {'beta': _config.get('beta', 1.), 'gamma': gamma}}
-
-                """Total derivatives Analysis"""
-                if opt.mc_analysis:
-                    summary = Diagnostic(total_derivatives_analysis(estimator, model, x, opt.mc_analysis, **config))
-                    summary.log(writer_train, global_step)
+                parameters_diagnostics = {'parameters': {'beta': config.get('beta', 1.), 'gamma': gamma}}
 
                 """Active Units Analysis"""
                 if opt.mc_au_analysis:
-                    summary = Diagnostic(latent_activations(model, loader_eval_train, opt.mc_au_analysis, nsamples=opt.npoints_au_analysis, seed=opt.seed))
+                    summary = Diagnostic(latent_activations(model, loader_eval_train, opt.mc_au_analysis,
+                                                            nsamples=opt.npoints_au_analysis, seed=opt.seed))
                     summary.log(writer_train, global_step)
-
 
                 """Analyse Gradients"""
                 if opt.grad_samples > 0:
-                    print(_sep)
-                    perform_gradients_analysis(opt, global_step, writer_train, loader_train, model, estimator, config,
-                                               estimator_oracle=estimator_oracle, config_oracle=config_oracle,
-                                               counterfactual_writers=counterfactual_writers, c_estimators=c_estimators,
-                                               c_configs=c_configs, counterfactual_estimators=counterfactual_estimators)
+                    print(logging_sep())
+                    perform_gradients_analysis(opt, global_step, writer_train, loader_train, model, estimator, config)
 
                 """Eval on the train set"""
                 if not opt.only_train_set:
@@ -705,7 +561,7 @@ if __name__ == '__main__':
 
                 """sample model"""
                 sample_model("prior-sample", model, logdir, global_step=global_step, writer=writer_test, seed=opt.seed)
-                print(_sep)
+                print(logging_sep())
 
             """reduce learning rate"""
             if opt.lr_reduce_steps > 0:
@@ -719,14 +575,14 @@ if __name__ == '__main__':
                             base_logger.info(f"Reducing lr, group = {i} : {lr:.2E} -> {new_lr:.2E}")
 
         """final testing given the parameters from the best test score"""
-        print(f"{_sep}\nFinal validation with best test "
-              f"L_{opt.iw_test} = {best_elbo[0]:.3f} at step {best_elbo[1]}, epoch = {best_elbo[2]}\n{_sep}")
+        print(f"{logging_sep()}\nFinal validation with best test "
+              f"L_{opt.iw_test} = {best_elbo[0]:.3f} at step {best_elbo[1]}, epoch = {best_elbo[2]}\n{logging_sep()}")
 
         writer_valid = SummaryWriter(os.path.join(logdir, 'valid'))
         loader_valid = DataLoader(dset_valid, batch_size=opt.test_bs, shuffle=True, num_workers=1)
 
         config_valid = {'tau': 0, 'zgrads': False}
-        Estimator_valid = AirReinforce if 'air' == opt.dataset else VariationalInference
+        Estimator_valid = VariationalInference
         estimator_valid = Estimator_valid(mc=1, iw=opt.iw_valid,
                                           sequential_computation=opt.test_sequential_computation)
 
@@ -746,18 +602,18 @@ if __name__ == '__main__':
         log_summary(summary, global_step, epoch, logger=valid_logger, best=None, writer=writer_valid, exp_id=exp_id)
 
         # write outcome to a file (success, interrupted, error)
-        print(f"{_sep}\nSucces.\n{_sep}")
+        print(f"{logging_sep()}\nSucces.\n{logging_sep()}")
         with open(os.path.join(logdir, "success.txt"), 'w') as f:
             f.write(f"Success.")
 
     except KeyboardInterrupt:
-        print(f"{_sep}\nKeyboard Interrupt.\n{_sep}")
+        print(f"{logging_sep()}\nKeyboard Interrupt.\n{logging_sep()}")
         with open(os.path.join(logdir, "success.txt"), 'w') as f:
             f.write(f"Failed. Interrupted (keyboard).")
 
 
     except Exception as ex:
-        print(f"{_sep}\nFailed with exception {type(ex).__name__} = `{ex}` \n{_sep}")
+        print(f"{logging_sep()}\nFailed with exception {type(ex).__name__} = `{ex}` \n{logging_sep()}")
         traceback.print_exception(type(ex), ex, ex.__traceback__)
         with open(os.path.join(logdir, "success.txt"), 'w') as f:
             f.write(f"Failed. Exception : \n{ex}\n\n{ex.__traceback__}")

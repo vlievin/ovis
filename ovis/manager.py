@@ -1,7 +1,7 @@
 import json
 import os
 from tinydb import TinyDB, Query  # pip install tinydb
-from lib.filelock import FileLock
+from ovis.filelock import FileLock
 
 def open_db(logdir):
     _file = os.path.join(logdir, '.db.json')

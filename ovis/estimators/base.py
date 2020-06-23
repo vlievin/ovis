@@ -1,7 +1,7 @@
 import numpy as np
 from torch import nn, Tensor
 
-from lib.utils import *
+from ovis.utils import *
 
 _EPS = 1e-18
 
