@@ -5,7 +5,7 @@ import numpy as np
 from lib.estimators.config import *
 from .gradients import *
 from .plotting import PLOT_WIDTH, PLOT_HEIGHT, ESTIMATOR_STYLE, Legend
-from .style import MARKERS
+from .style import MARKERS, DPI
 
 _sep = os.get_terminal_size().columns * "-"
 
@@ -68,17 +68,24 @@ def log_grads_data(analysis_data, base_logger, estimator_id, iw):
 
 def plot_statistics(df, opt, logdir):
     # plotting
-    param_name = {'b': "b", 'tensor:b': "b", 'tensor:qlogits': "\phi"}.get(opt.key_filter, "\theta")
+    param_name = {'b': "\mathbf{b}", 'tensor:b': "b", 'tensor:qlogits': "\phi"}.get(opt.key_filter, "\theta")
     if opt.draw_individual:
         metrics = ['individual-snr', 'grads-dsnr', 'individual-var'] #, 'individual-magnitude', 'grads-direction']
     else:
         metrics = ['grads-snr', 'grads-dsnr', 'grads-variance'] # 'grads-magnitude', 'grads-direction'
 
     _true_grads_name = "\Delta_{" + f"{opt.iw_oracle}" + "}^{" + f"{str(opt.oracle).replace('pathwise-', '')}" + "}"
-    metrics_formaters = [lambda p: f"$SNR_K({param_name}) $",
-                         lambda p: f"$DSNR_K({param_name}) $",
-                         lambda p: f"$Var \Delta_K({param_name}) $",
-                         lambda p: f"$| \Delta_K({param_name}) |$",
+    _snr = "\operatorname{SNR}"
+    _dsnr = "\operatorname{DSNR}"
+    _var = "\operatorname{Var}"
+    _cosine = "\cosine"
+    _g = "\mathbf{g}"
+    _avg = r"\frac{1}{D} \sum_i"
+    _ex = "\mathbb{E}"
+    metrics_formaters = [lambda p: f"${_avg} {_snr}_i (K)$",
+                         lambda p: f"${_avg} {_dsnr}_i (K)$",
+                         lambda p: f"${_avg} {_var}[ g_i ] (K)$",
+                         lambda p: f"${_avg} | {_ex} [ g_i ]  | (K)$",
                          lambda p: f"$cosine( \Delta_K({param_name}), E[ {_true_grads_name}({param_name}) ])$",
                          ]
 
@@ -87,20 +94,13 @@ def plot_statistics(df, opt, logdir):
     nrows = len(noises)
     ncols = len(metrics)
     fig, axes = plt.subplots(ncols=ncols, nrows=nrows, figsize=(PLOT_WIDTH * ncols, PLOT_HEIGHT * (0.5 + nrows)), sharex='col',
-                             sharey='col', squeeze=False)
+                             sharey='col', squeeze=False, dpi=DPI)
     legend = Legend(fig)
     for n, noise in enumerate(sorted(noises)):
 
         noise_df = df[df['noise'] == noise]
         for k, metric in enumerate(metrics):
             ax = axes[n, k]
-
-            if k == 0:
-                iws = list(sorted(df['iw'].unique()))
-                expected_max = [1e1 / k ** 0.5 for k in iws]
-                expected_min = [1e-1 / k ** 0.5 for k in iws]
-                ax.loglog(iws, expected_min, ":", color="#333333", basex=10, basey=10)
-                ax.loglog(iws, expected_max, ":", color="#333333", basex=10, basey=10)
 
             for e, estimator_id in enumerate(estimators):
                 sub_df = noise_df[noise_df['estimator'] == estimator_id]
@@ -124,8 +124,25 @@ def plot_statistics(df, opt, logdir):
                     else:
                         ax.loglog(iws, values, label=_label, basex=10, basey=10, **kwargs)
 
+
+
+            if k < 2:
+                ax.autoscale(False)
+                iws = list(sorted(df['iw'].unique()))
+                _alpha = 0.3
+                expected_max = [1e1 / k ** 0.5 for k in iws]
+                expected_min = [1e-1 / k ** 0.5 for k in iws]
+                ax.loglog(iws, expected_min, ":", color="#333333", basex=10, basey=10, alpha=_alpha)
+                ax.loglog(iws, expected_max, ":", color="#333333", basex=10, basey=10, alpha=_alpha)
+
+                expected_max = [1e1 * k ** 0.5 for k in iws]
+                expected_min = [1e-1 * k ** 0.5 for k in iws]
+                ax.loglog(iws, expected_min, ":", color="#666666", basex=10, basey=10, alpha=_alpha)
+                ax.loglog(iws, expected_max, ":", color="#666666", basex=10, basey=10, alpha=_alpha)
+
+
             if n == nrows - 1:
-                ax.set_xlabel("$K$")
+                pass #ax.set_xlabel("") #ax.set_xlabel("$K$")
             else:
                 ax.set_xlabel("")
                 ax.set_xticks([])
@@ -141,11 +158,11 @@ def plot_statistics(df, opt, logdir):
             legend.update(ax)
 
     legend.draw()
-    plt.savefig(os.path.join(logdir, "gradients.png"))
+    plt.savefig(os.path.join(logdir, "asymptotic-gradients.png"))
     plt.close()
 
 
-def plot_gradients_distribution(grads, logdir):
+def plot_gradients_distribution(grads, logdir, all_iws=False):
     def agg(s):
         return f"{np.mean(s):.3f} +/- {np.std(s):.3f} (n={len(s)})"
 
@@ -159,15 +176,18 @@ def plot_gradients_distribution(grads, logdir):
     estimators = grads['estimator'].unique()
     iws = list(sorted(grads["iw"].unique()))
 
+    if not all_iws:
+        iws = [np.min(iws), np.median(iws), np.max(iws)]
+
     ncols = len(noises)
     nrows = len(iws)
 
     if ncols > 1:
         fig, axes = plt.subplots(nrows=nrows, ncols=ncols,
-                                 figsize=(PLOT_WIDTH * ncols, PLOT_HEIGHT * (nrows + 0.5) ), sharex='col')
+                                 figsize=(PLOT_WIDTH * ncols, PLOT_HEIGHT * (nrows + 0.5) ), sharex='col', dpi=DPI)
     else:
         fig, axes = plt.subplots(nrows=1, ncols=nrows,
-                                 figsize=(PLOT_WIDTH * nrows, PLOT_HEIGHT * 1.5), sharex=False, sharey='row')
+                                 figsize=(PLOT_WIDTH * nrows, PLOT_HEIGHT * 1.5), sharex=False, sharey='row', dpi=DPI)
 
     legend = Legend(fig)
     for j, noise in enumerate(noises):
@@ -194,7 +214,7 @@ def plot_gradients_distribution(grads, logdir):
                 color = ESTIMATOR_STYLE[estimator_id]['color']
 
                 filtered_data = filtered_grads_p_iw[filtered_grads_p_iw["estimator"] == estimator_id]['grad'].values
-                g = sns.distplot(filtered_data, ax=ax, label=estimator_id, color=color, rug=False, kde=True, bins=64,
+                g = sns.distplot(filtered_data, ax=ax, label=estimator_id, color=color, rug=False, kde=True, bins=None,
                                  hist_kws={"alpha": 0.3}, kde_kws={"alpha": 0.8})
 
                 # access bar heights
@@ -214,7 +234,7 @@ def plot_gradients_distribution(grads, logdir):
                     ax.get_xaxis().set_visible(False)
 
                 if j == 0:
-                    ax.set_ylabel(f"K = {iw}")
+                     ax.set_ylabel(f"K = {int(iw)}")
                 else:
                     ax.set_ylabel("")
 
@@ -222,7 +242,7 @@ def plot_gradients_distribution(grads, logdir):
                 ax.set_yticks([])
 
             else:
-                ax.set_title(f"$K = {iw}$")
+                ax.set_title(f"$K = {int(iw)}$")
                 if i > 0:
                     ax.set_ylabel("")
                     ax.set_yticks([])
@@ -238,5 +258,5 @@ def plot_gradients_distribution(grads, logdir):
 
     legend.draw()
 
-    plt.savefig(os.path.join(logdir, "gradients-dist.png"))
+    plt.savefig(os.path.join(logdir, "asymptotic-gradients-dist.png"))
     plt.close()

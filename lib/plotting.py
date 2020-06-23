@@ -5,13 +5,14 @@ from copy import copy
 
 import matplotlib
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 import numpy as np
 import seaborn as sns
 from tqdm import tqdm
 
-from lib.style import MARKERS, DASH_STYLES
+from lib.style import MARKERS, DASH_STYLES, LINE_STYLES
 from .style import ESTIMATOR_STYLE, PLOT_WIDTH, PLOT_HEIGHT, STEP_FORMAT, ESTIMATOR_DISPLAY_NAME, ESTIMATOR_ORDER, \
-    ESTIMATOR_GROUPS, DPI
+    ESTIMATOR_GROUPS, DPI, PLOT_TOTAL_WIDTH
 
 
 class Legend():
@@ -25,7 +26,17 @@ class Legend():
         """get legend info from the current axis"""
         self.legend_infos += list(zip(*ax.get_legend_handles_labels()))
 
-    def draw(self, group=False, nrows=None):
+    def update_from_infos(self, infos):
+        """get legend info from the current axis"""
+        self.legend_infos += list(infos)
+
+    def reset_linestyles(self):
+        self.legend_infos = [(copy(handle), label) for handle, label in self.legend_infos]
+        [handle.set_linestyle("-") for handle, label in self.legend_infos]
+
+
+
+    def draw(self, group=False, alpha=1, insert_labels=False):
         # create legend
         legend_infos = {label: handle for handle, label in self.legend_infos}
         if len(legend_infos) == 0:
@@ -40,12 +51,20 @@ class Legend():
         if 'estimator' == labels[0]:
             labels, handles = labels[1:], handles[1:]
 
-        if 'iw' in labels:
-            q = labels.index('iw')
-            style_labels, style_handles = labels[q + 1:], handles[q + 1:]
-            labels, handles = labels[:q], handles[:q]
-            # update iw label name "x" -> "K=x"
-            style_labels = [f"K={l}" for l in style_labels]
+        for special_key in ['iw', 'warmup', 'gamma_min']:
+            if special_key in labels:
+                q = labels.index(special_key)
+                style_labels, style_handles = labels[q + 1:], handles[q + 1:]
+                labels, handles = labels[:q], handles[:q]
+
+                if special_key == 'iw':
+                    # update iw label name "x" -> "K=x"
+                    style_labels = [f"K={l}" for l in style_labels]
+                if special_key == 'warmup':
+                    _f = lambda l : eval(l) if isinstance(l, str) else l
+                    style_labels = ["warmup" if _f(l) > 0 else "no warmup" for l in style_labels]
+                if special_key == 'gamma_min':
+                    style_labels = [r"$1- \alpha_{\operatorname{init}}="+f"{l}$" for l in style_labels]
 
         # sort names
         if all([l in ESTIMATOR_ORDER for l in labels]):
@@ -113,8 +132,12 @@ class Legend():
         # set tight layout and add margin at the top for the legend
         plt.tight_layout()
         self.figure.subplots_adjust(top= 1 - (legend_height + margin) / height)
-        self.figure.legend(handles=all_handles, labels=all_labels, ncol=ncol, loc='lower center',
-                           bbox_to_anchor=(0,  1 - (legend_height) / height, 1, 1) ,fancybox=False, shadow=False) #, title=hue_key
+        legend = self.figure.legend(handles=all_handles, labels=all_labels, ncol=ncol, loc='lower center',
+                           bbox_to_anchor=(0,  1 - (legend_height) / height, 1, 1) ,fancybox=False, shadow=False) #,  fontsize='x-small') #, title=hue_key
+
+        if alpha is not None:
+            for l in legend.get_lines():
+                l.set_alpha(1)
 
 
 def set_log_scale(ax, label, log_rules, axis='y'):
@@ -152,18 +175,19 @@ def update_labels(axes, metric_dict, agg_fns=dict()):
             _label = ax.get_ylabel()
             # append `^{header}$` to `$\mathcal{L}`
 
-            for k in ['loss/L_k', 'loss/elbo', 'loss/kl_q_p']:
+            for k in ['loss/L_k', 'loss/elbo', 'loss/kl']:
                 if k in ylabel:
                     if 'train:' in _label:
-                        label = label[:-1] + "^{train}$"
+                        label = label[:-1] + "^{\operatorname{train}}$"
                     elif 'valid:' in _label:
-                        label = label[:-1] + "^{valid}$"
+                        label = label[:-1] + "^{\operatorname{valid}}$"
                     elif 'test:' in _label:
-                        label = label[:-1] + "^{test}$"
+                        label = label[:-1] + "^{\operatorname{test}}$"
 
             if len(agg_fns):
                 if _label in agg_fns.keys():
-                    label = f"{agg_fns[_label]}. {label}"
+                    agg_label = {'last' : "", "mean": "train. avg. "}.get(agg_fns[_label], f"{agg_fns[_label]}. ")
+                    label = f"{agg_label}{label}"
 
             ax.set_ylabel(label)
 
@@ -262,7 +286,7 @@ def plot_cis(ax, at, ci_low, ci_high, color, capsize, **kws):
 
 
 def detailed_plot(logs, path, metrics, main_key, auxiliary_key, style_key=None, ylims=dict(), log_rules=dict(),
-                  metric_dict=dict(), **kwargs):
+                  metric_dict=dict(), scale_y=True,**kwargs):
     """make a grid of plot metrics x aux. keys values"""
     aux_keys = logs[auxiliary_key].unique()
     nrows = len(metrics)
@@ -273,7 +297,8 @@ def detailed_plot(logs, path, metrics, main_key, auxiliary_key, style_key=None, 
 
     hue_order = list(logs[main_key].unique())
     step_min = np.percentile(logs['step'].values.tolist(), 10) if len(logs['step']) else 0  # used to filter first steps
-    fig, axes = plt.subplots(nrows, ncols, figsize=(2 / 3 * PLOT_WIDTH * ncols, PLOT_HEIGHT * (nrows+0.5)), sharex='col',
+    _factor = 3/4
+    fig, axes = plt.subplots(nrows, ncols, figsize=( _factor * PLOT_WIDTH * ncols, _factor * PLOT_HEIGHT * (nrows+0.5)), sharex='col',
                              sharey='row', squeeze=False, dpi=DPI)
     legend = Legend(fig)
     for j, aux_key in tqdm(list(enumerate(sorted(aux_keys))), desc="|  aux. keys"):
@@ -305,7 +330,7 @@ def detailed_plot(logs, path, metrics, main_key, auxiliary_key, style_key=None, 
 
                 # define axis labels and hide x,y axis in the middle plots
                 if i == 0:
-                    _name = {'iw': 'K'}.get(auxiliary_key, auxiliary_key)
+                    _name = {'iw': r'$K$', 'gamma': r'$\beta$', 'gamma_min':r'$\beta_{\operatorname{min}}$' }.get(auxiliary_key, auxiliary_key)
                     ax.set_title(f"{_name} = {aux_key}")
 
                 if i < len(metrics) - 1:
@@ -323,21 +348,27 @@ def detailed_plot(logs, path, metrics, main_key, auxiliary_key, style_key=None, 
                 ax.xaxis.set_major_formatter(matplotlib.ticker.StrMethodFormatter(STEP_FORMAT))
 
             except:
-                warnings.warn(f">> spot-on plot: couldn't generate the axis `ax[{i}, {j}]`")
+                warnings.warn(f">> detailed plot: couldn't generate the axis `ax[{i}, {j}]`")
 
     # scale y axes
-    for i, metric in enumerate(metrics):
-        ax = axes[i, 0]
-        data = logs[logs["_key"] == metric]
-        if metric in ylims:
-            ax.set_ylim(ylims[metric])
-        elif ax.get_yaxis().get_scale() != 'log':
-            ys = data[data['step'] > step_min]['_value'].values.tolist()
-            if len(ys):
-                a, b = np.percentile(ys, [25, 75])
-                M = b - a
-                k = 1.5
-                ax.set_ylim([a - k * M, b + k * M])
+    if scale_y:
+        for i, metric in enumerate(metrics):
+            ax = axes[i, 0]
+            data = logs[logs["_key"] == metric]
+
+
+            print(">>> metric", metric)
+            print(ylims)
+
+            if metric in ylims:
+                ax.set_ylim(ylims[metric])
+            elif ax.get_yaxis().get_scale() != 'log':
+                ys = data[data['step'] > step_min]['_value'].values.tolist()
+                if len(ys):
+                    a, b = np.percentile(ys, [25, 75])
+                    M = b - a
+                    k = 1.5
+                    ax.set_ylim([a - k * M, b + k * M])
 
     update_labels(axes, metric_dict)
     legend.draw(group=True)
@@ -366,7 +397,7 @@ def pivot_plot(df, path, metrics, cat_key, hue_key, x_key, style_key=None, ylims
     #     df = df.drop(style_key, 1)
     #
     #     hue_order, linestyles, palette = [], [], []
-    #     for y, _linestyle in zip(style_keys, line_styles):
+    #     for y, _linestyle in zip(style_keys, LINE_STYLES):
     #         for x, hue in zip(main_keys, color_palette):
     #             hue_order += [f"{x}-{y}"]
     #             linestyles += [_linestyle]
@@ -382,11 +413,16 @@ def pivot_plot(df, path, metrics, cat_key, hue_key, x_key, style_key=None, ylims
         return None
 
     hue_index = {l: i for i, l in enumerate(sorted(df[hue_key].unique()))}
+    hue_order = df[hue_key].unique()
+    style_order = list(sorted(list(df[style_key].unique()))) if style_key is not None else None
+    legend_height = 0.5 if style_order is None else 0.3 + 0.2 * len(style_order)
     if len(categories) > 1:
-        fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(PLOT_WIDTH * ncols, PLOT_HEIGHT * (nrows+0.5)),
+        width = PLOT_TOTAL_WIDTH if PLOT_TOTAL_WIDTH is not None else PLOT_WIDTH * ncols
+        fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(width, PLOT_HEIGHT * (nrows+legend_height)),
                                  sharex='col', sharey='row' if cat_key != 'dataset' else False, dpi=DPI)
     else:
-        fig, axes = plt.subplots(nrows=1, ncols=nrows, figsize=(PLOT_WIDTH * nrows, PLOT_HEIGHT * 1.5), dpi=DPI)
+        width = PLOT_TOTAL_WIDTH if PLOT_TOTAL_WIDTH is not None else PLOT_WIDTH * nrows
+        fig, axes = plt.subplots(nrows=1, ncols=nrows, figsize=(width, 1 * PLOT_HEIGHT * (1 + legend_height) ), dpi=DPI)
 
     legend = Legend(fig)
 
@@ -409,22 +445,49 @@ def pivot_plot(df, path, metrics, cat_key, hue_key, x_key, style_key=None, ylims
                         idx = hue_index[h_key]
                         style = {'color': sns.color_palette()[idx], 'marker': MARKERS[idx]}
 
-                    # extract mean and 90 percentiles
-                    series = sub_data[[x_key, metric]].groupby(x_key).agg(['mean', 'std'])
-                    series.reset_index(inplace=True)
+                    _styles = sub_data[style_key].unique() if style_key is not None else [None]
+                    for s, s_key in enumerate(_styles):
 
-                    # area plot for CI + mean
-                    ax.fill_between(series[x_key], series[metric]['mean'] - 0.5 * series[metric]['std'],
-                                    series[metric]['mean'] + 0.5 * series[metric]['std'], color=style['color'],
-                                    alpha=0.2)
+                        if s_key is not None:
+                            sub_sub_data = sub_data[sub_data[style_key] == s_key]
+                            style['linestyle'] = LINE_STYLES[style_order.index(s_key)]
+                        else:
+                            sub_sub_data = sub_data
 
-                    ci_low = series[metric]['mean'] - 0.5 * series[metric]['std']
-                    ci_high = series[metric]['mean'] + 0.5 * series[metric]['std']
-                    capsize = 0
-                    alpha = 0.75
-                    ax.plot(series[x_key], series[metric]['mean'], label=h_key, markersize=0, alpha=alpha, **style)
-                    ax.plot(series[x_key], series[metric]['mean'], label=h_key, alpha=1, **style)
-                    plot_cis(ax, series[x_key], ci_low, ci_high, capsize=capsize, color=style['color'], alpha=alpha)
+
+                        # extract mean and 90 percentiles
+                        series = sub_sub_data[[x_key, metric]].groupby(x_key).agg(['mean', 'std'])
+                        series.reset_index(inplace=True)
+
+                        # area plot for CI + mean
+                        ax.fill_between(series[x_key], series[metric]['mean'] - 0.5 * series[metric]['std'],
+                                        series[metric]['mean'] + 0.5 * series[metric]['std'], color=style['color'],
+                                        alpha=0.2)
+
+                        ci_low = series[metric]['mean'] - 0.5 * series[metric]['std']
+                        ci_high = series[metric]['mean'] + 0.5 * series[metric]['std']
+                        capsize = 0
+                        alpha = 0.75
+                        ax.plot(series[x_key], series[metric]['mean'], label=h_key, markersize=0, alpha=alpha, **style)
+                        ax.plot(series[x_key], series[metric]['mean'], label=h_key, alpha=1, **style)
+                        plot_cis(ax, series[x_key], ci_low, ci_high, capsize=capsize, color=style['color'], alpha=alpha)
+
+
+                # if hue_key == 'estimator':
+                #     palette = [ESTIMATOR_STYLE[h_key]['color'] for h_key in hue_order]
+                # else:
+                #     palette = sns.color_palette()
+                #
+                # sns.lineplot(x=x_key, y=metric,
+                #              hue=hue_key,
+                #              hue_order=hue_order,
+                #              style=style_key,
+                #              data=cat_data,
+                #              ax=ax,
+                #              palette=palette,
+                #              alpha=0.8,
+                #              markers=True
+                #              )
 
                 # ylabel
                 ax.set_xlabel(x_key)
@@ -451,7 +514,7 @@ def pivot_plot(df, path, metrics, cat_key, hue_key, x_key, style_key=None, ylims
 
                 # if i == len(metrics) - 1 and j == len(categories) - 1:
                 #     ax.legend(title=hue_key)
-
+                # ax.get_legend().remove()
                 legend.update(ax)
 
             except Exception as ex:
@@ -462,10 +525,23 @@ def pivot_plot(df, path, metrics, cat_key, hue_key, x_key, style_key=None, ylims
                 print("--------------------------------------------------------------------------------")
                 print("\nException: ", ex, "\n")
 
+    # update legend with style labels
+    if style_order is not None and len(style_order) > 1:
+            legend.reset_linestyles()
+            legend.update_from_infos([(None, style_key)])
+            for k, label in enumerate(style_order):
+                linestyle = LINE_STYLES[k]
+                print(">>>> ", label, linestyle)
+                patch = Line2D([0], [0], color="black", linestyle=linestyle)
+                legend.update_from_infos([ (patch, label)])
+
     # update axis labels
     update_labels(axes, metric_dict, agg_fns=agg_fns)
 
-    legend.draw()
+    legend.draw(group=style_order is not None and len(style_order) > 1)
 
     plt.savefig(path)
     plt.close()
+
+
+

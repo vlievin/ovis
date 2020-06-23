@@ -148,3 +148,5 @@ gaussian-star.png
 exps/check-tvo-bernoulli.json
 
 exps/test-tvo.json
+
+make_exp.py

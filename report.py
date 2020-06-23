@@ -47,7 +47,7 @@ parser.add_argument('--counterfactuals', action='store_true',
                     help='create on run for each counterfactual record')
 parser.add_argument('--latex', action='store_true', help='print as latex table')
 parser.add_argument('--float_format', default=".2f", help='float format')
-parser.add_argument('--nsamples', default=64, type=int, help='target number of points in the line plot (downsampling)')
+parser.add_argument('--nsamples', default=0, type=int, help='target number of points in the line plot (downsampling)')
 parser.add_argument('--ema', default=0, type=float, help='exponential moving average')
 parser.add_argument('--non_completed', action='store_true', help='also keep runs that are not yet completed.')
 parser.add_argument('--max_records', default=-1, type=int,
@@ -133,7 +133,7 @@ def _parse_pivot_metric(u):
 
 
 def _get_agg_fn(agg_fn_id):
-    return {'min': np.min, 'max': np.max, 'avg': np.mean, 'mean': np.mean}[agg_fn_id]
+    return {'min': np.min, 'max': np.max, 'avg': np.mean, 'mean': np.mean, 'last': lambda x: list(x)[-1]}[agg_fn_id]
 
 
 pivot_metrics_agg_ids, pivot_metrics = zip(
@@ -156,7 +156,7 @@ print("Filters exclude", filters_exc)
 
 
 def is_filtered(exp, filters_inc, filters_exc):
-    return any([(u in exp) for u in filters_exc]) or any([(u not in exp) for u in filters_inc])
+    return any([(u in exp) for u in filters_exc]) or (filters_inc != "" and all([(u not in exp) for u in filters_inc]))
 
 
 _success_file = 'success.txt'
@@ -398,6 +398,14 @@ print(">>>> ", logs.keys())
 df['estimator'] = list(map(format_estimator_name, df['estimator'].values))
 logs['estimator'] = list(map(format_estimator_name, logs['estimator'].values))
 
+if 'warmup' in df.keys():
+    df['gamma_min'] = [1 if w == 0 else g for w,g in zip(df['warmup'].values, df['gamma_min'].values)]
+    logs['gamma_min'] = [1 if w == 0 else g for w,g in zip(logs['warmup'].values, logs['gamma_min'].values)]
+
+# handle warmup
+# if "warmup" in df.keys():
+#     df['estimator'] = [f"{e}{'-warmup' if w else ''}" for e,w in zip(df['estimator'].values, df['warmup'].values)]
+#     logs['estimator'] = [f"{e}{'-warmup' if w else ''}" for e, w in zip(logs['estimator'].values, logs['warmup'].values)]
 """
 print all results
 """
@@ -510,8 +518,8 @@ logs.to_csv(os.path.join(output_path, "curves.csv"))
 
 # plot for all auxiliary keys
 if len(opt.ylims):
-    ylims = [u.split(":") for u in opt.ylims.replace(" ", "").split(',')]
-    ylims = {u[0]: [eval(u[1]), eval(u[2])] for u in ylims}
+    ylims = [(u.split(":")[:-2],u.split(":")[-2:]) for u in opt.ylims.replace(" ", "").split(',')]
+    ylims = {":".join(u[0]) : [eval(u[1][0]), eval(u[1][1])] for u in ylims}
 else:
     ylims = {}
 
@@ -541,9 +549,9 @@ if logs[cat_key].nunique() > 0:
     _path = os.path.join(output_path, f"pivot-plot-all-level={level}-by={cat_key}-hue={main_key}.png")
     pivot_plot(df, _path, pivot_metrics, cat_key, main_key, aux_key, style_key=third_key, **meta)
 
-    if cat_key != 'dataset':
-        _path = os.path.join(output_path, f"curves-all-level={level}.png")
-        plot_logs(logs, _path, curves_metrics, main_key, ylims=ylims, style_key=aux_key, **meta)
+    # if cat_key != 'dataset':
+    #     _path = os.path.join(output_path, f"curves-all-level={level}.png")
+    #     plot_logs(logs, _path, curves_metrics, main_key, ylims=ylims, style_key=aux_key, **meta)
 
 # plot all data for each key
 level = 2
@@ -559,8 +567,8 @@ for cat in logs[cat_key].unique():
 
     logger.info(f"|- Generating merged curves plots..")
     # main plot
-    _path = os.path.join(output_path, f"{level}-curves-all-{cat_key}={cat}.png")
-    plot_logs(cat_logs, _path, curves_metrics, main_key, ylims=ylims, style_key=aux_key, **meta)
+    # _path = os.path.join(output_path, f"{level}-curves-all-{cat_key}={cat}.png")
+    # plot_logs(cat_logs, _path, curves_metrics, main_key, ylims=ylims, style_key=aux_key, **meta)
 
     if aux_key is not None:
 

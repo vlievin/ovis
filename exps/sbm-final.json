@@ -1,13 +1,12 @@
 {
   "description": "Training a 3 layers Sigmoid Belief Network with linear connections.",
   "args": [
-    "--estimator vimco",
-    "--estimator copt",
-    "--estimator copt-ess",
-    "--estimator copt-uniform-ess",
-    "--estimator copt-uniform",
+    "--estimator copt-alpha0",
+    "--estimator copt-autoalpha",
     "--estimator tvo-auto",
-    "--estimator ww"
+    "--estimator ww",
+    "--estimator vimco",
+    "--estimator copt"
   ],
   "global": "--silent --deterministic --nsteps 4000000",
   "parameters": {
@@ -16,20 +15,22 @@
     "learn_prior" : [true],
     "N": [200],
     "nlayers" :[0],
-    "depth" : [2],
-    "iw" : [100, 50, 10, 5],
+    "depth" : [3],
+    "iw" : [50, 10, 5],
     "seed":[1, 2, 3],
     "dataset" : ["binmnist"],
-    "grad_samples" : [100],
-    "iw_valid" : [5000],
-    "iw_test" : [5000],
-    "eval_freq": [10],
-    "bs": [24],
     "lr": [3e-4],
     "lr_reduce_steps":[0],
-    "valid_bs": [2],
-    "test_bs": [2],
-    "grad_bs": [20],
-    "grad_key" : ["inference_network"]
+    "bs": [24],
+    "valid_bs": [10],
+    "test_bs": [10],
+    "grad_bs": [24],
+    "grad_samples" : [100],
+    "iw_test" : [5000],
+    "iw_valid" : [5000],
+    "eval_freq": [30],
+    "max_eval": [10000],
+    "grad_key" : ["inference_network"],
+    "workers": [2]
   }
 }

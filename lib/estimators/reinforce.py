@@ -270,6 +270,7 @@ class VimcoPlus(Reinforce):
                            truncation: float = 0,
                            alpha: float = 1.0,
                            gamma: float = 1.0,
+                           only_phi: bool = False,
                            autoalpha: bool = False,
                            alpha_mu: float = 2.5,
                            alpha_sigma: float = 1.0,
@@ -280,6 +281,13 @@ class VimcoPlus(Reinforce):
                            analysis: bool = False,
                            auxiliary_samples: int = 0,
                            **kwargs):
+
+        # todo: refactor by computing d_k independendtly and cks using the paper's notation
+
+        if only_phi:
+            # log_wk = gamma * log_wk
+            L_k = torch.logsumexp(log_wk[:, :, :self.iw - auxiliary_samples], dim=2) - np.log(
+                self.iw - auxiliary_samples)
 
         if autoalpha:
             alpha = (((ess - alpha_mu) / alpha_sigma).sigmoid())[:, :, None]
@@ -300,23 +308,23 @@ class VimcoPlus(Reinforce):
         if mode == 'vimco-geometric':
             # c_k = log Z^{-k} = 1/K \sum{ l \neq k} w_l where log w_k = 1\(K-1) \sum {l \neq k} log w_l
             c_k, *_ = Vimco.compute_control_variate(self, None, arithmetic=False, log_wk=log_wk)
-            gk = L_k[:, :, None] - c_k.sum(-1) - alpha * gamma * v_k
+            gk = L_k[:, :, None] - c_k.sum(-1) - alpha * v_k
         elif mode == 'vimco':
             # c_k = log Z^{-k} = 1/K \sum{ l \neq k} w_l where w_k = 1\(K-1) \sum {l \neq k} w_l
             # g_k = log Z - c_k - v_k = log (1 - 1/K) - log(1 - v_k) - v_k
-            gk = self.log_1_m_uniform - torch.log1p(- v_k_safe) - alpha * gamma * v_k
+            gk = self.log_1_m_uniform - torch.log1p(- v_k_safe) - alpha * v_k
         elif mode == 'copt-uniform':
             # c_k = log Z^{-k} - 1/ K
             # g_k = log Z - c_k = log (1 - 1/K) - log(1 - v_k) + 1 / K - v_k
-            gk = self.log_1_m_uniform - torch.log1p(- v_k_safe) + alpha * gamma * (1 / self.iw - v_k)
+            gk = self.log_1_m_uniform - torch.log1p(- v_k_safe) + alpha * (1 / self.iw - v_k)
         elif mode == 'copt':
             # c_k = log 1/ K \sum_{l \neq k} w_l
             # g_k = log Z - c_k = - log(1-v_k) - v_k
             if auxiliary_samples == 0:
-                gk = - torch.log1p(- v_k_safe) - alpha * gamma * v_k
+                gk = self.log_1_m_uniform - torch.log1p(- v_k_safe) - alpha *  (v_k + self.log_1_m_uniform)
 
             else:
-                gk = L_k[:, :, None] - alpha * gamma * v_k
+                gk = L_k[:, :, None] - alpha * v_k
 
                 # remove the auxiliary samples
                 aux = auxiliary_samples
@@ -330,7 +338,7 @@ class VimcoPlus(Reinforce):
                 vk_ = log_wk_unbiased.softmax(-1)
                 L_k_ = torch.logsumexp(log_wk_unbiased, dim=-1) - np.log(log_wk_unbiased.size(-1))
 
-                gk_ = L_k_[:, :, :, :, None] - alpha * gamma * vk_
+                gk_ = L_k_[:, :, :, :, None] - alpha * vk_
 
                 expected_gk = gk_.diagonal(dim1=3, dim2=4).mean(2)
 
@@ -464,6 +472,7 @@ class VimcoPlus(Reinforce):
                 debug: bool = False,
                 beta=1.0,
                 gamma=1.0,
+                only_phi = False,
                 return_diagnostics: bool = True,
                 center: bool = False,
                 analysis: bool = False,
@@ -473,7 +482,7 @@ class VimcoPlus(Reinforce):
         bs = x.size(0)
         output = self.evaluate_model(model, x, **kwargs)
         log_px_z, log_pz, log_qz = [output[k] for k in ('log_px_z', 'log_pz', 'log_qz')]
-        iw_data = self.compute_iw_bound(log_px_z, log_pz, log_qz, detach_qlogits=True, beta=beta, gamma=gamma,
+        iw_data = self.compute_iw_bound(log_px_z, log_pz, log_qz, detach_qlogits=True, beta=beta, gamma=1 if only_phi else gamma ,
                                         auxiliary_samples=auxiliary_samples)
         L_k, ess, log_wk = [iw_data[k] for k in ('L_k', 'ess', 'log_wk')]
 
@@ -487,7 +496,7 @@ class VimcoPlus(Reinforce):
 
         prefactor_k, score_diagnostics = self.compute_prefactors(L_k, log_wk, ess, hk=hk, center=center,
                                                                  auxiliary_samples=auxiliary_samples,
-                                                                 gamma=gamma,
+                                                                 gamma=gamma, only_phi=only_phi,
                                                                  analysis=analysis, **kwargs)
 
         log_qz = log_qz[:, :, :prefactor_k.size(2)]

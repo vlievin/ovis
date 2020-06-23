@@ -16,7 +16,8 @@ set_style()
 parser = argparse.ArgumentParser()
 parser.add_argument('--root', default='runs/', help='experiment directory')
 parser.add_argument('--output', default='reports/', help='output directory')
-parser.add_argument('--exp', default='asymptotic-variance-final', type=str, help='experiment id')
+parser.add_argument('--exp', default='asymptotic-variance', type=str, help='experiment id')
+parser.add_argument('--filter', default='', type=str, help='filter pattern')
 parser.add_argument('--latex', action='store_true', help='print as latex table')
 parser.add_argument('--float_format', default=".2f", help='float format')
 parser.add_argument('--draw_individual', action='store_true',
@@ -62,29 +63,29 @@ for e in experiments:
 
     print(">>>>", e)
     exp_dir = os.path.join(path, e)
+    if opt.filter not in e and "data.csv" in os.listdir(exp_dir):
+        # read grads. stats.
+        e_df = pd.read_csv(os.path.join(exp_dir, "data.csv"))
+        if df is None:
+            df = e_df
+        else:
+            df = pd.concat([df, e_df])
 
-    # read grads. stats.
-    e_df = pd.read_csv(os.path.join(exp_dir, "data.csv"))
-    if df is None:
-        df = e_df
-    else:
-        df = pd.concat([df, e_df])
+        # read raw gradients
+        e_grads = pd.read_csv(os.path.join(exp_dir, "grads.csv"))
+        if grads is None:
+            grads = e_grads
+        else:
+            grads = pd.concat([grads, e_grads])
 
-    # read raw gradients
-    e_grads = pd.read_csv(os.path.join(exp_dir, "grads.csv"))
-    if grads is None:
-        grads = e_grads
-    else:
-        grads = pd.concat([grads, e_grads])
-
-    # read config
-    with open(os.path.join(exp_dir, 'config.json'), 'r') as fp:
-        conf = json.load(fp)
-        conf = pd.DataFrame([conf])
-    if configs is None:
-        configs = conf
-    else:
-        configs = pd.concat([configs, conf])
+        # read config
+        with open(os.path.join(exp_dir, 'config.json'), 'r') as fp:
+            conf = json.load(fp)
+            conf = pd.DataFrame([conf])
+        if configs is None:
+            configs = conf
+        else:
+            configs = pd.concat([configs, conf])
 
 """post-processing"""
 # infer parameters from individual configs

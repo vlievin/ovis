@@ -23,7 +23,7 @@ from lib.estimators.config import get_config
 from lib.gradients import get_gradients_statistics
 from lib.logging import sample_model, get_loggers, log_summary, save_model_and_update_best_elbo, load_model
 from lib.models import VAE, Baseline, ConvVAE, GaussianToyVAE, GaussianMixture, BernoulliToyModel, HierarchicalVae, \
-    SigmoidBeliefNetwork, AIR
+    SigmoidBeliefNetwork, AIR, GaussianVAE
 from lib.ops import training_step, test_step
 from lib.utils import notqdm, LinearSchedule
 
@@ -75,7 +75,7 @@ def parse_args():
     parser.add_argument('--warmup', default=0, type=int, help='period of the posterior warmup (Gamma : 0 -> 1)')
     parser.add_argument('--warmup_offset', default=0, type=int, help='number of steps before increasing beta')
     parser.add_argument('--warmup_mode', default='log', type=str, help='interpolation mode [linear | log]')
-    parser.add_argument('--gamma_min', default=1e-2, type=float, help='minimum gamma value')
+    parser.add_argument('--gamma_min', default=1e-1, type=float, help='minimum gamma value')
     parser.add_argument('--warmup_estimator', default='', help='estimator to use during the warm-up')
 
     # evaluation
@@ -217,7 +217,12 @@ def get_run_id(opt, counterfactual_estimators):
         if opt.gamma != 1:
             run_id += f"-gamma{opt.gamma}"
 
-    exp_id = f"{opt.exp}-{opt.estimator}-g={opt.gamma}-K={opt.iw}"
+    exp_id = f"{opt.exp}-{opt.estimator}-K={opt.iw}"
+    if opt.warmup > 0:
+        exp_id += f"-{opt.warmup_mode}-wp{opt.warmup}-{opt.gamma_min}-{opt.gamma}"
+    elif opt.gamma != 1:
+        exp_id += f"-gamma{opt.gamma}"
+
 
     return run_id, exp_id, use_baseline
 
@@ -284,6 +289,7 @@ def init_model(opt, x, xmean=None):
               'gmm-toy': GaussianMixture,
               'hierarchical': HierarchicalVae,
               'sbm': SigmoidBeliefNetwork,
+              'gaussian':GaussianVAE,
               'air': AIR}[model_id]
 
     # init the model

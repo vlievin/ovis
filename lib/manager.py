@@ -1,16 +1,18 @@
 import json
 import os
 from tinydb import TinyDB, Query  # pip install tinydb
-
+from lib.filelock import FileLock
 
 def open_db(logdir):
     _file = os.path.join(logdir, '.db.json')
+
+
 
     # sometimes the file get corrupted with trailing null bytes (\0x00)
     # remove them as an ugly and quick workaround that works in some cases
     # sometimes it still fails inconsistently: this must be due to the shared
     # file system. Using /nocbackup may solve the issue.
-    # with filelock.FileLock(get_filelock(logdir)):
+    # with FileLock(get_filelock(logdir)):
     #     with open(_file, 'r') as fp:
     #         s = fp.read()
     #

@@ -1,7 +1,7 @@
 {
   "description": "Training a 1 layer VAE with non-linnear connections and Gaussian prior.",
   "args": [
-    "--estimator pathwise-iwae",
+    "--estimator pathwise-iwae"
   ],
   "global": "--silent --deterministic --nsteps 4000000",
   "parameters": {

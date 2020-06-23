@@ -73,7 +73,7 @@ class ThermoVariationalObjective(VariationalInference):
         # self.register_buffer("partitions", torch.tensor(partitions, dtype=torch.float))
 
     def compute_loss(self, log_px_z: Tensor, log_pzs: List[Tensor], log_qzs: List[Tensor], integration: str = 'left',
-                     num_partition=2, partition_type='log', log_beta_min=-10, partition_name=None, **kwargs: Any) -> \
+                     num_partition=2, partition_type='log', log_beta_min=-10, partition_name=None, gamma=1, **kwargs: Any) -> \
             Dict[str, Tensor]:
         """
         Computes the covariance gradient estimator for the TVO bound.
@@ -111,16 +111,17 @@ class ThermoVariationalObjective(VariationalInference):
             elif partition_name == 'config2':
                 # figure 6 in the TVO paper
                 if self.iw < 10:
-                    beta_min = 1e-2
+                    beta_min = 0.01
                 elif self.iw < 30:
-                    beta_min = 2e-2
+                    beta_min = 0.02
                 else:
-                    beta_min = 3e-2
+                    beta_min = 0.03
             else:
                 raise ValueError(f"Unknown partition_name = `{partition_name}`")
 
 
             log_beta_min = torch.tensor(beta_min, device=log_px_z.device).log10()
+
 
         partition = get_partition(num_partition, partition_type, log_beta_min=log_beta_min, device=log_px_z.device)
         num_particles = self.iw

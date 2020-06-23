@@ -71,6 +71,9 @@ class VariationalInference(Estimator):
         L_k = torch.logsumexp(log_wk[:, :, :self.iw - auxiliary_samples], dim=2) - np.log(
             self.iw - auxiliary_samples)  # self.log_iw
 
+        # L_K(gamma)
+        L_k = L_k / gamma
+
         # elbo
         elbo = torch.mean(log_wk, dim=2)
 

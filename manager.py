@@ -13,7 +13,7 @@ from multiprocessing import Pool
 import GPUtil
 from tqdm import tqdm
 
-from lib.filelock import FileLock  # pip installl git+https://github.com/dmfrey/FileLock.git
+from lib.filelock import FileLock
 from lib.manager import open_db, snapshot_dir, read_experiment, get_abs_paths, get_filelock
 
 """

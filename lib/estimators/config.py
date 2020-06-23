@@ -70,11 +70,12 @@ def get_config(estimator):
             autoalpha = "-autoalpha" in estimator
             center = '-center' in estimator
             biased = '-biased' in estimator
+            only_phi = "-onlyphi" in estimator
 
             Estimator = AirReinforce if "air-" in estimator else VimcoPlus
             config = {'mode': mode, 'alpha': alpha, 'truncation': trunc, 'autoalpha': autoalpha,
                       'handle_low_ess': handle_low_ess, 'center': center, 'biased': biased,
-                      'auxiliary_samples': auxiliary_samples,
+                      'auxiliary_samples': auxiliary_samples, 'only_phi': only_phi,
                       'use_second_largest': use_second_largest, **reinforce_args}
 
         # keep legacy test if other tests are needed
