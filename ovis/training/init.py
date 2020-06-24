@@ -1,30 +1,12 @@
 import torch
-from torch import Tensor
-from torch.optim import SGD, Adam
+from torch.optim import SGD, Adam, Adamax, RMSprop
 
-from ovis import VAE, BernoulliToyModel, GaussianToyVAE, GaussianMixture, SigmoidBeliefNetwork, GaussianVAE, Baseline, \
-    VariationalInference
+from ovis import VAE, GaussianToyVAE, GaussianMixture, SigmoidBeliefNetwork, GaussianVAE, Baseline, VariationalInference
 from ovis.estimators.config import get_config
+from .utils import get_dataset_mean
 
-
-def get_dataset_mean(loader_train):
-    """Compute the mean over the dataset, this is used to initialize SBMs"""
-    _xmean = None
-    _n = 0.
-    for x in loader_train:
-        if not isinstance(x, Tensor):
-            x, *_ = x
-
-        k, m = x.size(0), x.sum(0)
-        _n += k
-        if _xmean is None:
-            _xmean = m / k
-        else:
-            _xmean += (m - k * _xmean) / _n
-    return _xmean.unsqueeze(0)
 
 def init_model(opt, x, loader=None):
-
     # compute mean value of train set
     xmean = None if loader is None else get_dataset_mean(loader)
 
@@ -41,8 +23,7 @@ def init_model(opt, x, loader=None):
         'prior': opt.prior,
         'normalization': opt.norm,
         'dropout': opt.dropout,
-        'x_mean': xmean,
-        'skip': opt.skip
+        'x_mean': xmean
     }
 
     # change the model id based on the chosen dataset if required
@@ -59,7 +40,8 @@ def init_model(opt, x, loader=None):
 
     # init the model
     torch.manual_seed(opt.seed)
-    return _MODEL(**hyperparams)
+    model = _MODEL(**hyperparams)
+    return model, hyperparams
 
 
 def init_neural_baseline(opt, x):

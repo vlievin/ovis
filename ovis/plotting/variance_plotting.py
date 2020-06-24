@@ -20,9 +20,8 @@ def get_outliers_boundaries(values, k=1.5):
     return [a - k * (b - a), b + k * (b - a)]
 
 
-def evaluate(estimator, model, x, config, seed, base_logger, desc):
+def evaluate(estimator, model, x, config, base_logger, desc):
     print(_sep)
-    torch.manual_seed(seed)
     loss, diagnostics, output = estimator(model, x, backward=False, **config)
     base_logger.info(
         f"{desc} | L_{estimator.iw} = {diagnostics['loss']['elbo'].mean().item():.6f}, "

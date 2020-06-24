@@ -5,10 +5,10 @@ from ovis.analysis.gradients import get_gradients_statistics
 from ovis.training.ops import test_step
 from ovis.training.utils import preprocess
 from ovis.utils.utils import ManualSeed
-from run import train_logger, exp_id, tqdm
+from tqdm import tqdm
 
 
-def perform_gradients_analysis(opt, global_step, writer_train, loader_train, model, estimator, config):
+def perform_gradients_analysis(opt, global_step, writer_train, train_logger, loader_train, model, estimator, config, exp_id):
     """
     Perform the gradients analysis for the main estimator and the counterfactual estimators if available
     """
@@ -41,12 +41,12 @@ def perform_gradients_analysis(opt, global_step, writer_train, loader_train, mod
 
 
 @torch.no_grad()
-def evaluation(model, estimator, config, loader, exp_id, device='cpu', ref_summary=None, max_eval=None):
+def evaluation(model, estimator, config, loader, exp_id, device='cpu', ref_summary=None, max_eval=None, tqdm=tqdm):
     """evaluation epoch to estimate the marginal log-likelihood: L_K \approx log \hat{p(x)}, K -> \infty"""
     k = 0
     model.eval()
     agg = Aggregator()
-    for batch in tqdm(loader, desc=f"{exp_id}-K={estimator.iw}-M={estimator.mc}-eval"):
+    for batch in tqdm(loader, desc=f"{exp_id}-eval"):
         x, y = preprocess(batch, device)
         diagnostics = test_step(x, model, estimator, y=y, **config)
         agg.update(diagnostics)

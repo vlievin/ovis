@@ -1,7 +1,7 @@
 import argparse
 import json
 import os
-import socket
+import pickle
 import traceback
 
 import numpy as np
@@ -22,7 +22,8 @@ from ovis.training.init import init_model, init_neural_baseline, init_main_estim
 from ovis.training.logging import sample_model, get_loggers, log_summary, save_model_and_update_best_elbo, load_model, \
     init_logging_directory
 from ovis.training.ops import training_step, test_step
-from ovis.training.utils import get_run_id, get_dataset_mean, get_number_of_epochs, preprocess
+from ovis.training.session import Session
+from ovis.training.utils import get_run_id, get_number_of_epochs, preprocess
 from ovis.utils.utils import notqdm, Schedule, ManualSeed
 
 
@@ -137,9 +138,7 @@ if __name__ == '__main__':
 
     # save run configuration to the log directory
     with open(os.path.join(logdir, 'config.json'), 'w') as fp:
-        _opt = vars(opt)
-        _opt['hostname'] = socket.gethostname()
-        fp.write(json.dumps(_opt, default=lambda x: str(x), indent=4))
+        fp.write(json.dumps(vars(opt), default=lambda x: str(x), indent=4))
 
     # wrap the training loop inside a try/except so we can write potential errors to a file.
     try:
@@ -155,7 +154,7 @@ if __name__ == '__main__':
         torch.manual_seed(opt.seed)
         np.random.seed(opt.seed)
 
-        # get datasets (ony use training sets if `opt.only_train_set`)
+        # get datasets (ony use training sets if `opt.only_train_set == True`)
         dset_train, dset_valid, dset_test = get_datasets(opt)
         base_logger.info(f"Dataset size: train = {len(dset_train)}, valid = {len(dset_valid)}, test = {len(dset_test)}")
 
@@ -173,18 +172,18 @@ if __name__ == '__main__':
         if not isinstance(x, Tensor):
             x, *_ = x
         base_logger.info(
-            f"Sample: x.shape = {x.shape}, x.min = {x.min():.1f}, x.max = {x.max():.1f}, "
-            f"x.mean = {mean_over_dset.mean():1f}, x.dtype = {x.dtype}")
+            f"Sample: x.shape = {x.shape}, x.min = {x.min():.1f}, x.max = {x.max():.1f}, x.dtype = {x.dtype}")
 
-        model = init_model(opt, x, loader_train)
-        base_logger.info(f"Number of parameters = {sum(p.numel() for p in model.parameters()):.3E}")
+        model, hyperparameters = init_model(opt, x, loader_train)
+        # save hyper parameters for easy loading
+        pickle.dump(hyperparameters, open(os.path.join(logdir, "hyperparameters.pkl"), "wb"))
 
         print(logging_sep("="))
-        print("Parameters")
+        print(f"Parameters ({sum(p.numel() for p in model.parameters()):.3E})")
         print(logging_sep())
         for k, v in model.named_parameters():
             base_logger.info(f"{k} : N = {v.numel()}, mean = {v.mean().item():.3f}, std = {v.std().item():.3f}")
-        print(logging_sep())
+        print(logging_sep("="))
 
         # define a neural baseline that can be used for the different estimators
         baseline = init_neural_baseline(opt, x) if use_baseline else None
@@ -203,18 +202,18 @@ if __name__ == '__main__':
         # define the optimizer for the model's parameters and the training estimator's parameters if any (baseline)
         optimizers = init_optimizers(opt, model, estimator)
 
-        # Deterministic warmup
-        scheduler = Schedule(opt.warmup, opt.gamma_min, opt.gamma,
-                             offset=opt.warmup_offset, mode=opt.warmup_mode) \
-            if opt.warmup > 0 \
-            else lambda x: opt.gamma
+        # Rényi warmup
+        if opt.warmup > 0:
+            scheduler = Schedule(opt.warmup, opt.gamma_min, opt.gamma, offset=opt.warmup_offset, mode=opt.warmup_mode)
+        else:
+            scheduler = lambda x: opt.gamma
 
         # tensorboard writers used to log the summary
         writer_train = SummaryWriter(os.path.join(logdir, 'train'))
         writer_test = SummaryWriter(os.path.join(logdir, 'test'))
 
-        # define the run length based on either
-        epochs, iter_per_epoch = get_number_of_epochs(opt)
+        # define the run length based on either the number of epochs of number of steps
+        epochs, iter_per_epoch = get_number_of_epochs(opt, loader_train)
         base_logger.info(f"Dataset = {opt.dataset}: running for {epochs} epochs,"
                          f" {iter_per_epoch * epochs} steps, {iter_per_epoch} steps / epoch, {epochs // opt.eval_freq} eval. steps")
         print(logging_sep())
@@ -222,38 +221,52 @@ if __name__ == '__main__':
         # sample model at initialization
         sample_model("prior-sample", model, logdir, global_step=0, writer=writer_test, seed=opt.seed)
 
-        # run
-        best_elbo = (-1e20, 0, 0)
-        global_step = 0
+        # define the session and restore checkpoint if available
+        session = Session(run_id, logdir, model, optimizers)
+        session.restore_if_available()
 
-        for epoch in range(1, epochs + 1):
+        # run
+        while session.epoch < epochs:
+            session.epoch += 1
 
             """training epoch"""
             [o.zero_grad() for o in optimizers]
             model.train()
-            for batch in tqdm(loader_train, desc=f"{exp_id}-K={estimator.iw}-M={estimator.mc}-training"):
-                gamma = scheduler(global_step)
+            for batch in tqdm(loader_train, desc=f"{exp_id}-training"):
+                gamma = scheduler(session.global_step)
                 x, y = preprocess(batch, device)
                 training_step(x, model, estimator, optimizers, y=y, return_diagnostics=False, gamma=gamma, **config)
-                global_step += 1
+                session.global_step += 1
 
-            if epoch % opt.eval_freq == 0:
+            """reduce learning rate"""
+            if opt.lr_reduce_steps > 0:
+                lr_freq = (epochs // (opt.lr_reduce_steps + 1))
+                if session.epoch % lr_freq == 0:
+                    for o in optimizers:
+                        for i, param_group in enumerate(o.param_groups):
+                            lr = param_group['lr']
+                            new_lr = lr / 2
+                            param_group['lr'] = new_lr
+                            base_logger.info(f"Reducing lr, group = {i} : {lr:.2E} -> {new_lr:.2E}")
+
+            if session.epoch % opt.eval_freq == 0:
                 parameters_diagnostics = {'parameters': {'beta': config.get('beta', 1.), 'gamma': gamma}}
 
                 """Active Units Analysis"""
                 if opt.mc_au_analysis:
                     summary = Diagnostic(latent_activations(model, loader_eval_train, opt.mc_au_analysis,
                                                             nsamples=opt.npoints_au_analysis))
-                    summary.log(writer_train, global_step)
+                    summary.log(writer_train, session.global_step)
 
                 """Analyse Gradients"""
                 if opt.grad_samples > 0:
                     print(logging_sep())
-                    perform_gradients_analysis(opt, global_step, writer_train, loader_train, model, estimator, config)
+                    perform_gradients_analysis(opt, session.global_step, writer_train, train_logger, loader_train,
+                                               model, estimator, config, exp_id)
 
                 """Estimate the ESS"""
                 summary_train_ess = evaluation(model, estimator_test_ess, config_test, loader_eval_train, exp_id,
-                                               device=device, ref_summary=None, max_eval=1000)
+                                               device=device, ref_summary=None, max_eval=1000, tqdm=tqdm)
 
                 """Eval on the train set and logging"""
                 if opt.only_train_set:
@@ -263,47 +276,42 @@ if __name__ == '__main__':
                     # seed evaluation such that the subset of `opt.max_eval` data points remains the same
                     with ManualSeed(seed=opt.seed):
                         summary_train = evaluation(model, estimator_test, config_test, loader_eval_train, exp_id,
-                                                   device=device, ref_summary=None, max_eval=opt.max_eval)
+                                                   device=device, ref_summary=None, max_eval=opt.max_eval, tqdm=tqdm)
 
                     summary_train['loss']['ess'] = summary_train_ess['loss']['ess']
 
                 # log train summary to console and tensorboard
                 summary_train.update(parameters_diagnostics)
-                log_summary(summary_train, global_step, epoch, logger=train_logger, best=None, writer=writer_train,
+                log_summary(summary_train, session.global_step, session.epoch, logger=train_logger, best=None,
+                            writer=writer_train,
                             exp_id=exp_id)
 
                 """evaluation on the test set and logging"""
                 summary_test = evaluation(model, estimator_test, config_test, loader_eval_test, exp_id, device=device,
-                                          ref_summary=summary_train, max_eval=opt.max_eval)
+                                          ref_summary=summary_train, max_eval=opt.max_eval, tqdm=tqdm)
 
                 # update best elbo and save model
-                best_elbo = save_model_and_update_best_elbo(model, summary_test, global_step,
-                                                            epoch, best_elbo, logdir)
+                session.best_elbo = save_model_and_update_best_elbo(model, summary_test, session.global_step,
+                                                                    session.epoch, session.best_elbo, logdir)
 
                 # log marginal test summary to console and tensorboar
                 summary_test.update(parameters_diagnostics)
-                log_summary(summary_test, global_step, epoch, logger=test_logger, best=best_elbo,
+                log_summary(summary_test, session.global_step, session.epoch, logger=test_logger,
+                            best=session.best_elbo,
                             writer=writer_test,
                             exp_id=exp_id)
 
                 """sample model"""
-                sample_model("prior-sample", model, logdir, global_step=global_step, writer=writer_test, seed=opt.seed)
+                sample_model("prior-sample", model, logdir, global_step=session.global_step, writer=writer_test,
+                             seed=opt.seed)
                 print(logging_sep())
 
-            """reduce learning rate"""
-            if opt.lr_reduce_steps > 0:
-                lr_freq = (epochs // (opt.lr_reduce_steps + 1))
-                if epoch % lr_freq == 0:
-                    for o in optimizers:
-                        for i, param_group in enumerate(o.param_groups):
-                            lr = param_group['lr']
-                            new_lr = lr / 2
-                            param_group['lr'] = new_lr
-                            base_logger.info(f"Reducing lr, group = {i} : {lr:.2E} -> {new_lr:.2E}")
+                """Checkpointing"""
+                session.save()
 
         """final testing given the parameters from the best test score"""
         print(f"{logging_sep()}\nFinal validation with best test "
-              f"L_{opt.iw_test} = {best_elbo[0]:.3f} at step {best_elbo[1]}, epoch = {best_elbo[2]}\n{logging_sep()}")
+              f"L_{opt.iw_test} = {session.best_elbo[0]:.3f} at step {session.best_elbo[1]}, epoch = {session.best_elbo[2]}\n{logging_sep()}")
 
         writer_valid = SummaryWriter(os.path.join(logdir, 'valid'))
         loader_valid = DataLoader(dset_valid, batch_size=opt.test_bs, shuffle=True, num_workers=1)
@@ -325,7 +333,7 @@ if __name__ == '__main__':
             summary = agg.data.to('cpu')
 
         # log
-        _, global_step, epoch = best_elbo
+        _, global_step, epoch = session.best_elbo
         log_summary(summary, global_step, epoch, logger=valid_logger, best=None, writer=writer_valid, exp_id=exp_id)
 
         # write outcome to a file (success, interrupted, error)

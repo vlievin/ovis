@@ -8,7 +8,7 @@ import pandas as pd
 
 from ovis.training.logging import get_loggers
 from ovis.models import GaussianToyVAE
-from ovis.utils import notqdm
+from ovis.utils.utils import notqdm, ManualSeed
 from ovis.plotting.variance_plotting import *
 from ovis.plotting.style import format_estimator_name
 
@@ -146,7 +146,8 @@ try:
     x = model.dset
 
     # evaluate model
-    diagnostics = evaluate(estimator_ref, model, x, config_ref, opt.seed, base_logger, "Before perturbation")
+    with ManualSeed(seed=opt.seed):
+        diagnostics = evaluate(estimator_ref, model, x, config_ref, base_logger, "Before perturbation")
 
     data = []
     grads = []
