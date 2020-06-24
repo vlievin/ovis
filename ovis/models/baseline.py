@@ -1,7 +1,7 @@
 import numpy as np
 from torch import nn
 
-from ..utils import *
+from ..utils.utils import flatten
 
 
 class Baseline(nn.Module):

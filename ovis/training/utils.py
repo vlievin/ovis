@@ -1,11 +1,25 @@
 import sys
-
+from copy import copy
 from torch import Tensor
 
 
 def get_run_id(opt):
     """define a unique identifier given on the parsed config"""
-    exp_id = "-".join(sys.argv).replace("--", "").replace("run.py-", "")
+    args = copy(sys.argv)
+
+    # filter args
+    for a in ["--root", "--data_root", "--workers", "--epochs", "--nsteps"]:
+        if a in args:
+            i = args.index(a)
+            del args[i]
+            del args[i]  # remove next element as well (value)
+
+    for a in ["--rm", "--silent", "--sequential_computation", "--test_sequential_computation"]:
+        if a in args:
+            i = args.index(a)
+            del args[i]
+
+    exp_id = "-".join(args).replace("--", "").replace("run.py-", "")
     use_baseline = '-baseline' in opt.estimator
     run_id = f"{opt.dataset}-{opt.model}-{opt.estimator}-seed{opt.seed}-{exp_id}"
     return run_id, exp_id, use_baseline

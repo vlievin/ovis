@@ -1,5 +1,4 @@
 from torch import softmax
-
 from .vi import *
 
 

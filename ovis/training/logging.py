@@ -83,7 +83,7 @@ def save_model_and_update_best_elbo(model, eval_summary, global_step, epoch, bes
     prev_elbo, *_ = best_elbo
     if elbo > prev_elbo:
         best_elbo = (elbo, global_step, epoch)
-        pth = os.path.join(logdir, "model.pt")
+        pth = os.path.join(logdir, "model.pth")
         torch.save(model.state_dict(), pth)
 
     return best_elbo
@@ -91,7 +91,7 @@ def save_model_and_update_best_elbo(model, eval_summary, global_step, epoch, bes
 
 def load_model(model, logdir):
     device = next(iter(model.parameters())).device
-    model.load_state_dict(torch.load(os.path.join(logdir, "model.pt"), map_location=device))
+    model.load_state_dict(torch.load(os.path.join(logdir, "model.pth"), map_location=device))
 
 
 def init_logging_directory(opt, run_id):

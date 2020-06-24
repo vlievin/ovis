@@ -126,11 +126,7 @@ if __name__ == '__main__':
     if opt.silent:
         tqdm = notqdm
 
-    if opt.model == 'bernoulli_toy' or opt.dataset == 'bernoulli_toy':
-        assert opt.model == 'bernoulli_toy'
-        assert opt.bs == 1 and opt.valid_bs == 1 and opt.test_bs == 1
-
-    # defining the run identifier
+    # defining the run identifiers
     run_id, exp_id, use_baseline = get_run_id(opt)
 
     # defining the run directory
@@ -164,8 +160,7 @@ if __name__ == '__main__':
         # evaluation loaders
         loader_eval_train = DataLoader(dset_train, batch_size=opt.test_bs, shuffle=True, num_workers=1,
                                        pin_memory=False)
-        loader_eval_test = DataLoader(dset_test, batch_size=opt.test_bs, shuffle=True, num_workers=1,
-                                      pin_memory=False)
+        loader_eval_test = DataLoader(dset_test, batch_size=opt.test_bs, shuffle=True, num_workers=1, pin_memory=False)
 
         # get a sample to evaluate the input shape
         x = dset_train[0]
@@ -222,7 +217,7 @@ if __name__ == '__main__':
         sample_model("prior-sample", model, logdir, global_step=0, writer=writer_test, seed=opt.seed)
 
         # define the session and restore checkpoint if available
-        session = Session(run_id, logdir, model, optimizers)
+        session = Session(run_id, logdir, model, estimator, optimizers)
         session.restore_if_available()
 
         # run
