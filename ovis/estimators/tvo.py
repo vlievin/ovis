@@ -27,50 +27,40 @@ def get_partition(num_partitions, partition_type, log_beta_min=-10,
             partition[1:] = torch.logspace(
                 log_beta_min, 0, steps=num_partitions, device=device,
                 dtype=torch.float)
+        else:
+            raise ValueError(f"Unknown TVO partition type `{partition_type}`")
     return partition
 
 
 class ThermoVariationalObjective(VariationalInference):
     """
-    Thermovariational Inference. Based on https://arxiv.org/pdf/1907.00031.pdf / https://github.com/vmasrani/tvo
-    Currently implemed for discrete VAEs.
-
+    The Thermodynamic Variational Inference https://arxiv.org/pdf/1907.00031.pdf / https://github.com/vmasrani/tvo
     """
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        assert self.mc == 1
-
     def compute_loss(self, log_px_z: Tensor, log_pzs: List[Tensor], log_qzs: List[Tensor], integration: str = 'left',
-                     num_partition=2, partition_type='log', log_beta_min=-10, partition_name=None, gamma=1, **kwargs: Any) -> \
+                     num_partition=2, partition_type='log', log_beta_min=-10, partion_id=None, **kwargs: Any) -> \
             Dict[str, Tensor]:
         """
         Computes the covariance gradient estimator for the TVO bound.
 
-         TVO = Delta_beto_0 ELBO + sum_{i=1..K-1} Delta_beta_k E_{pi_{beta_k]}}( f(x,z) )], f(x,z) = log p(x,z) - log q(z | x)
+         TVO = Delta_beta_0 ELBO + sum_{i=1..K-1} Delta_beta_k E_{pi_{beta_k]}}( f(x,z) )], f(x,z) = log p(x,z) - log q(z | x)
 
          Gradient estimator, eq. 11:
          Nabla E_{pi_{beta_k]}}( f(x,z) )] = E_{pi_{beta_k]}}( Nabla f(x,z) )] + Cov( Nabla log tilde{pi}(z), f(z) )
 
-         In this expression the KLs are concatenated by stochastic layer so the freebits can be applied to each of them.
-
         :param log_px_z: log p(x | z) of shape [bs * mc * iw]
-        :param log_pzs: [log p(z_i | *) l=1..L], each of of shape [bs * mc * iw, N_i]
-        :param log_qzs: [log q(z_i | *) l=1..L], each of of shape [bs * mc * iw, N_i]
-
-        :param partition: selected partition of [0, 1];
-            tensor of shape [num_partitions + 1] where partition[0] is zero and
-            partition[-1] is one;
-
-        :param num_particles: int; number of samples S in importance sampling of expectations
+        :param log_pzs: [log p(z_i | *) l=1..L], each of of shape [bs * mc * iw, N_i] (one value per stochastic layer)
+        :param log_qzs: [log q(z_i | *) l=1..L], each of of shape [bs * mc * iw, N_i] (one value per stochastic layer)
         :param integration: type of integral approximation (Riemann sum); left, right or trapz
-        :return: dictionary with outputs [tvo, elbo, kl, log_f_x,z, N_eff]
+        :param num_partition: partition size
+        :param log_beta_min: log beta_1 in base 10
+        :param partion_id: infer beta_1 based on the the number of particles K [None, config1, config2]
+        :return: dictionary with keys [tvo, *iw_data]
         """
 
-        if partition_name is not None:
+        if partion_id is not None:
             # map K to a partition accordingly to the figure 3. in the TVO paper
-            if partition_name == 'config1':
+            if partion_id == 'config1':
                 # figure 3 in the TVO paper
                 if self.iw < 10:
                     beta_min = 5e-2
@@ -78,7 +68,7 @@ class ThermoVariationalObjective(VariationalInference):
                     beta_min = 2e-1
                 else:
                     beta_min = 3e-1
-            elif partition_name == 'config2':
+            elif partion_id == 'config2':
                 # figure 6 in the TVO paper
                 if self.iw < 10:
                     beta_min = 0.01
@@ -87,7 +77,7 @@ class ThermoVariationalObjective(VariationalInference):
                 else:
                     beta_min = 0.03
             else:
-                raise ValueError(f"Unknown partition_name = `{partition_name}`")
+                raise ValueError(f"Unknown partition_name = `{partion_id}`")
 
 
             log_beta_min = torch.tensor(beta_min, device=log_px_z.device).log10()
@@ -153,7 +143,7 @@ class ThermoVariationalObjective(VariationalInference):
 
         if self.sequential_computation:
             # warning: here only one `output` will be returned
-            output = self._sequential_evaluation(model, x, **kwargs)
+            output = self.sequential_evaluation(model, x, **kwargs)
         else:
             output = self.evaluate_model(model, x, **kwargs)
 
@@ -169,10 +159,10 @@ class ThermoVariationalObjective(VariationalInference):
         if return_diagnostics:
             diagnostics.update({
                 'loss': {'loss': loss,
-                         **self._loss_diagnostics(**tvo_data, **output)}
+                         **self.base_loss_diagnostics(**tvo_data, **output)}
             })
 
-            diagnostics.update(self._diagnostics(output))
+            diagnostics.update(self.additional_diagnostics(output))
 
         if backward:
             loss.mean().backward()

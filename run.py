@@ -7,7 +7,7 @@ import traceback
 import numpy as np
 import torch
 from booster import Aggregator, Diagnostic
-from booster.utils import logging_sep
+from booster.utils import logging_sep, available_device
 from torch import Tensor
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
@@ -70,12 +70,12 @@ def parse_args():
     parser.add_argument('--mc', default=1, type=int, help='number of Monte-Carlo samples')
     parser.add_argument('--iw', default=1, type=int, help='number of Importance-Weighted samples')
     parser.add_argument('--beta', default=1.0, type=float, help='Beta weight for the KL term (i.e. Beta-VAE)')
-    parser.add_argument('--gamma', default=1.0, type=float,
-                        help='Gamma weight for the unormalized weights: log w_k^gamma')
-    parser.add_argument('--warmup', default=0, type=int, help='period of the posterior warmup (Gamma : 0 -> 1)')
+    parser.add_argument('--alpha', default=0, type=float,
+                        help='alpha weight for the unormalized weights: log w_k^alpha')
+    parser.add_argument('--warmup', default=0, type=int, help='period of the posterior warmup (alpha : 0 -> 1)')
     parser.add_argument('--warmup_offset', default=0, type=int, help='number of steps before increasing beta')
     parser.add_argument('--warmup_mode', default='log', type=str, help='interpolation mode [linear | log]')
-    parser.add_argument('--gamma_min', default=1e-1, type=float, help='minimum gamma value')
+    parser.add_argument('--alpha_min', default=1 - 1e-1, type=float, help='minimum alpha value')
 
     # evaluation
     parser.add_argument('--eval_freq', default=10, type=int, help='frequency for the evaluation [test set + grads]')
@@ -93,7 +93,7 @@ def parse_args():
     # gradients analysis
     parser.add_argument('--grad_samples', default=100, type=int,
                         help='number of samples used to evaluate the variance.')
-    parser.add_argument('--grad_key', default='tensor:qlogits', type=str,
+    parser.add_argument('--grad_key', default='inference_network', type=str,
                         help='identifiant of the parameters/tensor for the gradients analysis')
 
     # model architecture
@@ -105,10 +105,9 @@ def parse_args():
     parser.add_argument('--b_nlayers', default=1, type=int, help='number of hidden layers for the baseline')
     parser.add_argument('--norm', default='none', type=str, help='normalization layer [none | layernorm | batchnorm]')
     parser.add_argument('--dropout', default=0, type=float, help='dropout value')
-    parser.add_argument('--prior', default='categorical',
-                        help='family of the prior distribution : [categorcial | normal]')
+    parser.add_argument('--prior', default='normal', help='prior for the VAE model [normal, categorical, bernoulli]')
     parser.add_argument('--N', default=8, type=int, help='number of latent variables')
-    parser.add_argument('--K', default=8, type=int, help='number of categories for each latent variable')
+    parser.add_argument('--K', default=8, type=int, help='number of categories when using a categorical prior')
     parser.add_argument('--kdim', default=0, type=int, help='dimension of the keys for each latent variable')
     parser.add_argument('--learn_prior', action='store_true', help='learn the prior')
 
@@ -127,7 +126,7 @@ if __name__ == '__main__':
         tqdm = notqdm
 
     # defining the run identifiers
-    run_id, exp_id, use_baseline = get_run_id(opt)
+    run_id, exp_id = get_run_id(opt)
 
     # defining the run directory
     logdir = init_logging_directory(opt, run_id)
@@ -181,7 +180,7 @@ if __name__ == '__main__':
         print(logging_sep("="))
 
         # define a neural baseline that can be used for the different estimators
-        baseline = init_neural_baseline(opt, x) if use_baseline else None
+        baseline = init_neural_baseline(opt, x) if '-baseline' in opt.estimator else None
 
         # training estimator
         estimator, config = init_main_estimator(opt, baseline)
@@ -190,7 +189,7 @@ if __name__ == '__main__':
         estimator_test, estimator_test_ess, config_test = init_test_estimator(opt)
 
         # get device and move models
-        device = "cuda:0" if torch.cuda.device_count() else "cpu"
+        device = available_device()
         model.to(device)
         estimator.to(device)
 
@@ -199,9 +198,9 @@ if __name__ == '__main__':
 
         # Rényi warmup
         if opt.warmup > 0:
-            scheduler = Schedule(opt.warmup, opt.gamma_min, opt.gamma, offset=opt.warmup_offset, mode=opt.warmup_mode)
+            scheduler = Schedule(opt.warmup, opt.alpha_min, opt.alpha, offset=opt.warmup_offset, mode=opt.warmup_mode)
         else:
-            scheduler = lambda x: opt.gamma
+            scheduler = lambda x: opt.alpha
 
         # tensorboard writers used to log the summary
         writer_train = SummaryWriter(os.path.join(logdir, 'train'))
@@ -228,9 +227,9 @@ if __name__ == '__main__':
             [o.zero_grad() for o in optimizers]
             model.train()
             for batch in tqdm(loader_train, desc=f"{exp_id}-training"):
-                gamma = scheduler(session.global_step)
+                alpha = scheduler(session.global_step)
                 x, y = preprocess(batch, device)
-                training_step(x, model, estimator, optimizers, y=y, return_diagnostics=False, gamma=gamma, **config)
+                training_step(x, model, estimator, optimizers, y=y, return_diagnostics=False, alpha=alpha, **config)
                 session.global_step += 1
 
             """reduce learning rate"""
@@ -245,7 +244,7 @@ if __name__ == '__main__':
                             base_logger.info(f"Reducing lr, group = {i} : {lr:.2E} -> {new_lr:.2E}")
 
             if session.epoch % opt.eval_freq == 0:
-                parameters_diagnostics = {'parameters': {'beta': config.get('beta', 1.), 'gamma': gamma}}
+                parameters_diagnostics = {'parameters': {'beta': config.get('beta', 1.), 'alpha': alpha}}
 
                 """Active Units Analysis"""
                 if opt.mc_au_analysis:

@@ -1,9 +1,12 @@
 import torch
+from ..utils.utils import prod
 
 class FreeBits():
     """
-    free bits: https://arxiv.org/abs/1606.04934
+    freebits: https://arxiv.org/abs/1606.04934
     Assumes a each of the dimension to be one group
+    warnings: this implementation differs from the original implementation as freebits are here applied independently
+    to each datapoint.
     """
 
     def __init__(self, min_KL: float):

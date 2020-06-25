@@ -20,9 +20,8 @@ def get_run_id(opt):
             del args[i]
 
     exp_id = "-".join(args).replace("--", "").replace("run.py-", "")
-    use_baseline = '-baseline' in opt.estimator
     run_id = f"{opt.dataset}-{opt.model}-{opt.estimator}-seed{opt.seed}-{exp_id}"
-    return run_id, exp_id, use_baseline
+    return run_id, exp_id
 
 
 def get_number_of_epochs(opt, loader_train):

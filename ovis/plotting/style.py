@@ -34,10 +34,10 @@ PLOT_HEIGHT = 3#2.5
 STEP_FORMAT = '{x:.0e}'
 
 ESTIMATOR_STYLE = {
-    'copt-alpha0': {'color': "#E6C445", 'marker': ">", 'linestyle': "-"},
-    'copt-alpha1': {'color': "#B88A25", 'marker': "<", 'linestyle': "-"},
+    'ovis-gamma1': {'color': "#E6C445", 'marker': ">", 'linestyle': "-"},
+    'ovis-gamma0': {'color': "#B88A25", 'marker': "<", 'linestyle': "-"},
     'copt-aux1': {'color': "#E89C66", 'marker': "^", 'linestyle': ":"},
-    'copt-aux10': {'color': "#D15C2A", 'marker': "^", 'linestyle': "-"},
+    'ovis-S10': {'color': "#D15C2A", 'marker': "^", 'linestyle': "-"},
     'copt-aux50': {'color': "#954026", 'marker': "^", 'linestyle': "-"},
     'copt-aux100': {'color': "#954026", 'marker': "^", 'linestyle': "-"},
     'reinforce': {'color': "#7A9396", 'marker': "o", 'linestyle': "-"},
@@ -50,12 +50,12 @@ ESTIMATOR_STYLE = {
 
 
 ESTIMATOR_ORDER = [
-    'copt-aux100',
-    'copt-aux50',
-    'copt-aux10',
-    'copt-aux1',
-    'copt-alpha1',
-    'copt-alpha0',
+    'ovis-S100',
+    'ovis-S50',
+    'ovis-S10',
+    'ovis-S1',
+    'ovis-gamma0',
+    'ovis-gamma1',
     'vimco',
     'vimco-arithmetic',
     'vimco-geometric',
@@ -66,12 +66,12 @@ ESTIMATOR_ORDER = [
 ]
 
 ESTIMATOR_GROUPS = {
-    'copt-aux100': 0,
-    'copt-aux50': 0,
-    'copt-aux10': 0,
-    'copt-aux1': 0,
-    'copt-alpha1': 1,
-    'copt-alpha0': 1,
+    'ovis-S100': 0,
+    'ovis-S50': 0,
+    'ovis-S10': 0,
+    'ovis-S1': 0,
+    'ovis-gamma0': 1,
+    'ovis-gamma1': 1,
     'vimco-arithmetic': 2,
     'vimco-geometric': 2,
     'reinforce': 2,
@@ -81,12 +81,12 @@ ESTIMATOR_GROUPS = {
 }
 
 ESTIMATOR_DISPLAY_NAME = {
-    'copt-alpha0': r"$\operatorname{OVIS}_{\sim}\ (\gamma = 1)$", # carreful here 0 -> 1
-    'copt-alpha1': r"$\operatorname{OVIS}_{\boldsymbol{\sim}}\ (\gamma = 0)$",
-    'copt-aux1': r"$\operatorname{OVIS}_{\operatorname{MC}}\ (S=1)$",
-    'copt-aux10': r"$\operatorname{OVIS}_{\operatorname{MC}}\ (S=10)$",
-    'copt-aux50': r"$\operatorname{OVIS}_{\operatorname{MC}}\ (S=50)$",
-    'copt-aux100': r"$\operatorname{OVIS}_{\operatorname{MC}}\ (S=100)$",
+    'ovis-gamma1': r"$\operatorname{OVIS}_{\sim}\ (\gamma = 1)$", # carreful here 0 -> 1
+    'ovis-gamma0': r"$\operatorname{OVIS}_{\sim}\ (\gamma = 0)$",
+    'ovis-S': r"$\operatorname{OVIS}_{\operatorname{MC}}\ (S=1)$",
+    'ovis-S10': r"$\operatorname{OVIS}_{\operatorname{MC}}\ (S=10)$",
+    'ovis-S50': r"$\operatorname{OVIS}_{\operatorname{MC}}\ (S=50)$",
+    'ovis-S100': r"$\operatorname{OVIS}_{\operatorname{MC}}\ (S=100)$",
     'reinforce': r"$\operatorname{REINFORCE}$",
     'vimco': r"$\operatorname{VIMCO}$",
     'vimco-arithmetic': r"$\operatorname{VIMCO}$", #r"$\operatorname{VIMCO}_{\operatorname{arithmetic}}$",

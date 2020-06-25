@@ -188,18 +188,18 @@ class VAE(BaseVAE):
                 'dropout': self.dropout}
 
         # encoder
-        self.encoder = MLP(prod(self.xdim), self.hdim, prod(self.qdim), **args)
+        self.inference_network = MLP(prod(self.xdim), self.hdim, prod(self.qdim), **args)
 
         # decoder
-        self.decoder = MLP(prod(self.zdim), self.hdim, prod(self.xdim), **args)
+        self.generative_model = MLP(prod(self.zdim), self.hdim, prod(self.xdim), **args)
 
     def encode(self, x):
         x = flatten(x)
-        return self.encoder(x).view(-1, *self.qdim)
+        return self.inference_network(x).view(-1, *self.qdim)
 
     def generate(self, z):
         z = flatten(z)
-        px_logits = self.decoder(z).view(-1, *self.xdim)
+        px_logits = self.generative_model(z).view(-1, *self.xdim)
         return self.likelihood(logits=px_logits)
 
 

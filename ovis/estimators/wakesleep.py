@@ -47,11 +47,11 @@ class BaseWakeSleep(Reinforce):
         diagnostics = Diagnostic({
             'loss': {
                 'loss': loss,
-                **self._loss_diagnostics(**iw_data, **output)
+                **self.base_loss_diagnostics(**iw_data, **output)
             },
         })
 
-        diagnostics.update(self._diagnostics(output))
+        diagnostics.update(self.additional_diagnostics(output))
 
         if backward:
             loss.mean().backward()

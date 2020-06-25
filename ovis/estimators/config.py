@@ -1,5 +1,5 @@
-from ..utils.utils import parse_numbers
 from .__init__ import *
+from ..utils.utils import parse_numbers
 
 
 def get_config(estimator):
@@ -19,12 +19,11 @@ def get_config(estimator):
         Estimator = PathwiseIWAE
         config = {'tau': 0, 'zgrads': True}
 
-
     elif 'wake-sleep' in estimator or 'wake-wake' in estimator:
         Estimator = {'wake-sleep': WakeSleep, 'wake-wake': WakeWake}[estimator]
         config = {'tau': 0, 'zgrads': False}
 
-    elif any([e in estimator for e in ['reinforce', 'vimco', 'copt', 'ww']]) and not 'old' in estimator:
+    elif any([e in estimator for e in ['reinforce', 'vimco', 'ovis']]):
         reinforce_args = {'tau': 0,
                           'zgrads': False}
 
@@ -32,72 +31,34 @@ def get_config(estimator):
             Estimator = Reinforce
             config = reinforce_args
 
-        elif 'copt' in estimator or 'vimco' in estimator or 'ww' in estimator:
+        elif 'vimco' in estimator:
 
-            if 'copt-uniform' in estimator:
-                mode = 'copt-uniform'
-            elif 'copt' in estimator:
-                mode = 'copt'
-            elif 'vimco-geometric' in estimator:
-                mode = 'vimco-geometric'
-            elif 'vimco' in estimator:
-                mode = 'vimco'
-            elif 'ww' in estimator:
-                mode = 'ww'
-            else:
-                raise ValueError(f"Unknown estimator mode.")
-
-            # parse `-alphaX`
-            if "-alpha" in estimator:
-                alpha = eval([s for s in estimator.split("-") if 'alpha' in s][0].replace("alpha", ""))
-            else:
-                alpha = 1.
-
-            # parse `-truncX`
-            if "-trunc" in estimator:
-                trunc = eval([s for s in estimator.split("-") if 'trunc' in s][0].replace("trunc", ""))
-            else:
-                trunc = 0.
-
-            # parse `-truncX`
-            if "aux" in estimator:
-                auxiliary_samples = int(eval([s for s in estimator.split("-") if 'aux' in s][0].replace("aux", "")))
-            else:
-                auxiliary_samples = 0
-
-            handle_low_ess = '-ess' in estimator
-            use_second_largest = '-ess2' in estimator
-            autoalpha = "-autoalpha" in estimator
-            center = '-center' in estimator
-            biased = '-biased' in estimator
-            only_phi = "-onlyphi" in estimator
-
-            Estimator = VimcoPlus
-            config = {'mode': mode, 'alpha': alpha, 'truncation': trunc, 'autoalpha': autoalpha,
-                      'handle_low_ess': handle_low_ess, 'center': center, 'biased': biased,
-                      'auxiliary_samples': auxiliary_samples, 'only_phi': only_phi,
-                      'use_second_largest': use_second_largest, **reinforce_args}
-
-        # keep legacy test if other tests are needed
-        elif 'old-copt' in estimator or 'old-vimco' in estimator:
-            use_outer_samples = '-outer' in estimator
-            use_double = not ('-float32' in estimator)
-            if '-arithmetic' in estimator:
-                arithmetic = True
-            elif '-geometric' in estimator:
+            if '-geometric' in estimator:
                 arithmetic = False
+            elif 'arithmetic' in estimator:
+                arithmetic = True
             else:
                 raise ValueError(f"Estimator arg = {estimator} must contain `-arithmetic` or `-geometric`")
 
-            vimco_args = {'arithmetic': arithmetic, 'use_outer_samples': use_outer_samples, 'use_double': use_double}
-
-            if 'vimco' in estimator:
-                Estimator = Vimco
-                config = {**reinforce_args, **vimco_args}
-
+            if '-outer' in estimator:
+                use_outer_samples = True
             else:
-                raise ValueError(
-                    f"Unknown vimco-like estimator {estimator}, valid base identifiers are [vimco, copt]")
+                use_outer_samples = False
+
+            Estimator = Vimco
+            config = {**reinforce_args, 'arithmetic': arithmetic, 'use_outer_samples': use_outer_samples}
+
+        elif 'ovis' in estimator:
+
+            # parse `-S`
+            if "-S" in estimator:
+                auxiliary_samples = int(eval([s for s in estimator.split("-") if 'S' in s][0].replace("S", "")))
+                Estimator = OvisMonteCarlo
+                config = {**reinforce_args, 'auxiliary_samples': auxiliary_samples}
+            elif "-gamma" in estimator:
+                gamma = float(eval([s for s in estimator.split("-") if 'gamma' in s][0].replace("gamma", "")))
+                Estimator = OvisAsymptotic
+                config = {**reinforce_args, 'gamma': gamma}
 
         else:
             raise ValueError(
@@ -112,10 +73,6 @@ def get_config(estimator):
         Estimator = VariationalInference
         config = {'tau': 0, 'zgrads': True}
 
-    elif estimator == 'relax':
-        Estimator = Relax
-        config = {'tau': 0.5, 'zgrads': True}
-
     elif 'tvo' in estimator:
         # argument for automatic partition
         if "-config1" in estimator:
@@ -125,8 +82,8 @@ def get_config(estimator):
         else:
             partition_name = None
 
-                # number of partitions
-        partition_args = [arg for arg in estimator.split('-') if 'S' in arg]
+            # number of partitions
+        partition_args = [arg for arg in estimator.split('-') if 'part' in arg]
         num_partition = parse_numbers(partition_args[0])[0] if len(partition_args) else 2
 
         # parse `log_beta_min` from as - log beta_min

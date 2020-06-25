@@ -6,11 +6,11 @@ from shutil import rmtree
 
 import pandas as pd
 
-from ovis.training.logging import get_loggers
 from ovis.models import GaussianToyVAE
-from ovis.utils.utils import notqdm, ManualSeed
-from ovis.plotting.variance_plotting import *
 from ovis.plotting.style import format_estimator_name
+from ovis.plotting.variance_plotting import *
+from ovis.training.logging import get_loggers
+from ovis.utils.utils import notqdm, ManualSeed
 
 colors = sns.color_palette()
 _sep = os.get_terminal_size().columns * "-"
@@ -25,7 +25,7 @@ parser = argparse.ArgumentParser()
 
 
 # debug
-# python asymptotic_variance.py --iw_steps 3 --iw_max 100 --npoints 100 --mc_samples 100 --mc_oracle 100 --iw_oracle 100 --grads_dist --id debug --estimators pathwise-iwae,copt
+# python asymptotic_variance.py --iw_steps 3 --iw_max 50 --npoints 100 --mc_samples 100 --mc_oracle 100 --iw_oracle 100 --iw_valid 100 --id debug --estimators ovis-S10,vimco-arithmetic
 # python asymptotic_variance.py --estimators pathwise-iwae,vimco,copt-uniform --iw_steps 5 --iw_max 300 --npoints 100 --mc_samples 1000 --mc_oracle 10000 --iw_oracle 1000 --grads_dist --id debug
 
 # python asymptotic_variance.py --iw_steps 3 --iw_min 20 --iw_max 200 --npoints 100 --mc_samples 100 --mc_oracle 100 --iw_oracle 100 --grads_dist --id debug --estimators vimco,copt,copt-aux10
@@ -63,7 +63,8 @@ parser.add_argument('--noise', default='0.01', type=str,
 # evaluation of the gradients
 parser.add_argument('--key_filter', default='b', type=str,
                     help='identifiant of the parameters/tensor for the gradients analysis')
-parser.add_argument('--mc_samples', default=1000, type=float, help='number of Monte-Carlo samples used for gradients evaluations')
+parser.add_argument('--mc_samples', default=1000, type=float,
+                    help='number of Monte-Carlo samples used for gradients evaluations')
 parser.add_argument('--max_points', default=0, type=int, help='number of data points to evaluate the grads in')
 parser.add_argument('--samples_per_batch', default=80000, type=int,
                     help='number of samples per batch [N = bs x ms x iw]')
@@ -164,13 +165,15 @@ try:
         model.set_optimal_parameters()
 
         # evaluate model
-        diagnostics = evaluate(estimator_ref, model, x, config_ref, opt.seed, base_logger, "After init.")
+        with ManualSeed(seed=opt.seed):
+            diagnostics = evaluate(estimator_ref, model, x, config_ref, base_logger, "After init.")
 
         # add perturbation to the weights
         model.perturbate_weights(noise)
 
         # evaluate model
-        diagnostics = evaluate(estimator_ref, model, x, config_ref, opt.seed, base_logger, "After perturbation")
+        with ManualSeed(seed=opt.seed):
+            diagnostics = evaluate(estimator_ref, model, x, config_ref, base_logger, "After perturbation")
 
         # compute the true direction of the gradients
         true_grads = compute_true_grads(oracle, model, x, opt.mc_oracle, **global_grad_args, **config_oracle)
@@ -193,9 +196,10 @@ try:
                 estimator.to(device)
 
                 # evalute variance of the gradients
-                analysis_data, grads_meta = get_gradients_statistics(estimator, model, x,
-                                                                           return_grads=True,
-                                                                           use_dsnr=True, **grad_args, **config)
+                with ManualSeed(seed=opt.seed):
+                    analysis_data, grads_meta = get_gradients_statistics(estimator, model, x,
+                                                                         return_grads=True,
+                                                                         use_dsnr=True, **grad_args, **config)
 
                 # log grads info
                 log_grads_data(analysis_data, base_logger, estimator_id, iw)

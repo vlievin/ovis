@@ -23,7 +23,8 @@ def init_model(opt, x, loader=None):
         'prior': opt.prior,
         'normalization': opt.norm,
         'dropout': opt.dropout,
-        'x_mean': xmean
+        'x_mean': xmean,
+        'prior': opt.prior
     }
 
     # change the model id based on the chosen dataset if required

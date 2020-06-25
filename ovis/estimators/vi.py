@@ -1,38 +1,41 @@
-from booster import Diagnostic
 import torch
+from booster import Diagnostic
+
 from .base import *
 from ..utils.utils import batch_reduce
 
 
 class VariationalInference(Estimator):
     """
-    Variational Inference. Using this estimator requires the model to be compatible with the reparametrization trick.
-
+    Base class for Variational Inference using the Importance Weighted Bound (IWAE).
+    Using this class to estimate the gradients requires the model to be compatible with the reparametrization trick.
+    However the class can be used independently to evaluate the bound L_k.
     """
 
     def compute_iw_bound(self, log_px_z: Tensor, log_pzs: List[Tensor], log_qzs: List[Tensor],
-                         detach_qlogits: bool = False, beta: float = 1.0, gamma: float = 1.0,
-                         auxiliary_samples: int = 0,
-                         request: List[str] = list(), **kwargs) -> Dict[
-        str, Tensor]:
+                         detach_qlogits: bool = False, beta: float = 1.0, alpha: float = 0,
+                         request: List[str] = list(), **kwargs) -> Dict[str, Tensor]:
         """
-        Compute the importance weighted bound:
+        Compute the importance weighted bound for K = self.iw:
 
-         L_k = E_{q(z^1...z^K | x)} [ log 1/K \sum_{i=1..K} w_k], w_k  = p(x,z^k) / q(z^k|x)
+          * L_k = E_{q(z^1...z^K | x)} [ \log Z]
+          * Z = 1/K \sum_{i=1..K} w_k
+          * w_k  = p(x,z^k) / q(z^k|x)
 
-         In this expression the KLs are concatenated by stochastic layer so the freebits can be applied to each of them.
+        When using `alpha` > 0, the computed bound is the Importance Rényi Bound (IWR) given by:
+
+          * L_k^\alpha = E_{q(z^1...z^K | x)} [ \log Z(alpha)]
+          * Z(alpha) = 1/K \sum_{i=1..K} w_k^\alpha
 
         :param log_px_z: log p(x | z) of shape [bs * mc * iw]
-        :param log_pzs: [log p(z_i | *) l=1..L], each of of shape [bs * mc * iw, N_i]
-        :param log_qzs: [log q(z_i | *) l=1..L], each of of shape [bs * mc * iw, N_i]
+        :param log_pzs: [log p(z_i | *) l=1..L], each of of shape [bs * mc * iw, N_i] (one value per stochastic layer)
+        :param log_qzs: [log q(z_i | *) l=1..L], each of of shape [bs * mc * iw, N_i] (one value per stochastic layer)
         :param detach_qlogits: detach the logits of q(z|x)
-        :param beta: weight for the KL term (i.e. Beta-VAE)
-        :param request: list of variables to return
-        :return: dictionary with outputs [L_k, kl, log_wk]
+        :param beta: weight for the KL term (i.e. Beta-VAE [https://pdfs.semanticscholar.org/a902/26c41b79f8b06007609f39f82757073641e2.pdf])
+        :param alpha: parameter of the IWR bound
+        :param request: return additional variables in ['log_pz', 'log_qz', 'log_px_z']
+        :return: dictionary with keys [L_k, elbo, kl, log_wk] + keys stated in `request`
         """
-
-        # compute the effective sample size
-        ess = self.effective_sample_size_from_probs(log_px_z, log_pzs, log_qzs)
 
         def cat_by_layer(log_pzs):
             """sum over the latent dimension (N_i) and concatenate stocastic layers.
@@ -50,44 +53,55 @@ class VariationalInference(Estimator):
         # kl = E[log q(z^k|x) | p(z^k)]
         kl = log_qz - log_pz
 
-        # freebits is ditributed equally over the last dimension
-        # (meaning L layers result in a total of L * freebits budget)
+        # freebits is ditributed equally over the last dimension (here lastdim == 1)
+        # meaning that a total of L * freebits will be applied to a kl tensor of shape [*, L]
         if self.freebits is not None:
             kl = self.freebits(kl.unsqueeze(-1))
 
-        # dimension [bs, MC, IW]
+        # dimension [bs * MC,* IW, ...] -> [bs * MC,* IW]
         kl = batch_reduce(kl)
 
         # compute log w_k = log p(x, z^k) - log q(z^k | x) (ELBO)
         log_wk = log_px_z - beta * kl
 
         # log w_k^gamma = gamma * log w_k
-        log_wk = gamma * log_wk
+        log_wk = (1 - alpha) * log_wk
 
-        # view log_wk as shape [bs, mc, iw]
-        log_wk = log_wk.view(-1, self.mc, self.iw)
+        # view tensors as shape]
+        log_wk = log_wk.view(-1, self.mc, self.iw + self.auxiliary_samples)
 
-        # L_k
-        # TODO: remove temporary `auxiliary_samples`
-        L_k = torch.logsumexp(log_wk[:, :, :self.iw - auxiliary_samples], dim=2) - np.log(
-            self.iw - auxiliary_samples)  # self.log_iw
+        # separate w_k from auxiliary samples w^{(s)} (ovis)
+        log_wk_aux = log_wk[:, :, self.iw:]
+        log_wk = log_wk[:, :, :self.iw]
 
-        # L_K(gamma)
-        L_k = L_k / gamma
+        # L_k^alpha (IWR bound, IW bound when alpha = 0)
+        L_k = torch.logsumexp(log_wk, dim=2) - self.log_iw
+        L_k = L_k / (1. - alpha)
 
         # elbo
-        elbo = torch.mean(log_wk, dim=2)
+        elbo = torch.mean(log_wk, dim=(1, 2))
 
-        # kl(q | p) = \hat{log p} - elbo :  accurate if K -> \inf
-        kl_q_p = L_k - elbo
+        # kl(q(z|x) || p(z|x)) = \log \hat{p} - elbo :  accurate when K -> \inf
+        kl_q_p = L_k.mean(1) - elbo
 
-        output = {'L_k': L_k, 'elbo': elbo, 'kl': kl, 'log_wk': log_wk, 'ess': ess, 'kl_q_p': kl_q_p}
+        # compute the effective sample size
+        ess = self.effective_sample_size(log_wk)
 
-        if len(request):
-            # append additional data to the output
-            meta = {'log_pz': log_pz, 'log_qz': log_qz, 'log_px_z': log_px_z}
-            for key in request:
-                output[key] = batch_reduce(meta[key]).view(-1, self.mc, self.iw)
+        def format_tensor(x):
+            """reshape tensor as [batch_size, mc, iw+S, ...]"""
+            x = batch_reduce(x)
+            return x.view(-1, self.mc, self.iw + self.auxiliary_samples)
+
+        output = {'L_k': L_k, 'elbo': elbo, 'log_wk': log_wk, 'ess': ess,
+                  'kl_q_p': kl_q_p, 'log_wk_aux': log_wk_aux,
+                  'kl': kl.view(-1, self.mc, self.iw + self.auxiliary_samples).mean(dim=(1, 2))}
+
+        if len(request):  # append additional data to the output
+            meta = {'log_pz': format_tensor(log_pz),
+                    'log_qz': format_tensor(log_qz),
+                    'log_px_z': format_tensor(log_px_z)}
+
+            output.update(**{k: v for k, v in meta.items() if k in request})
 
         return output
 
@@ -97,7 +111,7 @@ class VariationalInference(Estimator):
         Compute the effective sample size: N_eff = (\sum_i w_i)**2 / \sum_i w_i**2
         :param log_pz: log p(z) of shape [bs * mc * iw, ...]
         :param log_qz: loq q(z) of shape [bs * mc * iw, ...]
-        :return: effective sample size of shape [bs, mc]
+        :return: effective sample size of shape [bs,]
         """
 
         if isinstance(log_pz, List):
@@ -120,7 +134,7 @@ class VariationalInference(Estimator):
         """
         Compute the effective sample size: N_eff = (\sum_i w_i)**2 / \sum_i w_i**2 from the log weights log w.
         :param log_w: log weights
-        :return: effective sample size of shape [bs, mc]
+        :return: effective sample size of shape [bs,]
         """
         if self.iw > 1:
             # computation in log-space
@@ -131,7 +145,7 @@ class VariationalInference(Estimator):
             x = (log_w).view(-1, self.mc, self.iw)
             ess = torch.ones_like(x[:, :, 0])
 
-        return ess
+        return ess.mean(1)
 
     def evaluate_model(self, model: nn.Module, x: Tensor, **kwargs: Any) -> Dict[str, Tensor]:
         """
@@ -142,7 +156,7 @@ class VariationalInference(Estimator):
         :return: {'log_px_z' : log p(x|z), 'log_qz' : log q(z|x), 'log_pz': log p(z), **model_output}
         """
 
-        # expand x as shape [bs * mc * iw]
+        # expand x as shape [bs * mc * (iw+S)]
         x_expanded = self._expand_sample(x)
 
         # forward pass
@@ -151,9 +165,10 @@ class VariationalInference(Estimator):
         # unpack the model's output
         # the output must contain
         # a. px = p(x|z): torch.distributions.Distribution instance
-        # b. z = latent sample x: List[Tensor]
+        # b. z = latent sample z: List[Tensor]
         # c. p(z) = prior: List[torch.distributions.Distribution]
         # d. q(z | x) = approximate posterior: List[torch.distributions.Distribution]
+        # a,b,c are lists where each element represents a stochastic layer
         px, z, qz, pz = [output[k] for k in ['px', 'z', 'qz', 'pz']]
 
         # evaluate the log-densities given the observation `x` and the latent sample `z`
@@ -166,15 +181,15 @@ class VariationalInference(Estimator):
         output.update({'log_px_z': log_px_z, 'log_pz': log_pz, 'log_qz': log_qz})
         return output
 
-    def _sequential_evaluation(self, model: nn.Module, x: Tensor, **kwargs: Any):
+    def sequential_evaluation(self, model: nn.Module, x: Tensor, **kwargs: Any):
         """
         Same as `evaluate_model` however the processing of the importance weighted samples
         is performed sequentially instead of in parallel.
-        Warning: asides the log-probabilites the model's output is only returned for one sample
+        Warning: Except for the log-probabilites the model's output is only returned for one sample
         :param model: VAE model
         :param x: observation
         :param kwargs: parameters for the model
-        :return: {'log_px_z' : log p(x|z), 'log_qz' : log q(z|x), 'log_pz': log p(z), **model_output_{L}}
+        :return: {'log_px_z' : log p(x|z), 'log_qz' : log q(z|x), 'log_pz': log p(z), **model_output[-1]}
         """
         bs, *dims = x.size()
         log_px_zs = []
@@ -183,8 +198,11 @@ class VariationalInference(Estimator):
         x_expanded_mc = x[:, None].repeat(1, self.mc, *(1 for _ in dims)).view(-1, *dims)
         for i in range(self.iw):
             # evaluate batch
-            output = self.evaluate_model(model, x, x_expanded_mc, **kwargs)
-            log_px_z, log_pz, log_qz = [output[k] for k in ('log_px_z', 'log_pz', 'log_qz')]
+            output = model(x_expanded_mc, **kwargs)
+            px, z, qz, pz = [output[k] for k in ['px', 'z', 'qz', 'pz']]
+            log_px_z = batch_reduce(px.log_prob(x_expanded_mc))
+            log_pz = [pz_l.log_prob(z_l) for pz_l, z_l in zip(pz, z)]
+            log_qz = [qz_l.log_prob(z_l) for qz_l, z_l in zip(qz, z)]
 
             log_px_zs += [log_px_z]
             log_pzs += [log_pz]
@@ -212,29 +230,29 @@ class VariationalInference(Estimator):
                 return_diagnostics: bool = True, **kwargs: Any) -> Tuple[
         Tensor, Dict, Dict]:
         """
-        Perform a forward pass through the VAE model, evaluate the Importance-Weighted bound and [optional]
-        perform the backward pass.
+        Perform a forward pass through the VAE model, evaluate the Importance-Weighted bound and [optional] perform the backward pass.
+        See the method `compute_iw_bound` for further documentation
         :param model: VAE model
         :param x: observation
         :param backward: perform the backward pass by calling loss.backward()
         :param beta: beta parameter for Beta-VAE [https://pdfs.semanticscholar.org/a902/26c41b79f8b06007609f39f82757073641e2.pdf]
-        :param kwargs: additional arguments for the model's forward pass
+        :param kwargs: additional arguments for the model's forward pass and the method `compute_iw_bound`
         :return: (loss : Tensor of shape [bs,],
                   diagnostics: nested dictionary containing at least the keys {'loss':{'loss':..., 'elbo':...}}
                   output: model's output + meta data)
         """
 
         if self.sequential_computation:
-            # warning: here only one iw sample `output` will be returned
-            output = self._sequential_evaluation(model, x, **kwargs)
+            # warning: the output will correspond to a single `iw` sample
+            output = self.sequential_evaluation(model, x, **kwargs)
         else:
             output = self.evaluate_model(model, x, **kwargs)
 
         log_px_z, log_pz, log_qz = [output[k] for k in ('log_px_z', 'log_pz', 'log_qz')]
         iw_data = self.compute_iw_bound(log_px_z, log_pz, log_qz, **kwargs)
 
-        # compute the loss = - L_k using the reparametrization trick
-        L_k = iw_data.get('L_k').mean(1)  # MC averaging
+        # compute the loss = - L_k  (backpropagation requires the reparametrization trick)
+        L_k = iw_data.get('L_k').mean(1)  # 1/M \sum_m l_K[m] where M = self.mc
         loss = - L_k
 
         # prepare diagnostics
@@ -243,29 +261,29 @@ class VariationalInference(Estimator):
         if return_diagnostics:
             diagnostics.update({
                 'loss': {'loss': loss,
-                         **self._loss_diagnostics(**iw_data, **output)}
+                         **self.base_loss_diagnostics(**iw_data, **output)}
             })
 
-            # add auxiliary diagnostics that can customized through the method _diagnostics
-            diagnostics.update(self._diagnostics(output))
+            # add auxiliary diagnostics that can customized through the method `additional_diagnostics`
+            diagnostics.update(self.additional_diagnostics(output))
 
         if backward:
             loss.mean().backward()
 
         return loss, diagnostics, output
 
-    def _loss_diagnostics(self, **kwargs):
-        L_k = kwargs.get('L_k').mean(1)
-        elbo = kwargs.get('elbo').mean(1)
-        kl_q_p = kwargs.get('kl_q_p').mean(1)
-        ess = kwargs.get('ess').mean(1)
-        nll = - self._reduce_sample(kwargs.get('log_px_z'))
-        kl = self._reduce_sample(kwargs.get('kl'))
+    def base_loss_diagnostics(self, **output):
+        L_k = output.get('L_k').mean(1)
+        elbo = output.get('elbo')
+        kl_q_p = output.get('kl_q_p')
+        ess = output.get('ess')
+        nll = - self._reduce_sample(output.get('log_px_z'))
+        kl = output.get('kl')
         return {'L_k': L_k, 'elbo': elbo, 'kl_q_p': kl_q_p,
                 'ess': ess, 'r_ess': ess / self.iw, 'nll': nll, 'kl': kl}
 
     @torch.no_grad()
-    def _diagnostics(self, output):
+    def additional_diagnostics(self, output):
         """A function to append additional diagnostics from the model otuput"""
 
         prior = {}
@@ -289,18 +307,7 @@ class VariationalInference(Estimator):
             if key in output.keys():
                 gaussian_toy[key] = output[key]
 
-        kls = {}
-        if 'log_qz' in output.keys() and 'log_pz' in output.keys():
-            # log KL for each layer
-            log_qz = output['log_qz']
-            log_pz = output['log_pz']
-            if len(log_qz) > 1:
-                assert len(log_qz) == len(log_pz)
-
-                for i, (lq, lp) in enumerate(zip(log_qz, log_pz)):
-                    kls[f"kl_{i + 1}"] = batch_reduce(lq - lp).mean()
-
-        return {'prior': prior, 'gmm': gmm, 'loss': loss, 'gaussian_toy': gaussian_toy, 'kls': kls}
+        return {'prior': prior, 'gmm': gmm, 'loss': loss, 'gaussian_toy': gaussian_toy}
 
 
 class PathwiseVAE(VariationalInference):
