@@ -1,12 +1,15 @@
 {
   "description": "Training a 3 layers Sigmoid Belief Network with linear connections.",
   "args": [
-    "--estimator copt-alpha0 --gamma 0.2",
-    "--estimator copt-aux50 --gamma 0.2"
+    "--estimator copt-gamma0 --alpha_min 0.99 --warmup 1000000 --warmup_mode log",
+    "--estimator copt-gamma1 --alpha_min 0.99 --warmup 1000000 --warmup_mode log",
+    "--estimator copt-aux1 --alpha_min 0.99 --warmup 1000000 --warmup_mode log",
+    "--estimator copt-aux10 --alpha_min 0.99 --warmup 1000000 --warmup_mode log",
+    "--estimator copt-aux50 --alpha_min 0.99 --warmup 1000000 --warmup_mode log"
   ],
   "global": "--silent --deterministic --nsteps 4000000",
   "parameters": {
-    "id": ["renyi"],
+    "id": ["alphas-wrp"],
     "model":["sbm"],
     "prior": ["bernoulli"],
     "learn_prior" : [true],

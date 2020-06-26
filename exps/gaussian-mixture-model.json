@@ -1,21 +1,21 @@
 {
   "description": "Benchmarking models on the Gaussian Mixture Model from `Revisiting Reweighted Wake-Sleep",
   "args": [
+    "--estimator ovis-S1",
+    "--estimator ovis-S10",
+    "--estimator ovis-S50",
+    "--estimator ovis-gamma1",
+    "--estimator ovis-gamma0",
     "--estimator vimco-arithmetic",
     "--estimator vimco-geometric",
-    "--estimator tvo-S5-beta2",
-    "--estimator copt",
-    "--estimator ww",
-    "--estimator reinforce",
-    "--estimator copt-aux1",
-    "--estimator copt-aux10",
-    "--estimator copt-aux100",
-    "--estimator copt-alpha0"
+    "--estimator tvo-part5-beta2",
+    "--estimator wake-wake",
+    "--estimator reinforce"
   ],
   "global": "--silent --deterministic --nsteps 100000 --lr_reduce_steps 0 --N 20 --hdim 16",
   "parameters": {
     "iw" : [20, 10, 5, 2],
-    "seed": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+    "seed": [10, 11, 12, 13, 14, 15],
     "dataset": ["gmm-toy"],
     "optimizer": ["adam"],
     "grad_samples" : [500],

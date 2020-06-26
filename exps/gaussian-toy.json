@@ -3,14 +3,14 @@
   "args": [
     "--estimator pathwise-iwae",
     "--estimator tvo-S5-beta3",
-    "--estimator copt",
-    "--estimator copt-alpha0",
-    "--estimator copt-aux1",
-    "--estimator copt-aux10",
-    "--estimator copt-aux50",
+    "--estimator ovis-gamma0",
+    "--estimator ovis-gamma1",
+    "--estimator ovis-S1",
+    "--estimator ovis-S10",
+    "--estimator ovis-S50",
     "--estimator vimco-arithmetic",
     "--estimator vimco-geometric",
-    "--estimator ww"
+    "--estimator wake-wake"
   ],
   "global": "--silent --deterministic",
   "parameters": {

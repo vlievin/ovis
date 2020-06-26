@@ -15,7 +15,7 @@
     "npoints" : [100],
     "D" : [20],
     "seed" : [1],
-    "oracle": ["copt"],
+    "oracle": ["ovis-gamma0"],
     "iw_oracle" : [1000],
     "mc_oracle": [100]
   }
