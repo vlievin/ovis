@@ -5,7 +5,10 @@ from torch import Tensor
 
 def get_run_id(opt):
     """define a unique run identifier"""
-    opt_string = ",".join(("{}={}".format(*i) for i in vars(opt).items()))
+    exceptions = ['root', 'data_root', 'workers', 'silent', 'sequential_computation', 'test_sequential_computation',
+                  'epochs', 'nsteps', 'valid_bs', 'test_bs']
+    filtered_opt_dict = {k: v for k, v in vars(opt).items() if k not in exceptions}
+    opt_string = ",".join(("{}={}".format(*i) for i in filtered_opt_dict.items()))
     deterministic_opt_id = hashlib.md5(opt_string.encode('utf-8')).hexdigest()
     exp_id = f"{opt.dataset}-{opt.model}-{opt.estimator}-K{opt.iw}-M{opt.mc}-seed{opt.seed}-{opt.id}"
     run_id = f"{exp_id}-{deterministic_opt_id}"
@@ -22,6 +25,7 @@ def get_number_of_epochs(opt, loader_train):
 
 
 def preprocess(batch, device):
+    """preprocess a batch of data received from the DataLoader"""
     if isinstance(batch, Tensor):
         x = batch.to(device)
         return x, None
@@ -33,7 +37,7 @@ def preprocess(batch, device):
 
 
 def get_dataset_mean(loader_train):
-    """Compute the mean over the dataset, this is used to initialize SBMs"""
+    """Compute the mean over the dataset"""
     _xmean = None
     _n = 0.
     for x in loader_train:
