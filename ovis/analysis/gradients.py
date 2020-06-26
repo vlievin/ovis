@@ -1,73 +1,29 @@
 from time import time
+from typing import *
 
 import torch
+from booster import Diagnostic
+from torch import Tensor
 from tqdm import tqdm
 
-def covariance(x):
-    x = x - x.mean(dim=1, keepdim=True)
-    cov = 1 / (x.size(1) - 1) * x.mm(x.t())
-    return cov
+from .utils import cosine, percentile, RunningMean, RunningVariance
+from ..estimators import Estimator
+from ..models import Template
 
 
-def cosine(u, v, dim=-1):
-    return (u * v).sum(dim=dim) / (u.norm(dim=dim, p=2) * v.norm(dim=dim, p=2))
+def get_grads_from_tensor(model: Template, loss: Tensor, output: Dict[str, Tensor], tensor_id: str, mc: int, iw: int):
+    """
+    Compute the gradients given a `tensor` on which was called `tensor.retain_graph()`
+    Assumes `tensor` to have `tensor.shape[0] == bs * iw * mc`
 
-
-def _percentile(x, q=0.5):
-    if x is not None:
-        assert q < 1
-        x = x.view(-1)
-        k = int(q * x.shape[0]) + 1
-        v, idx = x.kthvalue(k)  # indexing from 1..
-        return v
-
-
-def _mean(x):
-    if x is not None:
-        return x.mean()
-
-
-class RunningMean():
-    def __init__(self):
-        self.mean = None
-        self.n = 0
-
-    def update(self, x, k=1):
-        """use k > 1 if x is averaged over `k` points, k > 1"""
-
-        if self.mean is None:
-            self.mean = x
-        else:
-            self.mean = self.n / (self.n + k) * self.mean + k / (self.n + k) * x
-
-        self.n += k
-
-    def __call__(self):
-        return self.mean
-
-
-class RunningVariance():
-    def __init__(self):
-        self.n = 0
-        self.Ex = None
-        self.Ex2 = None
-        self.K = None
-
-    def update(self, x):
-        self.n += 1
-        if self.K is None:
-            self.K = x
-            self.Ex = x - self.K
-            self.Ex2 = (x - self.K) ** 2
-        else:
-            self.Ex += x - self.K
-            self.Ex2 += (x - self.K) ** 2
-
-    def __call__(self):
-        return (self.Ex2 - (self.Ex * self.Ex) / self.n) / (self.n - 1)
-
-
-def get_grads_from_tensor(model, loss, output, tensor_id, mc, iw):
+    :param model: VAE model
+    :param loss: loss value
+    :param output: model's output: dict
+    :param tensor_id: key of the tensor in the model output
+    :param mc: number of outer Monte-Carlo samples
+    :param iw: number of inner Importance-Weighted samples
+    :return: gradient: Tensor of shape [D,] where D is the number of elements in `tensor`
+    """
     assert tensor_id in output.keys(), f"Tensor_id = `{tensor_id}` not in model's output"
 
     model.zero_grad()
@@ -87,11 +43,19 @@ def get_grads_from_tensor(model, loss, output, tensor_id, mc, iw):
     # sum individual gradients because x_expanded = x.expand(bs, mc, iw)
     gradients = torch.cat([g.view(bs, mc * iw, -1).sum(1) for g in gradients], 1)
 
-    # return each MC average of the grads
+    # return an MC average of the grads
     return gradients.mean(0)
 
 
-def get_grads_from_parameters(model, loss, key_filter=''):
+def get_grads_from_parameters(model: Template, loss: Tensor, key_filter: str = ''):
+    """
+    Return the gradients for the parameters matching the `key_filter`
+
+    :param model: VAE model
+    :param loss: loss value
+    :param key_filter: filter value (comma separated values accepted (e.g. "A,b"))
+    :return:  Tensor of shape [D,] where `D` is the number of parameters
+    """
     key_filters = key_filter.split(',')
     params = [p for k, p in model.named_parameters() if any([(_key in k) for _key in key_filters])]
     assert len(params) > 0, f"No parameters matching filter = `{key_filters}`"
@@ -103,28 +67,67 @@ def get_grads_from_parameters(model, loss, key_filter=''):
     return torch.cat(grads, 0)
 
 
-def get_gradients_statistics(estimator, model, x, n_samples=100, key_filter='qlogits',
-                             true_grads=None, return_grads=False, use_dsnr=False, samples_per_batch=None,
-                             eps=1e-18,
-                             **config):
+def get_gradients_statistics(estimator: Estimator,
+                             model: Template,
+                             x: Tensor,
+                             mc_samples: int = 100,
+                             key_filter: str = 'inference_network',
+                             oracle_grad: Optional[Tensor] = None,
+                             return_grads: bool = False,
+                             compute_dsnr: bool = True,
+                             samples_per_batch: Optional[int] = None,
+                             eps: float = 1e-18,
+                             tqdm: Callable = tqdm,
+                             **config: Dict) -> Tuple[Diagnostic, Dict]:
     """
-    Compute the variance, magnitude and SNR of the gradients averaged over a batch of data.
+    Compute the gradients and return the statistics (Variance, Magnitude, SNR, DSNR)
+    If an `oracle` gradient is available: compute the cosine similarity with the oracle and the gradient estimate (direction)
+
+    The Magnitude, Variance and SNR are defined parameter-wise. All return values are average over the D parameters with
+    Variance > eps. For instance, the returned SNR is
+
+      * SNR = 1/D \sum_d SNR_d
+
+    Each MC sample is computed sequentially and the mini-batch `x` will be split into chuncks
+    if a value `samples_per_batch` if specified and if `samples_per_batch < x.size(0) * mc * iw`.
+
+    :param estimator: Gradient Estimator
+    :param model: VAE model
+    :param x: mini-batch of observations
+    :param mc_samples: number of Monte-Carlo samples
+    :param key_filter: key matching parameters names in the model 
+    :param oracle_grad: true direction of the gradients [Optional]
+    :param return_grads: return all gradients in the `meta` output directory if set to `True`
+    :param compute_dsnr: compute the Directional SNR if set to `True`
+    :param samples_per_batch: max. number of individual samples `bs * mc * iw` per mini-batch [Optional]
+    :param eps: minimum Variance value used for filtering
+    :param config: config dictionary for the estimator
+    :param tqdm: custom `tqdm` function
+    :return: output : Diagnostic = {'grads' : {'variance': ..,
+                                               'magnitude': ..,
+                                               'snr': ..,
+                                               'dsnr' ..,
+                                               'direction': cosine similarity with the oracle,
+                                               'keep_ratio' : ratio of parameter-wise gradients > epsilon}}
+                                    'snr': {'percentiles', 'mean', 'min', 'max'}
+
+                                    },
+            meta : additional data including the gradients values if `return_grads`
     """
 
     _start = time()
-
-    # init statistics for each datapoint
     grads_dsnr = None
     grads_mean = RunningMean()
     grads_variance = RunningVariance()
-    if true_grads is not None:
+    if oracle_grad is not None:
         grads_dir = RunningMean()
 
     all_grads = None
 
-    for i in tqdm(range(n_samples), desc="Batch Gradients Analysis"):
+    # compute each MC sample sequentially
+    for i in tqdm(range(mc_samples), desc="Batch Gradients Analysis"):
 
-        # compute number of chuncks
+        # compute number of chuncks based on the capacity `samples_per_batch`
         if samples_per_batch is None:
             chuncks = 1
         else:
@@ -135,6 +138,7 @@ def get_gradients_statistics(estimator, model, x, n_samples=100, key_filter='qlo
             total_samples = bs * mc * iw
             chuncks = max(1, -(-total_samples // samples_per_batch))  # ceiling division
 
+        # compute mini-batch gradient by chunck if `x` is large
         gradients = RunningMean()
         for k, x_ in enumerate(x.chunk(chuncks, dim=0)):
 
@@ -144,7 +148,7 @@ def get_gradients_statistics(estimator, model, x, n_samples=100, key_filter='qlo
             # forward, backward to compute the gradients
             loss, diagnostics, output = estimator(model, x_, backward=False, **config)
 
-            # gather individual gradients
+            # gather mini-batch gradients
             if 'tensor:' in key_filter:
                 tensor_id = key_filter.replace("tensor:", "")
                 gradients_ = get_grads_from_tensor(model, loss, output, tensor_id, estimator.mc, estimator.iw)
@@ -161,13 +165,13 @@ def get_gradients_statistics(estimator, model, x, n_samples=100, key_filter='qlo
         with torch.no_grad():
             gradients = gradients()
 
-            if return_grads or use_dsnr:
+            if return_grads or compute_dsnr:
                 all_grads = gradients[None] if all_grads is None else torch.cat([all_grads, gradients[None]], 0)
 
             grads_mean.update(gradients)
             grads_variance.update(gradients)
 
-    # compute statistics
+    # compute the statistics
     with torch.no_grad():
 
         # compute statistics for each data point `x_i`
@@ -178,7 +182,7 @@ def get_gradients_statistics(estimator, model, x, n_samples=100, key_filter='qlo
         grads_snr = grads_mean.abs() / (eps + grads_variance ** 0.5)
 
         # compute DSNR,  see `tighter variational bounds are not necessarily better` (eq. 12)
-        if use_dsnr:
+        if compute_dsnr:
             u = all_grads.mean(0, keepdim=True)
             u /= u.norm(dim=1, keepdim=True, p=2)
 
@@ -187,9 +191,9 @@ def get_gradients_statistics(estimator, model, x, n_samples=100, key_filter='qlo
 
             grads_dsnr = g_parallel.norm(dim=1, p=2) / (eps + g_perpendicular.norm(dim=1, p=2))
 
-        # compute grd direction
-        if true_grads is not None:
-            grads_dir = cosine(grads_mean, true_grads, dim=-1)
+        # compute grad direction: cosine similarity between the gradient estimate and the oracle
+        if oracle_grad is not None:
+            grads_dir = cosine(grads_mean, oracle_grad, dim=-1)
 
     # reinitialize grads
     model.zero_grad()
@@ -206,13 +210,13 @@ def get_gradients_statistics(estimator, model, x, n_samples=100, key_filter='qlo
         'keep_ratio': mask.sum() / torch.ones_like(mask).sum()
     },
         'snr': {
-            'p25': _percentile(grads_snr, q=0.25), 'p50': _percentile(grads_snr, q=0.50),
-            'p75': _percentile(grads_snr, q=0.75), 'p5': _percentile(grads_snr, q=0.05),
-            'p95': _percentile(grads_snr, q=0.95), 'min': grads_snr.min(),
+            'p25': percentile(grads_snr, q=0.25), 'p50': percentile(grads_snr, q=0.50),
+            'p75': percentile(grads_snr, q=0.75), 'p5': percentile(grads_snr, q=0.05),
+            'p95': percentile(grads_snr, q=0.95), 'min': grads_snr.min(),
             'max': grads_snr.max(), 'mean': grads_snr.mean()}
     }
 
-    if true_grads is not None:
+    if oracle_grad is not None:
         output['grads']['direction'] = grads_dir.mean()
 
     # additional data: raw grads, and mean,var,snr for each parameter separately
