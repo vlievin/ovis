@@ -63,7 +63,7 @@ def get_datasets(opt):
         output = wrapper(*output)
 
     if opt.only_train_set:
-        def use_only_training(dset_train, dset_valid, dset_test):
+        def use_only_training(dset_train, *args):
             return dset_train, dset_train, dset_train
 
         output = use_only_training(*output)

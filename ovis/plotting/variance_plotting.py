@@ -35,8 +35,8 @@ def evaluate(estimator, model, x, config, base_logger, desc):
 def compute_true_grads(estimator, model, x, mc_samples, seed=None, **kwargs):
     print(_sep)
     seed = seed + 1 if seed is not None else None  # make sure that the true grads is computed with a different seed to avoid spurious corelations
-    _, meta = get_gradients_statistics(estimator, model, x, n_samples=mc_samples, return_grads=True, seed=seed,
-                                             **kwargs)
+    _, meta = get_gradients_statistics(estimator, model, x, mc_samples=mc_samples, return_grads=True, seed=seed,
+                                       **kwargs)
     true_grads = meta['grads'].mean(dim=0)
 
     # mu = x.mean(dim=0).data

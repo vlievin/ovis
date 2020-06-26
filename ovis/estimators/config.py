@@ -3,11 +3,7 @@ from ..utils.utils import parse_numbers
 
 
 def get_config(estimator):
-    if estimator == 'safe-vi':
-        Estimator = SafeVariationalInference
-        config = {'tau': 0, 'zgrads': True}
-
-    elif estimator == 'pathwise':
+    if estimator == 'pathwise':
         Estimator = VariationalInference
         config = {'tau': 0, 'zgrads': True}
 
@@ -24,8 +20,7 @@ def get_config(estimator):
         config = {'tau': 0, 'zgrads': False}
 
     elif any([e in estimator for e in ['reinforce', 'vimco', 'ovis']]):
-        reinforce_args = {'tau': 0,
-                          'zgrads': False}
+        reinforce_args = {'tau': 0, 'zgrads': False}
 
         if 'reinforce' in estimator:
             Estimator = Reinforce
@@ -40,13 +35,8 @@ def get_config(estimator):
             else:
                 raise ValueError(f"Estimator arg = {estimator} must contain `-arithmetic` or `-geometric`")
 
-            if '-outer' in estimator:
-                use_outer_samples = True
-            else:
-                use_outer_samples = False
-
             Estimator = Vimco
-            config = {**reinforce_args, 'arithmetic': arithmetic, 'use_outer_samples': use_outer_samples}
+            config = {**reinforce_args, 'arithmetic': arithmetic}
 
         elif 'ovis' in estimator:
 

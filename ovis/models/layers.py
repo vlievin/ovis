@@ -22,6 +22,7 @@ class BatchDropout(nn.Module):
 
 
 class MLP(nn.Module):
+    """Multi layer perceptron"""
 
     def __init__(self, ninp, nhid, nout, nlayers=1, bias=True, act_in=False, normalization='batchnorm', dropout=0):
         super().__init__()
@@ -48,6 +49,7 @@ class MLP(nn.Module):
 
 
 class ConvEncoder(nn.Module):
+    """Convolutional encoder with fully connected head"""
 
     def __init__(self, shp: tuple, nhid, nout, nlayers=1, bias=True, act_in=False, kernel_size=3,
                  normalization='batchnorm'):
@@ -79,6 +81,7 @@ class ConvEncoder(nn.Module):
 
 
 class ConvDecoder(nn.Module):
+    """Convolutional encoder with fully connected first layuer"""
 
     def __init__(self, shp: tuple, nhid, nout, nlayers=1, bias=True, act_in=False, kernel_size=3,
                  normalization='batchnorm'):

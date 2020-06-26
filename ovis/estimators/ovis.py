@@ -1,9 +1,10 @@
 from typing import Dict
 
+import numpy as np
 import torch
 from torch import Tensor
 
-from ovis import Reinforce
+from .reinforce import Reinforce
 
 
 class OvisMonteCarlo(Reinforce):
@@ -60,7 +61,7 @@ class OvisAsymptotic(Reinforce):
     def __init__(self, *args, auxiliary_samples=0, **kwargs):
         super().__init__(*args, auxiliary_samples=auxiliary_samples, **kwargs)
         self.baseline = None
-        self.log_1_m_uniform = np.log(1. - 1. / self.iw)
+        self.register_buffer('log_1_m_uniform', torch.tensor(np.log(1. - 1. / self.iw)))
         self.control_loss_weight = 0
 
     @torch.no_grad()

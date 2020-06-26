@@ -1,14 +1,15 @@
 import torch
 from booster import Diagnostic, Aggregator
+from tqdm import tqdm
 
 from ovis.analysis.gradients import get_gradients_statistics
 from ovis.training.ops import test_step
 from ovis.training.utils import preprocess
 from ovis.utils.utils import ManualSeed
-from tqdm import tqdm
 
 
-def perform_gradients_analysis(opt, global_step, writer_train, train_logger, loader_train, model, estimator, config, exp_id):
+def perform_gradients_analysis(opt, global_step, writer_train, train_logger, loader_train, model, estimator, config,
+                               exp_id, tqdm=tqdm):
     """
     Perform the gradients analysis for the main estimator and the counterfactual estimators if available
     """
@@ -20,14 +21,14 @@ def perform_gradients_analysis(opt, global_step, writer_train, train_logger, loa
     x = x[:opt.grad_bs]
 
     # get the configuration for the gradients analysis
-    grad_args = {'seed': opt.seed, 'batch_size': opt.bs * opt.mc * opt.iw,
-                 'n_samples': opt.grad_samples,
-                 'key_filter': opt.grad_key,
-                 'use_dsnr': True}
+    grad_args = {'seed': opt.seed,
+                 'batch_size': opt.bs * opt.mc * opt.iw,
+                 'mc_samples': opt.grad_samples,
+                 'key_filter': opt.grad_key}
 
     # gradients analysis for the training estimator
     with ManualSeed(seed=opt.seed):
-        grad_data, _ = get_gradients_statistics(estimator, model, x, **grad_args, **config)
+        grad_data, _ = get_gradients_statistics(estimator, model, x, tqdm=tqdm, **grad_args, **config)
 
     # log the gradient analysis
     with torch.no_grad():

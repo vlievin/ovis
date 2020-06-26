@@ -1,11 +1,13 @@
 from typing import *
 
 import numpy as np
+import torch
+from booster import Diagnostic
 from torch import nn, Tensor
 
 from .freebits import FreeBits
 
-_EPS = 1e-18
+EPS = 1e-18
 
 
 class Estimator(nn.Module):
@@ -26,9 +28,8 @@ class Estimator(nn.Module):
         self.mc = mc
         self.iw = iw
         self.auxiliary_samples = auxiliary_samples
-        self.log_iw = np.log(iw)
-        self.log_mc = np.log(mc)
-        self.log_mc_iw_m1 = np.log(mc * iw - 1)
+        self.register_buffer('log_iw', torch.tensor(np.log(iw)))
+        self.register_buffer('log_mc', torch.tensor(np.log(mc)))
         self.freebits = None if freebits is None else FreeBits(freebits)
         self.detach_qlogits = False
         self.sequential_computation = sequential_computation
@@ -44,7 +45,7 @@ class Estimator(nn.Module):
         x = x.view(-1, self.mc, self.iw + self.auxiliary_samples, *dims)
         return x.mean((1, 2,))
 
-    def forward(self, model: nn.Module, x: Tensor, backward: bool = False, **kwargs) -> Tuple[Tensor, Dict, Dict]:
+    def forward(self, model: nn.Module, x: Tensor, backward: bool = False, **kwargs) -> Tuple[Tensor, Diagnostic, Dict]:
         """
         Compute the loss given the `model` and a batch of data `x`. Returns the loss per datapoint, diagnostics and the model's output
         :param model: nn.Module

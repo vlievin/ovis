@@ -7,7 +7,8 @@ import torch
 from torch import nn, Tensor
 from torch.distributions import Distribution
 
-from ovis.utils.utils import prod
+from .base import Template
+from ..utils.utils import prod
 
 
 class ChainDistribution(torch.distributions.Distribution):
@@ -291,7 +292,7 @@ class GenerativeModel(nn.Module):
         return self.sample_latent_and_obs(num_samples)[1]
 
 
-class InferenceNetwork(nn.Module):
+class InferenceNetwork(Template):
     def __init__(self, num_stochastic_layers=3, num_deterministic_layers=0,
                  latent_dim=200, obs_dim=784, train_obs_mean=None,
                  device=torch.device('cpu'), latent_dims=None, **kwargs):

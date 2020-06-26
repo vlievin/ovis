@@ -34,7 +34,7 @@ def parse_args():
 
     # run directory, id and seed
     parser.add_argument('--dataset', default='shapes',
-                        help='dataset [shapes | binmnist | omniglot | fashion | gmm-toy | gaussian-toy | bernoulli-toy]')
+                        help='dataset [shapes | binmnist | omniglot | fashion | gmm-toy | gaussian-toy]')
     parser.add_argument('--mini', action='store_true', help='use a sub-sampled version of the dataset')
     parser.add_argument('--root', default='runs/', help='directory to store training logs')
     parser.add_argument('--data_root', default='data/', help='directory to store the data')
@@ -97,7 +97,7 @@ def parse_args():
                         help='identifiant of the parameters/tensor for the gradients analysis')
 
     # model architecture
-    parser.add_argument('--model', default='vae', help='[vae, conv-vae, hierarchical, bernoulli_toy]')
+    parser.add_argument('--model', default='vae', help='[vae, conv-vae, gmm, gaussian-toy, tvo-sbm, tvo-gaussian]')
     parser.add_argument('--hdim', default=64, type=int, help='number of hidden units for each layer')
     parser.add_argument('--nlayers', default=3, type=int, help='number of hidden layers for the encoder and decoder')
     parser.add_argument('--depth', default=3, type=int,
@@ -218,6 +218,10 @@ if __name__ == '__main__':
         # define the session and restore checkpoint if available
         session = Session(run_id, logdir, model, estimator, optimizers)
         session.restore_if_available()
+        if session.epoch > 0:
+            print(f"Restoring Session from epoch = {session.epoch} (best test "
+                  f"L_{opt.iw_test} = {session.best_elbo[0]:.3f} at step {session.best_elbo[1]}, "
+                  f"epoch = {session.best_elbo[2]})\n{logging_sep()}")
 
         # run
         while session.epoch < epochs:
@@ -249,14 +253,14 @@ if __name__ == '__main__':
                 """Active Units Analysis"""
                 if opt.mc_au_analysis:
                     summary = Diagnostic(latent_activations(model, loader_eval_train, opt.mc_au_analysis,
-                                                            nsamples=opt.npoints_au_analysis))
+                                                            max_samples=opt.npoints_au_analysis))
                     summary.log(writer_train, session.global_step)
 
                 """Analyse Gradients"""
                 if opt.grad_samples > 0:
                     print(logging_sep())
                     perform_gradients_analysis(opt, session.global_step, writer_train, train_logger, loader_train,
-                                               model, estimator, config, exp_id)
+                                               model, estimator, config, exp_id, tqdm=tqdm)
 
                 """Estimate the ESS"""
                 summary_train_ess = evaluation(model, estimator_test_ess, config_test, loader_eval_train, exp_id,

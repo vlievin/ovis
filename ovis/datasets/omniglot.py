@@ -12,8 +12,6 @@ from torchvision import transforms
 def load_omniglot(datapath):
     dataset = os.path.join(datapath, "chardata.mat")
 
-    print("# omniglot data path:", os.path.abspath(dataset))
-
     if not os.path.isfile(dataset):
         origin = (
             'https://github.com/yburda/iwae/raw/'

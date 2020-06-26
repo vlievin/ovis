@@ -2,7 +2,7 @@ from typing import *
 
 import torch
 from torch import nn, Tensor
-from torch.distributions import Bernoulli
+from torch.distributions import Bernoulli, Distribution
 
 from ovis.models.distributions import PseudoCategorical
 from ovis.utils.utils import prod, flatten
@@ -14,10 +14,11 @@ def H(z, dim=-1):
 
 
 class Template(nn.Module):
-    """A template to follow to make your model compatible with the estimators and with the training loop"""
+    """A template of VAE model, follow these guidelines to make your model compatible
+    with the gradient estimators and the training loop"""
 
-    def forward(self, x: Tensor, **kwargs) -> Dict[str, Tensor]:
-        """dummy forward pass"""
+    def forward(self, x: Tensor, **kwargs) -> Dict[str, Union[Tensor, List[Tensor], List[Distribution], Distribution]]:
+        """perform a forward pass and return the latent samples `z` and the distribution `p(x|z)`, `p(z)`, `q(z|x)`"""
 
         raise NotImplementedError
 
@@ -46,9 +47,15 @@ class Template(nn.Module):
 
         # values from the stochastic layers (z, pz, qz) are returned
         # as a list where each index correspond to one stochastic layer
-        return {'px': px, 'z': [z], 'qz': [qz], 'pz': [pz], 'qlogits': qlogits}
+        return {'px': px,  # Distribution: p(x|z)
+                'z': [z],  # List[Tensor]: z ~ q(z|x)
+                'qz': [qz],  # List[Distribution]: q(z|x)
+                'pz': [pz]  # List[Distribution]: p(z)
+                }
 
     def sample_from_prior(self, bs: int, **kwargs):
+        """sample from the prior and return the distribution `p(x|z)`"""
+
         raise NotImplementedError
 
         bs, *dims = (16, 1, 8, 8)
@@ -66,4 +73,4 @@ class Template(nn.Module):
         px_logits = decoder(flatten(z)).view(bs, *dims)
         px = Bernoulli(logits=px_logits)
 
-        return {'px': px, 'z': [z], 'qz': [qz], 'pz': [pz], 'qlogits': qlogits}
+        return {'px': px, 'z': [z], 'qz': [qz], 'pz': [pz]}

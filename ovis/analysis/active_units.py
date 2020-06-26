@@ -1,24 +1,32 @@
-import sys
 from typing import *
 
 import torch
+from booster import Diagnostic
+from torch.utils.data import DataLoader
 
-
-def preprocess(batch, device):
-    if isinstance(batch, torch.Tensor):
-        x = batch.to(device)
-        return x, None
-    else:
-        x, y = batch  # assume tuple (x,y)
-        x = x.to(device)
-        y = y.to(device)
-        return x, y
+from ..models import Template
+from ..training.utils import preprocess
 
 
 @torch.no_grad()
-def latent_activations(model, loader, mc_samples, nsamples=None, epsilon=1e-3):
+def latent_activations(model: Template,
+                       loader: DataLoader,
+                       mc_samples: int,
+                       max_samples: Optional[int] = None,
+                       epsilon: float = 1e-3) -> Diagnostic:
     """
-    Computing the activations of the latent variables
+    Computing the activations of the latent variables as in [https://arxiv.org/abs/1509.00519, https://arxiv.org/abs/1807.04863]:
+
+      * au = \sum_{d=1}^D 1\{ Cov_{p(x)} [ E_{q(z|x)} [z_d] ] \}
+
+    :param model: VAE model
+    :param loader: data loader
+    :param mc_samples: number of Monte Carlo samples
+    :param max_samples: maximum number of data points
+    :param epsilon: covariance threshold value
+    :return: Diagnostic {'active_units' : {'au' number of active units: int,
+                                           'r_au': ratio of active units: float}
+                                           'n': total number of units: int} }
     """
     zs = None
     model.eval()
@@ -46,20 +54,18 @@ def latent_activations(model, loader, mc_samples, nsamples=None, epsilon=1e-3):
             z = torch.cat([_reduce_z(zz) for zz in z], 1)
 
         # E_q(z|x) [z_d]
-        z = z.view(bs, mc_samples, -1)
+        z = z.view(bs, mc_samples, -1).mean(1)
 
-        z = z.mean(1)
-
+        # concatenate samples across `x`
         z = z.cpu()
         if zs is None:
             zs = z
         else:
             zs = torch.cat([zs, z], 0)
 
-        if nsamples is not None:
-            if zs.size(0) > nsamples:
-                zs = zs[:nsamples]
-                break
+        if max_samples is not None and zs.size(0) > max_samples:
+            zs = zs[:max_samples]
+            break
 
     # Cov_p(x) [ E_q(z|x) [z_d] ]
     N = zs.size(0)
@@ -68,7 +74,6 @@ def latent_activations(model, loader, mc_samples, nsamples=None, epsilon=1e-3):
     # AU = \sum_d \delta{ Cov_p(x) [ E_q(z|x) [z_d] ] > \epsilon }
     au = (cov_expected_z_given_x > epsilon).float().sum()
 
-    return {'active_units': {'au': au,
-                             'r_au': au / cov_expected_z_given_x.shape[0],
-                             'n': cov_expected_z_given_x.shape[0]}}
-
+    return Diagnostic({'active_units': {'au': au,
+                                        'r_au': au / cov_expected_z_given_x.shape[0],
+                                        'n': cov_expected_z_given_x.shape[0]}})

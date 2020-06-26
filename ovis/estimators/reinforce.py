@@ -47,7 +47,7 @@ class Reinforce(VariationalInference):
 
     def forward(self, model: nn.Module, x: Tensor, backward: bool = False, debug: bool = False,
                 return_diagnostics: bool = True, **kwargs: Any) -> Tuple[
-        Tensor, Dict, Dict]:
+        Tensor, Diagnostic, Dict]:
 
         bs = x.size(0)
         output = self.evaluate_model(model, x, **kwargs)

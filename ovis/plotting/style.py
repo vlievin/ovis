@@ -1,12 +1,15 @@
-import seaborn as sns
 import pprint
+
 import matplotlib
+import seaborn as sns
+
 pp = pprint.PrettyPrinter(indent=4)
+
 
 def set_style():
     # matplotlib.rc('font', family='serif', serif='Bookman')
     matplotlib.rc('text', usetex=True)
-    #matplotlib.rcParams['text.latex.preamble'] = [r"\usepackage{amsmath}"]
+    # matplotlib.rcParams['text.latex.preamble'] = [r"\usepackage{amsmath}"]
 
     matplotlib.rcParams['text.latex.preamble'] = [
         r"\usepackage{amsmath}"
@@ -17,37 +20,39 @@ def set_style():
         r'\sansmath'  # <- tricky! -- gotta actually tell tex to use!
     ]
 
-    sns.set_style("darkgrid",  {"axes.facecolor": ".96", "xtick.bottom": True, "ytick.left":True, "xtick.color": "0.3", "ytick.color": "0.3"})
+    sns.set_style("darkgrid", {"axes.facecolor": ".96", "xtick.bottom": True, "ytick.left": True, "xtick.color": "0.3",
+                               "ytick.color": "0.3"})
     # sns.set(style="ticks")
-    sns.set_context("paper", font_scale=1.6, rc={"lines.linewidth": 1.2, "lines.markersize": 12, 'text.latex.preamble': r"\usepackage{amsmath}"})
+    sns.set_context("paper", font_scale=1.6,
+                    rc={"lines.linewidth": 1.2, "lines.markersize": 12, 'text.latex.preamble': r"\usepackage{amsmath}"})
 
-    print(100*"==")
+    print(100 * "==")
     print("Axes style")
     print(100 * "==")
     pp.pprint(sns.axes_style())
     print(100 * "==")
 
+
 DPI = 200
 PLOT_WIDTH = 5
 PLOT_TOTAL_WIDTH = None
-PLOT_HEIGHT = 3#2.5
+PLOT_HEIGHT = 3  # 2.5
 STEP_FORMAT = '{x:.0e}'
 
 ESTIMATOR_STYLE = {
     'ovis-gamma1': {'color': "#E6C445", 'marker': ">", 'linestyle': "-"},
     'ovis-gamma0': {'color': "#B88A25", 'marker': "<", 'linestyle': "-"},
-    'copt-aux1': {'color': "#E89C66", 'marker': "^", 'linestyle': ":"},
+    'ovis-S1': {'color': "#E89C66", 'marker': "^", 'linestyle': ":"},
     'ovis-S10': {'color': "#D15C2A", 'marker': "^", 'linestyle': "-"},
-    'copt-aux50': {'color': "#954026", 'marker': "^", 'linestyle': "-"},
-    'copt-aux100': {'color': "#954026", 'marker': "^", 'linestyle': "-"},
+    'ovis-S50': {'color': "#954026", 'marker': "^", 'linestyle': "-"},
+    'ovis-S100': {'color': "#954026", 'marker': "^", 'linestyle': "-"},
     'reinforce': {'color': "#7A9396", 'marker': "o", 'linestyle': "-"},
     'vimco-arithmetic': {'color': "#6CAD8E", 'marker': "h", 'linestyle': "-"},
     'vimco-geometric': {'color': "#5A9177", 'marker': "H", 'linestyle': "-"},
     'tvo': {'color': "#336DA2", 'marker': "P", 'linestyle': "-"},
-    'ww': {'color': "#77B6D7", 'marker': "X", 'linestyle': "-"},
+    'wake-wake': {'color': "#77B6D7", 'marker': "X", 'linestyle': "-"},
     'pathwise': {'color': "#968FA1", 'marker': "s", 'linestyle': "-"}
 }
-
 
 ESTIMATOR_ORDER = [
     'ovis-S100',
@@ -60,7 +65,7 @@ ESTIMATOR_ORDER = [
     'vimco-arithmetic',
     'vimco-geometric',
     'reinforce',
-    'ww',
+    'wake-wake',
     'tvo',
     'pathwise'
 ]
@@ -75,24 +80,24 @@ ESTIMATOR_GROUPS = {
     'vimco-arithmetic': 2,
     'vimco-geometric': 2,
     'reinforce': 2,
-    'ww': 3,
+    'wake-wake': 3,
     'tvo': 3,
     'pathwise': 3
 }
 
 ESTIMATOR_DISPLAY_NAME = {
-    'ovis-gamma1': r"$\operatorname{OVIS}_{\sim}\ (\gamma = 1)$", # carreful here 0 -> 1
+    'ovis-gamma1': r"$\operatorname{OVIS}_{\sim}\ (\gamma = 1)$",  # carreful here 0 -> 1
     'ovis-gamma0': r"$\operatorname{OVIS}_{\sim}\ (\gamma = 0)$",
-    'ovis-S': r"$\operatorname{OVIS}_{\operatorname{MC}}\ (S=1)$",
+    'ovis-S1': r"$\operatorname{OVIS}_{\operatorname{MC}}\ (S=1)$",
     'ovis-S10': r"$\operatorname{OVIS}_{\operatorname{MC}}\ (S=10)$",
     'ovis-S50': r"$\operatorname{OVIS}_{\operatorname{MC}}\ (S=50)$",
     'ovis-S100': r"$\operatorname{OVIS}_{\operatorname{MC}}\ (S=100)$",
     'reinforce': r"$\operatorname{REINFORCE}$",
     'vimco': r"$\operatorname{VIMCO}$",
-    'vimco-arithmetic': r"$\operatorname{VIMCO}$", #r"$\operatorname{VIMCO}_{\operatorname{arithmetic}}$",
+    'vimco-arithmetic': r"$\operatorname{VIMCO}_{\operatorname{arithmetic}}$",  # r"$\operatorname{VIMCO}$",
     'vimco-geometric': r"$\operatorname{VIMCO}_{\operatorname{geometric}}$",
     'tvo': r"$\operatorname{TVO}$",
-    'ww': r"$\operatorname{RWS}$",
+    'wake-wake': r"$\operatorname{RWS}$",
     'pathwise': r"$\operatorname{pathwise}\ (\operatorname{IWAE})$"
 }
 
@@ -109,7 +114,7 @@ DASH_STYLES = 10 * ["",
 
 LOG_PLOT_RULES = {
     'iw': 'log',
-    'gamma' : 'log',
+    'gamma': 'log',
     'grads/snr': 'log',
     'grads/dsnr': 'log',
     'grads/variance': 'log',
@@ -150,13 +155,7 @@ METRIC_DISPLAY_NAME = {
 
 
 def format_estimator_name(name):
-    if name == 'copt':
-        return 'copt-alpha1'
-    if name == 'copt-alpha0':
-        return 'copt-alpha0'
-    elif name == 'copt-vimco':
-        return 'copt-alpha1'
-    elif name == 'vimco':
+    if name == 'vimco':
         return 'vimco-arithmetic'
     elif name == 'tvo-config1' or name == 'tvo-config2':
         return 'tvo'

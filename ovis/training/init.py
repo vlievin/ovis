@@ -36,8 +36,8 @@ def init_model(opt, x, loader=None):
     _MODEL = {'vae': VAE,
               'gaussian-toy': GaussianToyVAE,
               'gmm-toy': GaussianMixture,
-              'sbm': SigmoidBeliefNetwork,
-              'gaussian': GaussianVAE}[model_id]
+              'tvo-sbm': SigmoidBeliefNetwork,
+              'tvo-gaussian': GaussianVAE}[model_id]
 
     # init the model
     torch.manual_seed(opt.seed)

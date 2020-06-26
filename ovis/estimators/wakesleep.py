@@ -31,7 +31,8 @@ class BaseWakeSleep(Reinforce):
     def get_loss(self, model, log_qz, iw_data):
         raise NotImplementedError
 
-    def forward(self, model: nn.Module, x: Tensor, backward: bool = False, **kwargs: Any) -> Tuple[Tensor, Dict, Dict]:
+    def forward(self, model: nn.Module, x: Tensor, backward: bool = False, **kwargs: Any) -> Tuple[
+        Tensor, Diagnostic, Dict]:
         bs = x.size(0)
         output = self.evaluate_model(model, x, **kwargs)
         log_px_z, log_pz, log_qz = [output[k] for k in ('log_px_z', 'log_pz', 'log_qz')]
@@ -61,6 +62,8 @@ class BaseWakeSleep(Reinforce):
 
 
 class WakeSleep(BaseWakeSleep):
+    """Reweighted Wake-Sleep algorithm with *sleep-phase* phi update"""
+
     def get_loss(self, model, log_qz, iw_data):
         bs = log_qz.size(0)
         phi_loss, meta = self.get_sleep_phi_loss(model, bs)
@@ -70,6 +73,7 @@ class WakeSleep(BaseWakeSleep):
 
 
 class WakeWake(BaseWakeSleep):
+    """Reweighted Wake-Sleep algorithm with *wake-phase* phi update"""
 
     def get_loss(self, model, log_qz, iw_data):
         loss = (self.get_wake_theta_loss(iw_data) + self.get_wake_phi_loss(log_qz, iw_data)).mean(1)

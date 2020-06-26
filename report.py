@@ -3,6 +3,9 @@ import json
 import os
 from datetime import datetime
 from shutil import rmtree
+from collections import defaultdict
+from tqdm import tqdm
+import numpy as np
 
 import pandas as pd
 from dotmap import DotMap
@@ -10,7 +13,8 @@ from dotmap import DotMap
 from ovis.training.logging import get_loggers
 from ovis.plotting.style import *
 from ovis.plotting.style import LOG_PLOT_RULES, METRIC_DISPLAY_NAME, format_estimator_name
-from ovis.utils import parse_numbers
+from ovis.utils.utils import parse_numbers
+from ovis.plotting.plotting import pivot_plot, plot_logs, detailed_plot
 
 set_style()
 

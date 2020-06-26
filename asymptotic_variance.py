@@ -51,7 +51,7 @@ parser.add_argument('--iw_steps', default=5, type=int, help='number of Importanc
 parser.add_argument('--iw_valid', default=5000, type=int, help='number of iw samples for testing')
 
 parser.add_argument('--use_oracle', action='store_true', help='use_oracle to estimate the true gradients direction')
-parser.add_argument('--oracle', default='copt', type=str, help='oracle estimator id')
+parser.add_argument('--oracle', default='ovis-gamma0', type=str, help='oracle estimator id')
 parser.add_argument('--iw_oracle', default=5000, type=int, help='number of iw samples to find the true gradients')
 parser.add_argument('--mc_oracle', default=1000, type=int,
                     help='number of mc samples used to compute the estimae of the oracle gradients')
@@ -159,7 +159,6 @@ try:
                         'use_individual_grads': opt.individual_grads}
     for noise in noises:
         print(_sep)
-        base_logger.info(f">> Noise = {noise}")
 
         # initizalize model using the optimal parameters
         model.set_optimal_parameters()
@@ -183,7 +182,7 @@ try:
         # gradients analysis args and config
         meta = {'seed': opt.seed, 'noise': noise, 'mc_samples': int(opt.mc_samples),
                 **{k: v.mean().item() for k, v in diagnostics['loss'].items()}}
-        grad_args = {'n_samples': int(opt.mc_samples), 'true_grads': true_grads, **global_grad_args}
+        grad_args = {'mc_samples': int(opt.mc_samples), 'oracle_grad': true_grads, **global_grad_args}
 
         for estimator_id in estimators:
             print(_sep)
@@ -198,8 +197,7 @@ try:
                 # evalute variance of the gradients
                 with ManualSeed(seed=opt.seed):
                     analysis_data, grads_meta = get_gradients_statistics(estimator, model, x,
-                                                                         return_grads=True,
-                                                                         use_dsnr=True, **grad_args, **config)
+                                                                         return_grads=True, **grad_args, **config)
 
                 # log grads info
                 log_grads_data(analysis_data, base_logger, estimator_id, iw)

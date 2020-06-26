@@ -4,6 +4,7 @@ from .src import init_mlp
 from .src import GenerativeModel as DiscreteGenerativeModel
 from .src import InferenceNetwork as DiscreteInferenceNetwork
 
+from .base import Template
 from ..utils import *
 import torch
 from torch import Tensor, nn
@@ -315,7 +316,7 @@ class InferenceNetwork(DiscreteInferenceNetwork):
         else:
             return latent_dist.sample(sample_shape)
 
-class GaussianVAE(nn.Module):
+class GaussianVAE(Template):
     """A wrapper for the official TVO model."""
 
     def __init__(self, xdim: Tuple[int] = tuple(),

@@ -4,16 +4,16 @@ import torch
 from torch import nn
 from torch.distributions import Distribution, Bernoulli
 
-from .base import Template
-from .layers import MLP, ConvEncoder, ConvDecoder
 from ovis.models.distributions import PseudoCategorical, PseudoBernoulli, NormalFromLogits
 from ovis.utils.utils import prod, flatten, batch_reduce
+from .base import Template
+from .layers import MLP, ConvEncoder, ConvDecoder
 
 
 class BaseVAE(Template):
     """
-    A base VAE class with a Categorical or Gaussian prior.
-    The methods `encode` and `generate` have to be implemented.
+    A base VAE class with a Categorical, Gaussian or Bernoulli prior.
+    The methods `encode` and `generate` are abstract.
     """
 
     def __init__(self, xdim: Tuple[int] = tuple(),
