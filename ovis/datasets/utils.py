@@ -10,9 +10,9 @@ from .gmm import GaussianMixtureDataset
 from .omniglot import get_omniglot_datasets
 from .shapes import get_shapes_datasets
 
-_train_mini = 5000
-_valid_mini = 500
-_test_mini = 500
+MINI_TRAIN_SIZE = 5000
+MINI_VALID_SIZE = 500
+MINI_TEST_SIZE = 500
 
 
 class MiniDataset(Dataset):
@@ -32,9 +32,7 @@ class MiniDataset(Dataset):
         return len(self.index)
 
 
-def get_datasets(opt):
-    transform = ToTensor()
-
+def get_datasets(opt, transform=ToTensor()):
     if "shapes" in opt.dataset:
         output = get_shapes_datasets(transform=transform)
     elif "gaussian-toy" in opt.dataset:
@@ -56,9 +54,9 @@ def get_datasets(opt):
 
     if opt.mini:
         def wrapper(dset_train, dset_valid, dset_test):
-            return MiniDataset(dset_train, _train_mini, opt.seed), \
-                   MiniDataset(dset_valid, _valid_mini, opt.seed), \
-                   MiniDataset(dset_test, _test_mini, opt.seed + 1)
+            return MiniDataset(dset_train, MINI_TRAIN_SIZE, opt.seed), \
+                   MiniDataset(dset_valid, MINI_VALID_SIZE, opt.seed), \
+                   MiniDataset(dset_test, MINI_TEST_SIZE, opt.seed + 1)
 
         output = wrapper(*output)
 

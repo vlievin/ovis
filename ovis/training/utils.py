@@ -10,7 +10,14 @@ def get_run_id(opt):
     filtered_opt_dict = {k: v for k, v in vars(opt).items() if k not in exceptions}
     opt_string = ",".join(("{}={}".format(*i) for i in filtered_opt_dict.items()))
     deterministic_opt_id = hashlib.md5(opt_string.encode('utf-8')).hexdigest()
-    exp_id = f"{opt.dataset}-{opt.model}-{opt.estimator}-K{opt.iw}-M{opt.mc}-seed{opt.seed}-{opt.id}"
+    warmup_id = ""
+    if opt.alpha > 0:
+        warmup_id += f"-{opt.alpha}"
+    if opt.warmup > 0:
+        warmup_id += "-warmup"
+    exp_id = f"{opt.dataset}-{opt.model}-{opt.estimator}-K{opt.iw}-M{opt.mc}{warmup_id}-seed{opt.seed}"
+    if opt.id != "":
+        exp_id += f"-{opt.id}"
     run_id = f"{exp_id}-{deterministic_opt_id}"
     return run_id, exp_id
 

@@ -1,6 +1,3 @@
-import torch
-from booster import Diagnostic
-
 from .base import *
 from ..utils.utils import batch_reduce
 
@@ -285,13 +282,6 @@ class VariationalInference(Estimator):
     @torch.no_grad()
     def additional_diagnostics(self, output):
         """A function to append additional diagnostics from the model otuput"""
-
-        prior = {}
-        if 'Hp' in output.keys():
-            prior['hp'] = torch.sum(torch.cat(output['Hp']))
-        if 'usage' in output.keys():
-            prior['usage'] = torch.mean(torch.cat(output['usage']))
-
         gmm = {}
         if 'posterior_mse' in output.keys():
             gmm['posterior_mse'] = output['posterior_mse']
@@ -307,7 +297,7 @@ class VariationalInference(Estimator):
             if key in output.keys():
                 gaussian_toy[key] = output[key]
 
-        return {'prior': prior, 'gmm': gmm, 'loss': loss, 'gaussian_toy': gaussian_toy}
+        return {'gmm': gmm, 'loss': loss, 'gaussian_toy': gaussian_toy}
 
 
 class PathwiseVAE(VariationalInference):

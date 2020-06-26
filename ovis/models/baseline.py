@@ -5,6 +5,8 @@ from ..utils.utils import flatten
 
 
 class Baseline(nn.Module):
+    """Neural baseline model"""
+
     def __init__(self, xdim, nlayers, hdim, batch_norm=True, bias=True, center_x=True):
         super().__init__()
         self.center_x = center_x

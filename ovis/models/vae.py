@@ -5,7 +5,7 @@ from torch import nn
 from torch.distributions import Distribution, Bernoulli
 
 from ovis.models.distributions import PseudoCategorical, PseudoBernoulli, NormalFromLogits
-from ovis.utils.utils import prod, flatten, batch_reduce
+from ovis.utils.utils import prod, flatten
 from .base import Template
 from .layers import MLP, ConvEncoder, ConvDecoder
 
@@ -105,7 +105,7 @@ class BaseVAE(Template):
             keys = self.keys / (1e-8 + self.keys.norm(dim=-1, p=2, keepdim=True) ** 2)
             logits = torch.einsum("bnh, nkh -> bnk", [logits, keys])
 
-        # important: this is required for the gradients analysis
+        # important: this is required tp analyse the gradients of the tensor `logits`
         logits.retain_grad()
 
         return logits
@@ -147,11 +147,9 @@ class BaseVAE(Template):
 
         px = self.generate(z)
 
-        diagnostics = self._get_diagnostics(z, qz, pz)
+        return {'px': px, 'z': [z], 'qz': [qz], 'pz': [pz], **meta}
 
-        return {'px': px, 'z': [z], 'qz': [qz], 'pz': [pz], **meta, **diagnostics}
-
-    def sample_from_prior(self, N):
+    def sample_from_prior(self, N, **kwargs):
         """
         Sample the prior z ~ p(z) and return p(x|z)
         :param N: number of samples
@@ -161,16 +159,6 @@ class BaseVAE(Template):
         z = self.prior_dist(logits=prior).sample()
         px = self.generate(z)
         return {'px': px, 'z': z}
-
-    def _get_diagnostics(self, z, qz, pz):
-        Hp = batch_reduce(pz.entropy())
-        if isinstance(pz, PseudoCategorical):
-            usage = (z.sum(dim=0, keepdim=True) > 0).float()
-            usage = usage.mean(dim=(1, 2,))
-        else:
-            usage = torch.zeros_like(Hp)
-
-        return {'Hp': [Hp], 'usage': [usage]}
 
 
 class VAE(BaseVAE):
@@ -226,26 +214,25 @@ class ConvVAE(BaseVAE):
         x_padded = [self.xdim[0], *self.padded_shape]
 
         # encoder
-        self.conv_encoder = ConvEncoder(x_padded, self.hdim, self.hdim, **args)
-        self.mlp_encoder = MLP(prod(self.conv_encoder.output_shape), 4 * self.hdim, prod(self.qdim), act_in=True,
-                               **args)
+        self.conv_inference_network = ConvEncoder(x_padded, self.hdim, self.hdim, **args)
+        self.mlp_inference_network = MLP(prod(self.conv_inference_network.output_shape), 4 * self.hdim,
+                                         prod(self.qdim), act_in=True, **args)
 
         # decoder
-        self.mlp_decoder = MLP(prod(self.zdim), 4 * self.hdim, prod(self.conv_encoder.output_shape), **args)
-        self.conv_decoder = ConvDecoder(self.conv_encoder.output_shape, self.hdim, self.xdim[0], act_in=True, **args)
+        self.mlp_generative_model = MLP(prod(self.zdim), 4 * self.hdim,
+                                        prod(self.conv_inference_network.output_shape), **args)
+        self.conv_generative_model = ConvDecoder(self.conv_inference_network.output_shape, self.hdim, self.xdim[0],
+                                                 act_in=True, **args)
 
     def encode(self, x):
-        # pad
         x = torch.nn.functional.pad(x, self.padding)
-
-        y = self.conv_encoder(x)
-        y = self.mlp_encoder(flatten(y))
+        y = self.conv_inference_network(x)
+        y = self.mlp_inference_network(flatten(y))
         return y.view(-1, *self.qdim)
 
     def generate(self, z):
         z = flatten(z)
-        x = self.mlp_decoder(z)
-        px_logits = self.conv_decoder(x.view(-1, *self.conv_encoder.output_shape))
-        # unpad
+        x = self.mlp_generative_model(z)
+        px_logits = self.conv_generative_model(x.view(-1, *self.conv_inference_network.output_shape))
         px_logits = torch.nn.functional.pad(px_logits, [-p for p in self.padding])
         return self.likelihood(logits=px_logits)

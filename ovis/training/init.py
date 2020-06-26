@@ -1,7 +1,7 @@
 import torch
 from torch.optim import SGD, Adam, Adamax, RMSprop
 
-from ovis import VAE, GaussianToyVAE, GaussianMixture, SigmoidBeliefNetwork, GaussianVAE, Baseline, VariationalInference
+from ovis import VAE, ConvVAE, GaussianToyVAE, GaussianMixture, SigmoidBeliefNetwork, GaussianVAE, Baseline, VariationalInference
 from ovis.estimators.config import get_config
 from .utils import get_dataset_mean
 
@@ -34,10 +34,11 @@ def init_model(opt, x, loader=None):
 
     # get the right constructor
     _MODEL = {'vae': VAE,
+              'conv-vae': ConvVAE,
               'gaussian-toy': GaussianToyVAE,
               'gmm-toy': GaussianMixture,
-              'tvo-sbm': SigmoidBeliefNetwork,
-              'tvo-gaussian': GaussianVAE}[model_id]
+              'sbm': SigmoidBeliefNetwork, # official TVO SBM model
+              'gaussian-vae': GaussianVAE}[model_id] # official TVO gaussian VAE model
 
     # init the model
     torch.manual_seed(opt.seed)

@@ -5,7 +5,7 @@ from .src import GenerativeModel as DiscreteGenerativeModel
 from .src import InferenceNetwork as DiscreteInferenceNetwork
 
 from .base import Template
-from ..utils import *
+from ..utils.utils import *
 import torch
 from torch import Tensor, nn
 

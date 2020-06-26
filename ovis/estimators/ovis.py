@@ -81,7 +81,7 @@ class OvisAsymptotic(Reinforce):
         :return: control variate
         """
         L_k, v_k = [data[k] for k in ['L_k', 'v_k']]
-        # avoid overflow
+        # avoid overflow: warning using a low epsilon value is equivalent to "truncated importance sampling"
         v_k_safe = torch.min((1 - 1e-7) * torch.ones_like(v_k), v_k)
 
         # c_k = L_k

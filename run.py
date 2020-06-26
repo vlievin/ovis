@@ -24,11 +24,12 @@ from ovis.training.logging import sample_model, get_loggers, log_summary, save_m
 from ovis.training.ops import training_step, test_step
 from ovis.training.session import Session
 from ovis.training.utils import get_run_id, get_number_of_epochs, preprocess
-from ovis.utils.utils import notqdm, Schedule, ManualSeed
+from ovis.utils.utils import notqdm, ManualSeed
+from ovis.training.schedule import Schedule
 
 
 def parse_args():
-    """Parse command line arguments"""
+    """Parse the command line arguments"""
 
     parser = argparse.ArgumentParser()
 
@@ -75,7 +76,7 @@ def parse_args():
     parser.add_argument('--warmup', default=0, type=int, help='period of the posterior warmup (alpha : 0 -> 1)')
     parser.add_argument('--warmup_offset', default=0, type=int, help='number of steps before increasing beta')
     parser.add_argument('--warmup_mode', default='log', type=str, help='interpolation mode [linear | log]')
-    parser.add_argument('--alpha_min', default=1 - 1e-1, type=float, help='minimum alpha value')
+    parser.add_argument('--alpha_min', default=0.9, type=float, help='minimum alpha value')
 
     # evaluation
     parser.add_argument('--eval_freq', default=10, type=int, help='frequency for the evaluation [test set + grads]')
@@ -97,18 +98,18 @@ def parse_args():
                         help='identifiant of the parameters/tensor for the gradients analysis')
 
     # model architecture
-    parser.add_argument('--model', default='vae', help='[vae, conv-vae, gmm, gaussian-toy, tvo-sbm, tvo-gaussian]')
+    parser.add_argument('--model', default='vae', help='[vae, conv-vae, gmm, gaussian-toy, sbm, gaussian-vae]')
     parser.add_argument('--hdim', default=64, type=int, help='number of hidden units for each layer')
     parser.add_argument('--nlayers', default=3, type=int, help='number of hidden layers for the encoder and decoder')
     parser.add_argument('--depth', default=3, type=int,
                         help='number of stochastic layers when using hierarchical models')
-    parser.add_argument('--b_nlayers', default=1, type=int, help='number of hidden layers for the baseline')
+    parser.add_argument('--b_nlayers', default=1, type=int, help='number of hidden layers for the neural baseline')
     parser.add_argument('--norm', default='none', type=str, help='normalization layer [none | layernorm | batchnorm]')
     parser.add_argument('--dropout', default=0, type=float, help='dropout value')
     parser.add_argument('--prior', default='normal', help='prior for the VAE model [normal, categorical, bernoulli]')
-    parser.add_argument('--N', default=8, type=int, help='number of latent variables')
+    parser.add_argument('--N', default=32, type=int, help='number of latent variables')
     parser.add_argument('--K', default=8, type=int, help='number of categories when using a categorical prior')
-    parser.add_argument('--kdim', default=0, type=int, help='dimension of the keys for each latent variable')
+    parser.add_argument('--kdim', default=0, type=int, help='dimension of the keys model for categorical prior')
     parser.add_argument('--learn_prior', action='store_true', help='learn the prior')
 
     return parser.parse_args()
@@ -188,7 +189,7 @@ if __name__ == '__main__':
         # test estimator (it is important that all models are evaluated using the same evaluator)
         estimator_test, estimator_test_ess, config_test = init_test_estimator(opt)
 
-        # get device and move models
+        # get device and move models to device
         device = available_device()
         model.to(device)
         estimator.to(device)
@@ -208,9 +209,8 @@ if __name__ == '__main__':
 
         # define the run length based on either the number of epochs of number of steps
         epochs, iter_per_epoch = get_number_of_epochs(opt, loader_train)
-        base_logger.info(f"Dataset = {opt.dataset}: running for {epochs} epochs,"
-                         f" {iter_per_epoch * epochs} steps, {iter_per_epoch} steps / epoch, {epochs // opt.eval_freq} eval. steps")
-        print(logging_sep())
+        base_logger.info(f"Dataset = {opt.dataset}: running for {epochs} epochs, {iter_per_epoch * epochs} steps, "
+                         f"{iter_per_epoch} steps / epoch, {epochs // opt.eval_freq} eval. steps\n{logging_sep()}")
 
         # sample model at initialization
         sample_model("prior-sample", model, logdir, global_step=0, writer=writer_test, seed=opt.seed)

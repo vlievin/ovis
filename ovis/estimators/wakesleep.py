@@ -4,8 +4,12 @@ from .reinforce import *
 class BaseWakeSleep(Reinforce):
     """inspired from https://github.com/vmasrani/tvo/blob/master/discrete_vae/losses.py"""
 
+    def get_wake_theta_loss(self, iw_data):
+        """\Delta_theta = \nabla_theta [L_K]"""
+        return - iw_data['L_k']
+
     def get_sleep_phi_loss(self, model, bs):
-        """\Delta_phi = E_{p_{\theta}(z | x)} [ - nabla_phi log q_phi (z | x) ]"""
+        """\Delta_phi = E_{p_{\theta}(z, x)} [ - nabla_phi log q_phi (z | x) ]"""
 
         # sample data from model: z ~ p(z), x ~ p(x|z)
         with torch.no_grad():
@@ -16,10 +20,6 @@ class BaseWakeSleep(Reinforce):
         # compute log q(z | x)
         qz, meta = model.infer(x, tau=0)
         return - batch_reduce(qz.log_prob(z)), meta
-
-    def get_wake_theta_loss(self, iw_data):
-        """\Delta_theta = \nabla_theta [L_K]"""
-        return - iw_data['L_k']
 
     def get_wake_phi_loss(self, log_qz, iw_data):
         """\Delta_theta = \nabla_theta [L_K]"""

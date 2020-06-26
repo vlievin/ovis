@@ -48,6 +48,9 @@ def get_config(estimator):
                 gamma = float(eval([s for s in estimator.split("-") if 'gamma' in s][0].replace("gamma", "")))
                 Estimator = OvisAsymptotic
                 config = {**reinforce_args, 'gamma': gamma}
+            else:
+                raise ValueError(
+                    f"Ovis estimators should have either of the arguments `-S*` or `-gamma*`. (e.g. ovis-gamma1)")
 
         else:
             raise ValueError(

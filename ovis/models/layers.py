@@ -52,17 +52,21 @@ class ConvEncoder(nn.Module):
     """Convolutional encoder with fully connected head"""
 
     def __init__(self, shp: tuple, nhid, nout, nlayers=1, bias=True, act_in=False, kernel_size=3,
-                 normalization='batchnorm'):
+                 normalization='batchnorm', dropout=0):
         super().__init__()
-        Norm = {'batchnorm': nn.BatchNorm2d, 'layernorm': nn.LayerNorm, 'none': None, None: None}[normalization]
-        layers = []
+        Norm = {'batchnorm': nn.BatchNorm2d, 'layernorm': nn.LayerNorm,
+                'none': None, None: None}[normalization]
 
+        layers = []
         if act_in:
-            layers += [Norm(shp[0]), nn.ReLU()]
+            if Norm is not None:
+                layers += [Norm(shp[0])]
+            layers += [nn.Dropout(dropout), nn.ReLU()]
 
         for i in range(nlayers - 1):
             layers += [
-                nn.Conv2d(shp[0], nhid, kernel_size=kernel_size, bias=bias, padding=(kernel_size - 1) // 2, stride=2)]
+                nn.Conv2d(shp[0], nhid, kernel_size=kernel_size, bias=bias, padding=(kernel_size - 1) // 2, stride=2),
+                nn.Dropout(dropout)]
             shp = [nhid, shp[1] // 2, shp[2] // 2]
 
             if Norm is not None:
@@ -84,18 +88,21 @@ class ConvDecoder(nn.Module):
     """Convolutional encoder with fully connected first layuer"""
 
     def __init__(self, shp: tuple, nhid, nout, nlayers=1, bias=True, act_in=False, kernel_size=3,
-                 normalization='batchnorm'):
+                 normalization='batchnorm', dropout=0):
         super().__init__()
         Norm = {'batchnorm': nn.BatchNorm2d, 'layernorm': nn.LayerNorm, 'none': None, None: None}[normalization]
-        layers = []
 
+        layers = []
         if act_in:
-            layers += [Norm(shp[0]), nn.ReLU()]
+            if Norm is not None:
+                layers += [Norm(shp[0])]
+            layers += [nn.Dropout(dropout), nn.ReLU()]
 
         for i in range(nlayers - 1):
             layers += [
                 nn.ConvTranspose2d(shp[0], nhid, kernel_size=kernel_size, bias=bias, padding=(kernel_size - 1) // 2,
-                                   output_padding=1, stride=2)]
+                                   output_padding=1, stride=2),
+                nn.Dropout(dropout)]
             shp = [nhid, shp[1] // 2, shp[2] // 2]
 
             if Norm is not None:
