@@ -1,5 +1,5 @@
 {
-  "description": "Fitting the Gaussian toy model from `Tighter Variational Bounds are not necessarily Better`",
+  "description": "Fitting the Gaussian toy model from the asymptotic analysis",
   "args": [
     "--estimator pathwise-iwae",
     "--estimator tvo-S5-beta3",

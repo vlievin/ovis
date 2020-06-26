@@ -1,15 +1,21 @@
 {
-  "description": "Training a 3 layers Sigmoid Belief Network with linear connections.",
+  "description": "Training a 3 layers Sigmoid Belief Network with linear connections as in `The Thermodynamic Variational Objective`.",
   "args": [
-    "--estimator copt-gamma0 --alpha_min 0.99 --warmup 1000000 --warmup_mode log",
-    "--estimator copt-gamma1 --alpha_min 0.99 --warmup 1000000 --warmup_mode log",
-    "--estimator copt-aux1 --alpha_min 0.99 --warmup 1000000 --warmup_mode log",
-    "--estimator copt-aux10 --alpha_min 0.99 --warmup 1000000 --warmup_mode log",
-    "--estimator copt-aux50 --alpha_min 0.99 --warmup 1000000 --warmup_mode log"
+    "--estimator tvo-config1 --id iwr",
+    "--estimator ovis-gamma0 --alpha_min 0.99 --warmup 1000000 --warmup_mode log --id iwrbound",
+    "--estimator ovis-gamma1 --alpha_min 0.99 --warmup 1000000 --warmup_mode log --id iwrbound",
+    "--estimator ovis-S1 --alpha_min 0.99 --warmup 1000000 --warmup_mode log --id iwrbound",
+    "--estimator ovis-S10 --alpha_min 0.99 --warmup 1000000 --warmup_mode log --id iwrbound",
+    "--estimator ovis-S50 --alpha_min 0.99 --warmup 1000000 --warmup_mode log --id iwrbound",
+    "--estimator vimco-geometric --id iwbound",
+    "--estimator ovis-gamma --id iwbound0",
+    "--estimator ovis-gamma1 --id iwbound",
+    "--estimator ovis-S1 --id iwbound",
+    "--estimator ovis-S10 --id iwbound",
+    "--estimator ovis-S50 --id iwbound"
   ],
   "global": "--silent --deterministic --nsteps 4000000",
   "parameters": {
-    "id": ["alphas-wrp"],
     "model":["sbm"],
     "prior": ["bernoulli"],
     "learn_prior" : [true],

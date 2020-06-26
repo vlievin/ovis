@@ -1,21 +1,18 @@
 {
-  "description": "Training a 1 layer VAE with non-linnear connections and Gaussian prior.",
+  "description": "Training a 1 layer VAE with non-linnear connections and Gaussian prior as in `The Thermodynamic Variational Objective`.",
   "args": [
-    "--estimator tvo-S5-config2",
-    "--estimator copt-aux50 --gamma_min 1e-2 --warmup 1000000 --warmup_mode log",
-    "--estimator copt-alpha0 --gamma_min 1e-2 --warmup 1000000 --warmup_mode log",
-    "--estimator copt-alpha0",
-    "--estimator copt-aux50",
-    "--estimator copt-aux10 --gamma_min 1e-2 --warmup 1000000 --warmup_mode log",
-    "--estimator copt-aux1 --gamma_min 1e-2 --warmup 1000000 --warmup_mode log",
-    "--estimator copt-alpha1"
+    "--estimator pathwise-iwae",
+    "--estimator tvo-part5-config2",
+    "--estimator ovis-gamma0 --alpha 0.7",
+    "--estimator ovis-gamma1 --alpha 0.7",
+    "--estimator ovis-S1 --alpha 0.7",
+    "--estimator ovis-S10 --alpha 0.7",
+    "--estimator ovis-S50 --alpha 0.7"
   ],
   "global": "--silent --deterministic --nsteps 4000000",
   "parameters": {
-    "model":["gaussian"],
+    "model":["gaussian-vae"],
     "prior": ["normal"],
-    "norm": ["none"],
-    "learn_prior" : [false],
     "N": [200],
     "hdim" : [200],
     "nlayers" :[2],
