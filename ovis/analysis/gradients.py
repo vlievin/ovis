@@ -3,10 +3,6 @@ from time import time
 import torch
 from tqdm import tqdm
 
-eps = 1e-15
-min_var = 1e-15
-
-
 def covariance(x):
     x = x - x.mean(dim=1, keepdim=True)
     cov = 1 / (x.size(1) - 1) * x.mm(x.t())
@@ -109,6 +105,7 @@ def get_grads_from_parameters(model, loss, key_filter=''):
 
 def get_gradients_statistics(estimator, model, x, n_samples=100, key_filter='qlogits',
                              true_grads=None, return_grads=False, use_dsnr=False, samples_per_batch=None,
+                             eps=1e-18,
                              **config):
     """
     Compute the variance, magnitude and SNR of the gradients averaged over a batch of data.
@@ -198,7 +195,7 @@ def get_gradients_statistics(estimator, model, x, n_samples=100, key_filter='qlo
     model.zero_grad()
 
     # reduce fn: keep only parameter with variance > 0
-    mask = (grads_variance > min_var).float()
+    mask = (grads_variance > eps).float()
     _reduce = lambda x: (x * mask).sum() / mask.sum()
 
     output = {'grads': {
