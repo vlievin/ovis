@@ -50,12 +50,11 @@ def get_config(estimator):
 
         elif 'ovis' in estimator:
 
-            # parse `-S`
-            if "-S" in estimator:
+            if "-S" in estimator:  # parse `-S` : number of auxiliary particles
                 auxiliary_samples = int(eval([s for s in estimator.split("-") if 'S' in s][0].replace("S", "")))
                 Estimator = OvisMonteCarlo
                 config = {**reinforce_args, 'auxiliary_samples': auxiliary_samples}
-            elif "-gamma" in estimator:
+            elif "-gamma" in estimator:  # parse `-gamma` : parameter of the unified asymptotic approximation
                 gamma = float(eval([s for s in estimator.split("-") if 'gamma' in s][0].replace("gamma", "")))
                 Estimator = OvisAsymptotic
                 config = {**reinforce_args, 'gamma': gamma}
@@ -63,7 +62,6 @@ def get_config(estimator):
         else:
             raise ValueError(
                 f"Unknown reinforce-like estimator {estimator}, valid base identifiers are [reinforce, vimco, copt]")
-
 
     elif estimator == 'gs':
         Estimator = VariationalInference
@@ -82,7 +80,7 @@ def get_config(estimator):
         else:
             partition_name = None
 
-            # number of partitions
+        # number of partitions `-part*`
         partition_args = [arg for arg in estimator.split('-') if 'part' in arg]
         num_partition = parse_numbers(partition_args[0])[0] if len(partition_args) else 2
 
@@ -90,7 +88,7 @@ def get_config(estimator):
         partition_args = [arg for arg in estimator.split('-') if 'beta' in arg]
         log_beta_min = - parse_numbers(partition_args[0])[0] if len(partition_args) else -10
 
-        # integration
+        # integration type [`-left`, `-right`, `trapz`]
         _integrations = ['left', 'right', 'trapz']
         integration = [x for x in _integrations if x in estimator.split("-")]
         integration = integration[0] if len(integration) else "left"

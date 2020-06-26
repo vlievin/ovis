@@ -25,7 +25,7 @@ class BaseWakeSleep(Reinforce):
         """\Delta_theta = \nabla_theta [L_K]"""
         with torch.no_grad():
             log_wk = iw_data['log_wk']
-            v_k = self.normalized_importance_weights(log_wk)
+            v_k = log_wk.softmax(2)
         return - torch.sum(v_k.detach() * log_qz, dim=2)
 
     def get_loss(self, model, log_qz, iw_data):
