@@ -1,26 +1,14 @@
-import sys
-from copy import copy
+import hashlib
+
 from torch import Tensor
 
 
 def get_run_id(opt):
-    """define a unique identifier given on the parsed config"""
-    args = copy(sys.argv)
-
-    # filter args
-    for a in ["--root", "--data_root", "--workers", "--epochs", "--nsteps"]:
-        if a in args:
-            i = args.index(a)
-            del args[i]
-            del args[i]  # remove next element as well (value)
-
-    for a in ["--rm", "--silent", "--sequential_computation", "--test_sequential_computation"]:
-        if a in args:
-            i = args.index(a)
-            del args[i]
-
-    exp_id = "-".join(args).replace("--", "").replace("run.py-", "")
-    run_id = f"{opt.dataset}-{opt.model}-{opt.estimator}-seed{opt.seed}-{exp_id}"
+    """define a unique run identifier"""
+    opt_string = ",".join(("{}={}".format(*i) for i in vars(opt).items()))
+    deterministic_opt_id = hashlib.md5(opt_string.encode('utf-8')).hexdigest()
+    exp_id = f"{opt.dataset}-{opt.model}-{opt.estimator}-K{opt.iw}-M{opt.mc}-seed{opt.seed}-{opt.id}"
+    run_id = f"{exp_id}-{deterministic_opt_id}"
     return run_id, exp_id
 
 
