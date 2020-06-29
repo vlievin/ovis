@@ -92,7 +92,7 @@ def read_and_report_asymptotic_experiment():
     grads['estimator'] = list(map(format_estimator_name, grads['estimator'].values))
 
     """plotting"""
-    set_style()
+    set_matplotlib_style()
     plot_statistics(df, opt, output_path)
     if len(grads):
         plot_gradients_distribution(grads, output_path)

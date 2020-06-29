@@ -33,7 +33,7 @@ def get_abs_paths(root, exp, data_root):
 
 
 def read_experiment(exp):
-    with open(f'exps/{exp}.json') as json_file:
+    with open(f'experiments/{exp}.json') as json_file:
         experiment_args = json.load(json_file)
 
     return experiment_args
@@ -74,8 +74,8 @@ def retrieve_exp_and_run(job_args):
                 args = item['arg']
                 process_id = eval(multiprocessing.current_process().name.split('-')[-1]) - 1
                 device = devices[process_id % len(devices)]
-                print(
-                    f"@ manager.subprocess : initializing process with PID = {os.getpid()}, process id: {process_id}, allocated device: {device}, args= {args}")
+                print(f"@ manager.subprocess : initializing process with PID = {os.getpid()}, "
+                      f"process id: {process_id}, allocated device: {device}, args= {args}")
 
                 if 'cuda' in device:
                     device_id = device.split(':')[-1]

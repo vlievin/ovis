@@ -16,7 +16,7 @@ from ovis.reporting.style import LOG_PLOT_RULES, METRIC_DISPLAY_NAME, format_est
 from ovis.utils.utils import parse_numbers
 from ovis.reporting.plotting import pivot_plot, plot_logs, detailed_plot
 
-set_style()
+set_matplotlib_style()
 
 try:
     from tbparser.summary_reader import SummaryReader

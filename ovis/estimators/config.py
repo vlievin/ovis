@@ -8,8 +8,6 @@ def get_config(estimator_id):
     :param estimator_id: estimator identifier (e.g. `ovis-gamma1`)
     :return: Estimator, config
     """
-
-
     if estimator_id == 'pathwise':
         Estimator = VariationalInference
         config = {'tau': 0, 'zgrads': True}
@@ -74,11 +72,11 @@ def get_config(estimator_id):
     elif 'tvo' in estimator_id:
         # argument for automatic partition
         if "-config1" in estimator_id:
-            partion_id = "config1"
+            partition_id = "config1"
         elif "-config2" in estimator_id:
-            partion_id = "config2"
+            partition_id = "config2"
         else:
-            partion_id = None
+            partition_id = None
 
         # number of partitions `-part*`
         partition_args = [arg for arg in estimator_id.split('-') if 'part' in arg]
@@ -96,7 +94,7 @@ def get_config(estimator_id):
         # define config and Estimator
         Estimator = ThermoVariationalObjective
         config = {'tau': 0, 'zgrads': False, 'num_partition': num_partition, 'integration': integration,
-                  'partion_id': partion_id, 'log_beta_min': log_beta_min}
+                  'partition_id': partition_id, 'log_beta_min': log_beta_min}
 
     else:
         raise ValueError(f"Unknown estimator {estimator_id}.")

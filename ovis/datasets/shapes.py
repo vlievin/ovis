@@ -20,7 +20,6 @@ n_angles = 8
 angles = [pi * k / n_angles for k in range(n_angles)]
 
 
-
 # shape generation code stolen from
 # https://github.com/addtt/multi-object-datasets/blob/master/utils/graphics.py
 
@@ -63,6 +62,7 @@ def get_regular_polygon(angle, num_vert, color, scale, patch_size):
     img[rr, cc, :] = color[None, None, :]
 
     return img
+
 
 def get_shape(shape_type, *args, **kwargs):
     if shape_type == 0:
@@ -108,8 +108,9 @@ def get_shapes_datasets(seed=1984, train_ratio=0.9, transform=ToTensor(), **kwar
     rgn = np.random.RandomState(seed)
     rgn.shuffle(shapes)
 
+    # use all data for training (The dataset is too small anyways)
     n_train = int(train_ratio * len(shapes))
-    train_shapes, test_shapes = shapes[:n_train], shapes[n_train:]
+    train_shapes, test_shapes = shapes, shapes[n_train:]
 
     train_dset = ShapesDataset(train_shapes, transform=transform)
     test_dset = ShapesDataset(test_shapes, transform=transform)

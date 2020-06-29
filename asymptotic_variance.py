@@ -201,7 +201,7 @@ try:
     grads_data.to_csv(os.path.join(logdir, 'grads.csv'))
 
     # plotting
-    set_style()
+    set_matplotlib_style()
     df['estimator'] = list(map(format_estimator_name, df['estimator'].values))
     plot_statistics(df, opt, logdir)
     if len(grads_data):

@@ -128,25 +128,25 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-exps/uniform.json
+experiments/uniform.json
 
 .tmp_plot.png
 
 sandbox.ipynb
 
-exps/uniform-mnist.json
+experiments/uniform-mnist.json
 
 trend.py
 
 *.ipynb
 
-exps/ess.json
+experiments/ess.json
 
 gaussian-star.png
-/exps/check-tvo.json
+/experiments/check-tvo.json
 
-exps/check-tvo-bernoulli.json
+experiments/check-tvo-bernoulli.json
 
-exps/test-tvo.json
+experiments/test-tvo.json
 
 make_exp.py

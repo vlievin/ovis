@@ -8,20 +8,21 @@ import warnings
 from multiprocessing import Pool
 
 import GPUtil
+from booster.utils import logging_sep
 from tqdm import tqdm
 
 from ovis.utils.filelock import FileLock
 from ovis.utils.manager import open_db, snapshot_dir, read_experiment, get_abs_paths, get_filelock, retrieve_exp_and_run
-from booster.utils import logging_sep
 
 
 def run_manager():
     """
-    Run a set of experiments defined as a json file in `exps/` using mutliprocessing. This script is a quick & dirty
-    implementation of a queue system using `filelock` and `tinydb`. the manager creates a snapshot of the library to
-    ensure consistency between runs. You may update the snapshot manually using `--update_lib` or update the experiment
-    file using `--update_exp`. In that case starting a new manager using `--resume` will append potential new experiments
-    to the database. Use `--rf` to delete an existing experiment. Usage:
+    Run a set of experiments defined as a json file in `experiments/` using mutliprocessing.
+    This script is a quick & dirty implementation of a queue system using `filelock` and `tinydb`.
+    The manager creates a snapshot of the library to ensure consistency between runs. You may update the snapshot
+    manually using `--update_lib` or update the experiment file using `--update_exp`.
+    In that case starting a new manager using `--resume` will append potential new experiments to the database.
+    Use `--rf` to delete an existing experiment. Example:
 
     ```bash
     python manager.py --exp gaussian-mixture-model --max_gpus 4 --processes 2
@@ -40,7 +41,7 @@ def run_manager():
     parser.add_argument('--max_load', default=0.5, type=float, help='only use GPUs with load < `max_load`')
     parser.add_argument('--max_memory', default=0.01, type=float, help='only use GPUs with memory < `max_memory`')
     parser.add_argument('--processes', default=1, type=int, help='number of processes per GPU')
-    parser.add_argument('--rf', action='store_true', help='force delete previous experiment')
+    parser.add_argument('--rf', action='store_true', help='delete the previous experiment')
     parser.add_argument('--resume', action='store_true', help='resume the manager')
     parser.add_argument('--update_exp', action='store_true', help='update experiment file in the snapshot')
     parser.add_argument('--update_lib', action='store_true', help='update the entire lib snapshot')
@@ -91,7 +92,7 @@ def run_manager():
 
     # udpate experiment file
     if opt.update_exp:
-        _exp_file = f'exps/{opt.exp}.json'
+        _exp_file = f'experiments/{opt.exp}.json'
         shutil.copyfile(_exp_file, os.path.join(snapshot_dir(exp_root), _exp_file))
 
     # move path to the snapshot directory to ensure consistency between runs (lib will be loaded from `./lib_snapshot/`)
@@ -147,7 +148,7 @@ def run_manager():
         n_exps = len(db)
         time.sleep(0.2)
 
-    # reamining queued experiments
+    # remaining queued experiments
     logger.info(f"Queued experiments : {n_queued_exps} / {n_exps}. Added exps. {n_added}")
 
     # run processes in parallel (spawning `processes` processes)

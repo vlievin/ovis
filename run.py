@@ -19,7 +19,7 @@ from ovis.estimators import VariationalInference
 from ovis.training.evaluation import analyse_gradients_and_log, evaluation
 from ovis.training.initialization import init_model, init_neural_baseline, init_main_estimator, init_test_estimator, \
     init_optimizers, init_logging_directory
-from ovis.training.logging import sample_model, get_loggers, log_summary, save_model_and_update_best_elbo, load_model
+from ovis.training.logging import sample_prior_and_save_img, get_loggers, log_summary, save_model_and_update_best_elbo, load_model
 from ovis.training.ops import training_step, test_step
 from ovis.training.schedule import Schedule
 from ovis.training.session import Session
@@ -212,7 +212,7 @@ if __name__ == '__main__':
                          f"{iter_per_epoch} steps / epoch, {epochs // opt.eval_freq} eval. steps\n{logging_sep()}")
 
         # sample model at initialization
-        sample_model("prior-sample", model, logdir, global_step=0, writer=writer_test, seed=opt.seed)
+        sample_prior_and_save_img("prior-sample", model, logdir, global_step=0, writer=writer_test, seed=opt.seed)
 
         # define the session and restore checkpoint if available
         session = Session(run_id, logdir, model, estimator, optimizers)
@@ -300,7 +300,7 @@ if __name__ == '__main__':
 
                 """sample model"""
                 with ManualSeed(seed=opt.seed):
-                    sample_model("prior-sample", model, logdir, global_step=session.global_step, writer=writer_test)
+                    sample_prior_and_save_img("prior-sample", model, logdir, global_step=session.global_step, writer=writer_test)
                 print(logging_sep())
 
                 """Checkpointing"""

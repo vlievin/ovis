@@ -5,7 +5,7 @@ import numpy as np
 import seaborn as sns
 
 from ovis.reporting.plotting import PLOT_WIDTH, PLOT_HEIGHT, ESTIMATOR_STYLE, Legend
-from ovis.reporting.style import DPI, MARKERS, set_style
+from ovis.reporting.style import DPI, MARKERS, set_matplotlib_style
 
 
 def get_outliers_boundaries(values, k=1.5):
@@ -14,7 +14,7 @@ def get_outliers_boundaries(values, k=1.5):
 
 
 def plot_statistics(df, opt, logdir):
-    set_style()
+    set_matplotlib_style()
 
     param_name = {'b': "\mathbf{b}", 'tensor:b': "b", 'tensor:qlogits': "\phi"}.get(opt.key_filter, "\theta")
     if opt.draw_individual:

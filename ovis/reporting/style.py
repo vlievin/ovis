@@ -1,12 +1,17 @@
-import pprint
-
 import matplotlib
 import seaborn as sns
 
-pp = pprint.PrettyPrinter(indent=4)
+DPI = 200
+PLOT_WIDTH = 5
+PLOT_TOTAL_WIDTH = None
+PLOT_HEIGHT = 3  # 2.5
+STEP_FORMAT = '{x:.0e}'
 
 
-def set_style():
+def set_matplotlib_style():
+    """
+    Set a custom `matplotlib` style and enable Latex.
+    """
     matplotlib.rc('text', usetex=True)
     matplotlib.rcParams['text.latex.preamble'] = [
         r"\usepackage{amsmath}",
@@ -24,12 +29,6 @@ def set_style():
     sns.set_context("paper", font_scale=1.6,
                     rc={"lines.linewidth": 1.2, "lines.markersize": 12, 'text.latex.preamble': r"\usepackage{amsmath}"})
 
-
-DPI = 200
-PLOT_WIDTH = 5
-PLOT_TOTAL_WIDTH = None
-PLOT_HEIGHT = 3  # 2.5
-STEP_FORMAT = '{x:.0e}'
 
 ESTIMATOR_STYLE = {
     'ovis-gamma1': {'color': "#E6C445", 'marker': ">", 'linestyle': "-"},

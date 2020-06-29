@@ -8,7 +8,7 @@ from torchvision.utils import make_grid
 
 
 @torch.no_grad()
-def sample_model(key, model, logdir, global_step=0, writer=None, N=100, **kwargs):
+def sample_prior_and_save_img(key, model, logdir, global_step=0, writer=None, N=100, **kwargs):
     """sample the Generative model : z ~ p(z), x ~ p(x|z) and save to .png"""
     x_ = model.sample_from_prior(N, **kwargs).get('px')
     if x_ is None:

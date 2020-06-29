@@ -1,8 +1,8 @@
 from .vi import *
 
 
-def get_partition(num_partitions, partition_type, log_beta_min=-10,
-                  device=None):
+def build_partition(num_partitions, partition_type, log_beta_min=-10,
+                    device=None):
     """Create a non-decreasing sequence of values between zero and one.
     See https://en.wikipedia.org/wiki/Partition_of_an_interval.
     Args:
@@ -37,8 +37,35 @@ class ThermoVariationalObjective(VariationalInference):
     The Thermodynamic Variational Inference https://arxiv.org/pdf/1907.00031.pdf / https://github.com/vmasrani/tvo
     """
 
+    def get_partition(self, log_beta_min, num_partition, partition_type, partition_id, device):
+
+        if partition_id is not None:
+            # map K to a partition accordingly to the figure 3. in the TVO paper
+            if partition_id == 'config1':
+                # figure 3 in the TVO paper
+                if self.iw < 10:
+                    beta_min = 5e-2
+                elif self.iw < 30:
+                    beta_min = 2e-1
+                else:
+                    beta_min = 3e-1
+            elif partition_id == 'config2':
+                # figure 6 in the TVO paper
+                if self.iw < 10:
+                    beta_min = 0.01
+                elif self.iw < 30:
+                    beta_min = 0.02
+                else:
+                    beta_min = 0.03
+            else:
+                raise ValueError(f"Unknown partition_name = `{partition_id}`")
+
+            log_beta_min = torch.tensor(beta_min, device=device).log10()
+
+        return build_partition(num_partition, partition_type, log_beta_min=log_beta_min, device=device)
+
     def compute_loss(self, log_px_z: Tensor, log_pzs: List[Tensor], log_qzs: List[Tensor], integration: str = 'left',
-                     num_partition=2, partition_type='log', log_beta_min=-10, partion_id=None, **kwargs: Any) -> \
+                     num_partition=2, partition_type='log', log_beta_min=-10, partition_id=None, **kwargs: Any) -> \
             Dict[str, Tensor]:
         """
         Computes the covariance gradient estimator for the TVO bound.
@@ -54,38 +81,11 @@ class ThermoVariationalObjective(VariationalInference):
         :param integration: type of integral approximation (Riemann sum); left, right or trapz
         :param num_partition: partition size
         :param log_beta_min: log beta_1 in base 10
-        :param partion_id: infer beta_1 based on the the number of particles K [None, config1, config2]
+        :param partition_id: infer beta_1 based on the the number of particles K [None, config1, config2]
         :return: dictionary with keys [tvo, *iw_data]
         """
 
-        if partion_id is not None:
-            # map K to a partition accordingly to the figure 3. in the TVO paper
-            if partion_id == 'config1':
-                # figure 3 in the TVO paper
-                if self.iw < 10:
-                    beta_min = 5e-2
-                elif self.iw < 30:
-                    beta_min = 2e-1
-                else:
-                    beta_min = 3e-1
-            elif partion_id == 'config2':
-                # figure 6 in the TVO paper
-                if self.iw < 10:
-                    beta_min = 0.01
-                elif self.iw < 30:
-                    beta_min = 0.02
-                else:
-                    beta_min = 0.03
-            else:
-                raise ValueError(f"Unknown partition_name = `{partion_id}`")
-
-
-            log_beta_min = torch.tensor(beta_min, device=log_px_z.device).log10()
-
-
-        partition = get_partition(num_partition, partition_type, log_beta_min=log_beta_min, device=log_px_z.device)
-        num_particles = self.iw
-
+        partition = self.get_partition(log_beta_min, num_partition, partition_type, partition_id, log_px_z.device)
         iw_data = self.compute_iw_bound(log_px_z, log_pzs, log_qzs, detach_qlogits=False,
                                         request=['log_px_z', 'log_pz', 'log_qz'], **kwargs)
         log_wk, log_px_z, log_pz, log_qz = [iw_data[k] for k in ['log_wk', 'log_px_z', 'log_pz', 'log_qz']]
@@ -106,10 +106,10 @@ class ThermoVariationalObjective(VariationalInference):
 
         # num_particles S for importance sampling as
         # described in subsection Expectations of Section 4
-        if num_particles == 1:
+        if self.iw == 1:
             correction = 1
         else:
-            correction = num_particles / (num_particles - 1)
+            correction = self.iw / (self.iw - 1)
 
         # compute covariance (eq. 12)
         # .detach() makes sure PyTorch does not differentiate f_lambda(z) term.
@@ -136,7 +136,8 @@ class ThermoVariationalObjective(VariationalInference):
 
         return {'tvo': tvo, **iw_data}
 
-    def forward(self, model: nn.Module, x: Tensor, backward: bool = False, return_diagnostics:bool=True, **kwargs: Any) -> Tuple[
+    def forward(self, model: nn.Module, x: Tensor, backward: bool = False, return_diagnostics: bool = True,
+                **kwargs: Any) -> Tuple[
         Tensor, Diagnostic, Dict]:
         # From VariationalInference estimator.
         # Removed '.mean(1)'s and changed namings for TVO
