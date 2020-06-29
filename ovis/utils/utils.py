@@ -1,9 +1,8 @@
 import operator
 import re
 import sys
-from collections import defaultdict
 from functools import reduce
-from typing import Iterable, Dict, List, Optional
+from typing import Iterable, Optional
 
 import torch
 
@@ -64,28 +63,10 @@ def prod(x: Iterable):
 
 
 def flatten(x):
+    """return x.view(x.size(0), -1)"""
     return x.view(x.size(0), -1)
 
 
 def batch_reduce(x):
+    """return x.view(x.size(0), -1).sum(1)"""
     return flatten(x).sum(1)
-
-
-class DataCollector(defaultdict):
-    """A small helper class to model a dictionary of lists: {key : [*values]}"""
-
-    def __init__(self):
-        super().__init__(list)
-
-    def extend(self, data: Dict[str, List[Optional[torch.Tensor]]]) -> None:
-        """Append new data item"""
-        for key, d in data.items():
-            self[key] += d
-
-    def sort(self) -> Dict[str, List[Optional[torch.Tensor]]]:
-        """sort data and return"""
-        for key, d in self.items():
-            d = d[::-1]
-            self[key] = [t for t in d if t is not None]
-
-        return self

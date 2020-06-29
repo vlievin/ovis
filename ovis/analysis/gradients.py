@@ -76,7 +76,7 @@ def get_gradients_statistics(estimator: Estimator,
                              return_grads: bool = False,
                              compute_dsnr: bool = True,
                              samples_per_batch: Optional[int] = None,
-                             eps: float = 1e-18,
+                             eps: float = 1e-15,
                              tqdm: Callable = tqdm,
                              **config: Dict) -> Tuple[Diagnostic, Dict]:
     """
@@ -179,7 +179,9 @@ def get_gradients_statistics(estimator: Estimator,
         grads_mean = grads_mean()
 
         # compute signal-to-noise ratio. see `tighter variational bounds are not necessarily better` (eq. 4)
-        grads_snr = grads_mean.abs() / (eps + grads_variance ** 0.5)
+        grad_var_sqrt = grads_variance.pow(0.5)
+        clipped_variance_sqrt = torch.where(grad_var_sqrt > eps, grad_var_sqrt, eps * torch.ones_like(grad_var_sqrt))
+        grads_snr = grads_mean.abs() / (clipped_variance_sqrt)
 
         # compute DSNR,  see `tighter variational bounds are not necessarily better` (eq. 12)
         if compute_dsnr:
@@ -202,7 +204,7 @@ def get_gradients_statistics(estimator: Estimator,
     mask = (grads_variance > eps).float()
     _reduce = lambda x: (x * mask).sum() / mask.sum()
 
-    output = {'grads': {
+    output = Diagnostic({'grads': {
         'variance': _reduce(grads_variance),
         'magnitude': _reduce(grads_mean.abs()),
         'snr': _reduce(grads_snr),
@@ -214,7 +216,7 @@ def get_gradients_statistics(estimator: Estimator,
             'p75': percentile(grads_snr, q=0.75), 'p5': percentile(grads_snr, q=0.05),
             'p95': percentile(grads_snr, q=0.95), 'min': grads_snr.min(),
             'max': grads_snr.max(), 'mean': grads_snr.mean()}
-    }
+    })
 
     if oracle_grad is not None:
         output['grads']['direction'] = grads_dir.mean()

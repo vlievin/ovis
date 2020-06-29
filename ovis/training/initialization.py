@@ -1,7 +1,11 @@
+import os
+from shutil import rmtree
+
 import torch
 from torch.optim import SGD, Adam, Adamax, RMSprop
 
-from ovis import VAE, ConvVAE, GaussianToyVAE, GaussianMixture, SigmoidBeliefNetwork, GaussianVAE, Baseline, VariationalInference
+from ovis import VAE, ConvVAE, GaussianToyVAE, GaussianMixture, SigmoidBeliefNetwork, GaussianVAE, Baseline, \
+    VariationalInference
 from ovis.estimators.config import get_config
 from .utils import get_dataset_mean
 
@@ -10,7 +14,6 @@ def init_model(opt, x, loader=None):
     # compute mean value of train set
     xmean = None if loader is None else get_dataset_mean(loader)
 
-    # define the hyperparameters
     hyperparams = {
         'xdim': x.shape,
         'N': opt.N,
@@ -24,7 +27,6 @@ def init_model(opt, x, loader=None):
         'normalization': opt.norm,
         'dropout': opt.dropout,
         'x_mean': xmean,
-        'prior': opt.prior
     }
 
     # change the model id based on the chosen dataset if required
@@ -37,8 +39,8 @@ def init_model(opt, x, loader=None):
               'conv-vae': ConvVAE,
               'gaussian-toy': GaussianToyVAE,
               'gmm-toy': GaussianMixture,
-              'sbm': SigmoidBeliefNetwork, # official TVO SBM model
-              'gaussian-vae': GaussianVAE}[model_id] # official TVO gaussian VAE model
+              'sbm': SigmoidBeliefNetwork,  # official TVO SBM model
+              'gaussian-vae': GaussianVAE}[model_id]  # official TVO gaussian VAE model
 
     # init the model
     torch.manual_seed(opt.seed)
@@ -47,7 +49,7 @@ def init_model(opt, x, loader=None):
 
 
 def init_neural_baseline(opt, x):
-    """define a neural baseline"""
+    """define the neural baseline"""
     return Baseline(x.shape, opt.b_nlayers, opt.hdim)
 
 
@@ -90,3 +92,17 @@ def init_optimizers(opt, model, estimator):
         optimizers += [torch.optim.Adam(estimator.parameters(), lr=opt.baseline_lr)]
 
     return optimizers
+
+
+def init_logging_directory(opt, run_id):
+    """initialize the directory where will be saved the config, model's parameters and tensorboard logs"""
+    logdir = os.path.join(opt.root, opt.exp)
+    logdir = os.path.join(logdir, run_id)
+    if os.path.exists(logdir):
+        if opt.rm:
+            rmtree(logdir)
+            os.makedirs(logdir)
+    else:
+        os.makedirs(logdir)
+
+    return logdir

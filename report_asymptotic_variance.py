@@ -6,12 +6,10 @@ from shutil import rmtree
 
 import pandas as pd
 
-from ovis.plotting.style import *
-from ovis.plotting.variance_plotting import plot_statistics, plot_gradients_distribution
+from ovis.reporting.style import *
+from ovis.asymptotic.plotting import plot_statistics, plot_gradients_distribution
 from ovis.training.logging import get_loggers
-
-# set custom plot style
-set_style()
+from booster.utils import logging_sep
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--root', default='runs/', help='experiment directory')
@@ -24,7 +22,9 @@ parser.add_argument('--draw_individual', action='store_true',
                     help='draw statistics for parameters individually (as in the original exp.)')
 opt = parser.parse_args()
 
-_sep = os.get_terminal_size().columns * "-"
+
+# set plotting style
+set_style()
 
 # get path to the experiment directory
 path = os.path.join(opt.root, opt.exp)

@@ -16,16 +16,15 @@ from tqdm import tqdm
 from ovis import get_datasets
 from ovis.analysis.active_units import latent_activations
 from ovis.estimators import VariationalInference
-from ovis.training.evaluation import perform_gradients_analysis, evaluation
-from ovis.training.init import init_model, init_neural_baseline, init_main_estimator, init_test_estimator, \
-    init_optimizers
-from ovis.training.logging import sample_model, get_loggers, log_summary, save_model_and_update_best_elbo, load_model, \
-    init_logging_directory
+from ovis.training.evaluation import analyse_gradients_and_log, evaluation
+from ovis.training.initialization import init_model, init_neural_baseline, init_main_estimator, init_test_estimator, \
+    init_optimizers, init_logging_directory
+from ovis.training.logging import sample_model, get_loggers, log_summary, save_model_and_update_best_elbo, load_model
 from ovis.training.ops import training_step, test_step
+from ovis.training.schedule import Schedule
 from ovis.training.session import Session
 from ovis.training.utils import get_run_id, get_number_of_epochs, preprocess
 from ovis.utils.utils import notqdm, ManualSeed
-from ovis.training.schedule import Schedule
 
 
 def parse_args():
@@ -259,8 +258,8 @@ if __name__ == '__main__':
                 """Analyse Gradients"""
                 if opt.grad_samples > 0:
                     print(logging_sep())
-                    perform_gradients_analysis(opt, session.global_step, writer_train, train_logger, loader_train,
-                                               model, estimator, config, exp_id, tqdm=tqdm)
+                    analyse_gradients_and_log(opt, session.global_step, writer_train, train_logger, loader_train,
+                                              model, estimator, config, exp_id, tqdm=tqdm)
 
                 """Estimate the ESS"""
                 summary_train_ess = evaluation(model, estimator_test_ess, config_test, loader_eval_train, exp_id,
@@ -300,8 +299,8 @@ if __name__ == '__main__':
                             exp_id=exp_id)
 
                 """sample model"""
-                sample_model("prior-sample", model, logdir, global_step=session.global_step, writer=writer_test,
-                             seed=opt.seed)
+                with ManualSeed(seed=opt.seed):
+                    sample_model("prior-sample", model, logdir, global_step=session.global_step, writer=writer_test)
                 print(logging_sep())
 
                 """Checkpointing"""

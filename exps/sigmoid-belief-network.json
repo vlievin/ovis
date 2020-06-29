@@ -1,7 +1,7 @@
 {
   "description": "Training a 3 layers Sigmoid Belief Network with linear connections as in `The Thermodynamic Variational Objective`.",
   "args": [
-    "--estimator tvo-config1 --id iwr",
+    "--estimator tvo-part2-config1 --id iwr",
     "--estimator ovis-gamma0 --alpha_min 0.99 --warmup 1000000 --warmup_mode log --id iwrbound",
     "--estimator ovis-gamma1 --alpha_min 0.99 --warmup 1000000 --warmup_mode log --id iwrbound",
     "--estimator ovis-S1 --alpha_min 0.99 --warmup 1000000 --warmup_mode log --id iwrbound",
@@ -18,7 +18,6 @@
   "parameters": {
     "model":["sbm"],
     "prior": ["bernoulli"],
-    "learn_prior" : [true],
     "N": [200],
     "nlayers" :[0],
     "depth" : [3],

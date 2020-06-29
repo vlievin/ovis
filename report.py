@@ -11,10 +11,10 @@ import pandas as pd
 from dotmap import DotMap
 
 from ovis.training.logging import get_loggers
-from ovis.plotting.style import *
-from ovis.plotting.style import LOG_PLOT_RULES, METRIC_DISPLAY_NAME, format_estimator_name
+from ovis.reporting.style import *
+from ovis.reporting.style import LOG_PLOT_RULES, METRIC_DISPLAY_NAME, format_estimator_name
 from ovis.utils.utils import parse_numbers
-from ovis.plotting.plotting import pivot_plot, plot_logs, detailed_plot
+from ovis.reporting.plotting import pivot_plot, plot_logs, detailed_plot
 
 set_style()
 

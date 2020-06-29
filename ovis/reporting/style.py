@@ -7,30 +7,22 @@ pp = pprint.PrettyPrinter(indent=4)
 
 
 def set_style():
-    # matplotlib.rc('font', family='serif', serif='Bookman')
     matplotlib.rc('text', usetex=True)
-    # matplotlib.rcParams['text.latex.preamble'] = [r"\usepackage{amsmath}"]
-
     matplotlib.rcParams['text.latex.preamble'] = [
-        r"\usepackage{amsmath}"
-        r'\usepackage{siunitx}',  # i need upright \micro symbols, but you need...
-        r'\sisetup{detect-all}',  # ...this to force siunitx to actually use your fonts
-        r'\usepackage{helvet}',  # set the normal font here
-        r'\usepackage{sansmath}',  # load up the sansmath so that math -> helvet
-        r'\sansmath'  # <- tricky! -- gotta actually tell tex to use!
+        r"\usepackage{amsmath}",
+        r"\usepackage{amssymb}",
+        r'\usepackage{siunitx}',
+        r'\sisetup{detect-all}',
+        r'\usepackage{helvet}',
+        r'\usepackage{sansmath}',
+        r'\sansmath'
     ]
 
     sns.set_style("darkgrid", {"axes.facecolor": ".96", "xtick.bottom": True, "ytick.left": True, "xtick.color": "0.3",
                                "ytick.color": "0.3"})
-    # sns.set(style="ticks")
+
     sns.set_context("paper", font_scale=1.6,
                     rc={"lines.linewidth": 1.2, "lines.markersize": 12, 'text.latex.preamble': r"\usepackage{amsmath}"})
-
-    print(100 * "==")
-    print("Axes style")
-    print(100 * "==")
-    pp.pprint(sns.axes_style())
-    print(100 * "==")
 
 
 DPI = 200
@@ -51,7 +43,9 @@ ESTIMATOR_STYLE = {
     'vimco-geometric': {'color': "#5A9177", 'marker': "H", 'linestyle': "-"},
     'tvo': {'color': "#336DA2", 'marker': "P", 'linestyle': "-"},
     'wake-wake': {'color': "#77B6D7", 'marker': "X", 'linestyle': "-"},
-    'pathwise': {'color': "#968FA1", 'marker': "s", 'linestyle': "-"}
+    'wake-sleep': {'color': "#7091d4", 'marker': "x", 'linestyle': "-"},
+    'pathwise-iwae': {'color': "#968FA1", 'marker': "s", 'linestyle': "-"},
+    'pathwise-vae': {'color': "#554c5e", 'marker': "d", 'linestyle': "-"}
 }
 
 ESTIMATOR_ORDER = [
@@ -66,8 +60,10 @@ ESTIMATOR_ORDER = [
     'vimco-geometric',
     'reinforce',
     'wake-wake',
+    'wake-sleep',
     'tvo',
-    'pathwise'
+    'pathwise-iwae',
+    'pathwise-vae'
 ]
 
 ESTIMATOR_GROUPS = {
@@ -81,12 +77,14 @@ ESTIMATOR_GROUPS = {
     'vimco-geometric': 2,
     'reinforce': 2,
     'wake-wake': 3,
+    'wake-sleep': 3,
     'tvo': 3,
-    'pathwise': 3
+    'pathwise-iwae': 3,
+    'pathwise-vae': 3
 }
 
 ESTIMATOR_DISPLAY_NAME = {
-    'ovis-gamma1': r"$\operatorname{OVIS}_{\sim}\ (\gamma = 1)$",  # carreful here 0 -> 1
+    'ovis-gamma1': r"$\operatorname{OVIS}_{\sim}\ (\gamma = 1)$",
     'ovis-gamma0': r"$\operatorname{OVIS}_{\sim}\ (\gamma = 0)$",
     'ovis-S1': r"$\operatorname{OVIS}_{\operatorname{MC}}\ (S=1)$",
     'ovis-S10': r"$\operatorname{OVIS}_{\operatorname{MC}}\ (S=10)$",
@@ -98,7 +96,9 @@ ESTIMATOR_DISPLAY_NAME = {
     'vimco-geometric': r"$\operatorname{VIMCO}_{\operatorname{geometric}}$",
     'tvo': r"$\operatorname{TVO}$",
     'wake-wake': r"$\operatorname{RWS}$",
-    'pathwise': r"$\operatorname{pathwise}\ (\operatorname{IWAE})$"
+    'wake-sleep': r"$\operatorname{RWS}(\operatorname{WS})$",
+    'pathwise-iwae': r"$\operatorname{pathwise}\ (\operatorname{IWAE})$",
+    'pathwise-vae': r"$\operatorname{pathwise}\ (\operatorname{VAE})$"
 }
 
 LINE_STYLES = 10 * ["-", "--", ":", "-."]
@@ -155,13 +155,8 @@ METRIC_DISPLAY_NAME = {
 
 
 def format_estimator_name(name):
-    if name == 'vimco':
-        return 'vimco-arithmetic'
-    elif name == 'tvo-config1' or name == 'tvo-config2':
+    """add special rules to format the estimator name"""
+    if 'tvo' in name:
         return 'tvo'
-    elif 'tvo' in name:
-        return 'tvo'
-    elif name == 'pathwise-iwae':
-        return 'pathwise'
     else:
         return name

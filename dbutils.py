@@ -9,7 +9,7 @@ from ovis.utils.manager import open_db, snapshot_dir, read_experiment, get_abs_p
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--root', default='runs/', help='experiment directory')
-parser.add_argument('--exp', default='binary-images-0.3', type=str, help='experiment id')
+parser.add_argument('--exp', default='gaussian-mixture-model', type=str, help='experiment id')
 parser.add_argument('--update', default='', help='comma separated list of args :key:value:new_value, eg `data:path:newpath,iw:10:100`')
 parser.add_argument('--delete', default='', help='pattern to be match in exp')
 parser.add_argument('--show', action='store_true', help='show all records')

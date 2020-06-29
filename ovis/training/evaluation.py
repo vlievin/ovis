@@ -8,10 +8,21 @@ from ovis.training.utils import preprocess
 from ovis.utils.utils import ManualSeed
 
 
-def perform_gradients_analysis(opt, global_step, writer_train, train_logger, loader_train, model, estimator, config,
-                               exp_id, tqdm=tqdm):
+def analyse_gradients_and_log(opt, global_step, writer_train, train_logger, loader_train, model, estimator, config,
+                              exp_id, tqdm=tqdm):
     """
-    Perform the gradients analysis for the main estimator and the counterfactual estimators if available
+    Analyse of the gradients (SNR, variance, DSNR) and log to Tensorboard and the Logger
+    :param opt: parsed args
+    :param global_step: training step
+    :param writer_train: Tensorboard writer
+    :param train_logger: Logging logger
+    :param loader_train: pytorch dataloader
+    :param model: nn.Module
+    :param estimator: gradient estimator
+    :param config: configuration dictionary for the gradient estimator
+    :param exp_id: experiment identifier
+    :param tqdm: tqdm callable (for customization)
+    :return: None
     """
     device = next(iter(model.parameters())).device
 
@@ -32,8 +43,7 @@ def perform_gradients_analysis(opt, global_step, writer_train, train_logger, loa
 
     # log the gradient analysis
     with torch.no_grad():
-        summary = Diagnostic(grad_data)
-        summary.log(writer_train, global_step)
+        grad_data.log(writer_train, global_step) # Tensorboard logging
         train_logger.info(f"{exp_id} | grads | "
                           f"snr = {grad_data.get('grads', {}).get('snr', 0.):.3E}, "
                           f"variance = {grad_data.get('grads', {}).get('variance', 0.):.3E}, "
@@ -54,9 +64,11 @@ def evaluation(model, estimator, config, loader, exp_id, device='cpu', ref_summa
         k += x.size(0)
         if max_eval is not None and k >= max_eval:
             break
+
+    # get the Diagnostic object
     summary = agg.data.to('cpu')
 
-    # compute overfitting L_K^{train} - L_K^{valid}
+    # estimate overfitting L_K^{train} - L_K^{valid}
     if ref_summary is not None:
         summary['loss']['overfitting'] = ref_summary['loss']['L_k'].mean() - summary['loss']['L_k'].mean()
 

@@ -1,8 +1,6 @@
 import logging
 import math
 import os
-import sys
-from shutil import rmtree
 
 import matplotlib.image
 import torch
@@ -10,12 +8,8 @@ from torchvision.utils import make_grid
 
 
 @torch.no_grad()
-def sample_model(key, model, logdir, global_step=0, writer=None, N=100, seed=None, **kwargs):
-    if seed is not None:
-        _seed = int(torch.randint(1, sys.maxsize, (1,)).item())
-        torch.manual_seed(seed)
-
-    # sample model
+def sample_model(key, model, logdir, global_step=0, writer=None, N=100, **kwargs):
+    """sample the Generative model : z ~ p(z), x ~ p(x|z) and save to .png"""
     x_ = model.sample_from_prior(N, **kwargs).get('px')
     if x_ is None:
         return
@@ -37,12 +31,10 @@ def sample_model(key, model, logdir, global_step=0, writer=None, N=100, seed=Non
     img = grid.data.permute(1, 2, 0).cpu().numpy()
     matplotlib.image.imsave(os.path.join(logdir, f"{key}.png"), img)
 
-    if seed is not None:
-        # set a new random seed
-        torch.manual_seed(_seed)
 
-
-def get_loggers(logdir, keys=['base', 'train', 'valid', 'test'], format='%(asctime)s %(name)-4s %(levelname)-4s %(message)s'):
+def get_loggers(logdir, keys=['base', 'train', 'valid', 'test'],
+                format='%(asctime)s %(name)-4s %(levelname)-4s %(message)s'):
+    """get Logging loggers for a set of `keys`"""
     logging.basicConfig(level=logging.INFO,
                         format=format,
                         datefmt='%m-%d %H:%M',
@@ -92,17 +84,3 @@ def save_model_and_update_best_elbo(model, eval_summary, global_step, epoch, bes
 def load_model(model, logdir):
     device = next(iter(model.parameters())).device
     model.load_state_dict(torch.load(os.path.join(logdir, "model.pth"), map_location=device))
-
-
-def init_logging_directory(opt, run_id):
-    """initialize the directory where will be saved the config, model's parameters and tensorboard logs"""
-    logdir = os.path.join(opt.root, opt.exp)
-    logdir = os.path.join(logdir, run_id)
-    if os.path.exists(logdir):
-        if opt.rm:
-            rmtree(logdir)
-            os.makedirs(logdir)
-    else:
-        os.makedirs(logdir)
-
-    return logdir

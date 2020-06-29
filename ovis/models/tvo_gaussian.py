@@ -1,13 +1,18 @@
 from typing import *
 
-from .src import init_mlp
-from .src import GenerativeModel as DiscreteGenerativeModel
-from .src import InferenceNetwork as DiscreteInferenceNetwork
-
-from .base import Template
-from ..utils.utils import *
 import torch
 from torch import Tensor, nn
+
+from .base import Template
+from .src import GenerativeModel as DiscreteGenerativeModel
+from .src import InferenceNetwork as DiscreteInferenceNetwork
+from .src import init_mlp
+from ..utils.utils import *
+
+"""
+Gaussian VAE from `The Thermodynamic Variational Objective` [https://arxiv.org/abs/1907.00031]
+original code at [https://github.com/vmasrani/tvo/blob/f7a3229d954274e1d920bf4fe98dcb18f837f825/discrete_vae/models.py]
+"""
 
 
 class MultilayerPerceptronNormal(nn.Module):
@@ -208,9 +213,9 @@ class GenerativeModel(DiscreteGenerativeModel):
         latent_dist = self.get_latent_dist()
 
         if reparam:
-            latent = latent_dist.rsample((num_samples, ))
+            latent = latent_dist.rsample((num_samples,))
         else:
-            latent = latent_dist.sample((num_samples, ))
+            latent = latent_dist.sample((num_samples,))
 
         obs_dist = self.get_obs_dist(latent)
         obs = obs_dist.sample()
@@ -315,6 +320,7 @@ class InferenceNetwork(DiscreteInferenceNetwork):
             return latent_dist.rsample(sample_shape)
         else:
             return latent_dist.sample(sample_shape)
+
 
 class GaussianVAE(Template):
     """A wrapper for the official TVO model."""

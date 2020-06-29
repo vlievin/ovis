@@ -11,8 +11,12 @@ EPS = 1e-18
 
 
 class Estimator(nn.Module):
-    def __init__(self, mc: int = 1, iw: int = 1, auxiliary_samples: int = 0, sequential_computation=False,
-                 freebits=None, **kwargs):
+    def __init__(self, mc: int = 1,
+                 iw: int = 1,
+                 auxiliary_samples: int = 0,
+                 sequential_computation=False,
+                 freebits=None,
+                 **kwargs):
         """
         A base gradient estimator class.
         :param mc: number of Monte Carlo samples: i.e. \hat{f} = 1/M \sum_m f[m]

@@ -3,13 +3,19 @@ import hashlib
 from torch import Tensor
 
 
-def get_run_id(opt):
-    """define a unique run identifier"""
-    exceptions = ['root', 'data_root', 'workers', 'silent', 'sequential_computation', 'test_sequential_computation',
-                  'epochs', 'nsteps', 'valid_bs', 'test_bs']
+def get_hash_from_opt(opt, exceptions=None):
+    if exceptions is None:
+        exceptions = ['root', 'data_root', 'workers', 'silent', 'sequential_computation',
+                      'test_sequential_computation', 'epochs', 'nsteps', 'valid_bs', 'test_bs']
     filtered_opt_dict = {k: v for k, v in vars(opt).items() if k not in exceptions}
     opt_string = ",".join(("{}={}".format(*i) for i in filtered_opt_dict.items()))
-    deterministic_opt_id = hashlib.md5(opt_string.encode('utf-8')).hexdigest()
+    return hashlib.md5(opt_string.encode('utf-8')).hexdigest()
+
+
+def get_run_id(opt):
+    """define a unique run identifier"""
+
+    deterministic_opt_id = get_hash_from_opt(opt)
     warmup_id = ""
     if opt.alpha > 0:
         warmup_id += f"-{opt.alpha}"
