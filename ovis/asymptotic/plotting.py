@@ -7,13 +7,13 @@ import seaborn as sns
 from ovis.reporting.plotting import PLOT_WIDTH, PLOT_HEIGHT, ESTIMATOR_STYLE, Legend
 from ovis.reporting.style import DPI, MARKERS, set_style
 
+
 def get_outliers_boundaries(values, k=1.5):
     a, b = np.percentile(values, [25, 75])
     return [a - k * (b - a), b + k * (b - a)]
 
 
 def plot_statistics(df, opt, logdir):
-
     set_style()
 
     param_name = {'b': "\mathbf{b}", 'tensor:b': "b", 'tensor:qlogits': "\phi"}.get(opt.key_filter, "\theta")
@@ -28,10 +28,10 @@ def plot_statistics(df, opt, logdir):
     _g = r"\mathbf{g}"
     _avg = r"\frac{1}{D} \sum_i"
     _ex = r"\mathbb{E}"
-    metrics_formaters = [lambda p: f"${_avg} {_snr}_i (K)$",
-                         lambda p: f"${_avg} {_dsnr}_i (K)$",
-                         lambda p: f"${_avg} {_var}[ g_i ] (K)$",
-                         lambda p: f"${_avg} | {_ex} [ g_i ]  | (K)$"
+    metrics_formaters = [lambda p: f"${_avg} {_snr}_i\: (K)$",
+                         lambda p: f"${_avg} {_dsnr}_i\: (K)$",
+                         lambda p: f"${_avg} {_var}[ g_i ]\: (K)$",
+                         lambda p: f"${_avg} | {_ex} [ g_i ]  |\: (K)$"
                          ]
 
     noises = sorted(df['noise'].unique())

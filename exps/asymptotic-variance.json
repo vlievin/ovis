@@ -19,9 +19,6 @@
     "iw_max": [1e3],
     "npoints" : [1024],
     "D" : [20],
-    "seed" : [10],
-    "oracle": ["ovis-gamma0"],
-    "iw_oracle" : [1000],
-    "mc_oracle": [100]
+    "seed" : [10]
   }
 }
