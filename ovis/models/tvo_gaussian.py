@@ -1,12 +1,11 @@
 from typing import *
 
-import torch
 from torch import Tensor, nn
 
 from .base import Template
-from .src import GenerativeModel as DiscreteGenerativeModel
-from .src import InferenceNetwork as DiscreteInferenceNetwork
-from .src import init_mlp
+from .tvo_sbm import GenerativeModel as DiscreteGenerativeModel
+from .tvo_sbm import InferenceNetwork as DiscreteInferenceNetwork
+from .tvo_sbm import init_mlp
 from ..utils.utils import *
 
 """
@@ -376,4 +375,4 @@ class GaussianVAE(Template):
         z = latent_dist.sample((N,))
         px = self.generative_model.get_obs_dist(z)
 
-        return {'px': px, 'z': z}
+        return {'px': px, 'z': [z]}

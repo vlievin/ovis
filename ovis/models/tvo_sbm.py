@@ -24,6 +24,12 @@ class ChainDistribution(torch.distributions.Distribution):
             sample_shape=())
         return sample_chain + (sample_next,)
 
+    def rsample(self, sample_shape=torch.Size()):
+        sample_chain = self.chain_dist.sample(sample_shape=sample_shape)
+        sample_next = self.get_next_dist(sample_chain[-1]).rsample(
+            sample_shape=())
+        return sample_chain + (sample_next,)
+
     def log_prob(self, value):
         log_prob_chain = self.chain_dist.log_prob(value[:-1])
         log_prob_next = self.get_next_dist(value[-2]).log_prob(value[-1])
@@ -37,6 +43,9 @@ class ChainDistributionFromSingle(torch.distributions.Distribution):
     def sample(self, sample_shape=torch.Size()):
         return (self.single_dist.sample(sample_shape=sample_shape),)
 
+    def rsample(self, sample_shape=torch.Size()):
+        return (self.single_dist.rsample(sample_shape=sample_shape),)
+
     def log_prob(self, value):
         return self.single_dist.log_prob(value[0])
 
@@ -47,6 +56,10 @@ class ReversedChainDistribution(torch.distributions.Distribution):
 
     def sample(self, sample_shape=torch.Size()):
         return tuple(reversed(self.chain_dist.sample(
+            sample_shape=sample_shape)))
+
+    def rsample(self, sample_shape=torch.Size()):
+        return tuple(reversed(self.chain_dist.rsample(
             sample_shape=sample_shape)))
 
     def log_prob(self, value):
@@ -548,4 +561,4 @@ class SigmoidBeliefNetwork(nn.Module):
         z = latent_dist.sample((N,))
         px = self.generative_model.get_obs_dist(z)
 
-        return {'px': px, 'z': z}
+        return {'px': px, 'z': [z]}
