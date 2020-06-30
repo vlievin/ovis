@@ -84,3 +84,13 @@ def save_model_and_update_best_elbo(model, eval_summary, global_step, epoch, bes
 def load_model(model, logdir):
     device = next(iter(model.parameters())).device
     model.load_state_dict(torch.load(os.path.join(logdir, "model.pth"), map_location=device))
+
+
+def log_grads_data(analysis_data, base_logger, estimator_id, iw):
+    """Log the gradient analysis data to the logger"""
+    grad_data = analysis_data.get('grads', {})
+    base_logger.info(
+        f"{estimator_id}, K = {iw} | snr = {grad_data.get('snr', 0.):.3E}, dsnr = {grad_data.get('dsnr', 0.):.3E}, variance = {grad_data.get('variance', 0.):.3E}, magnitude = {grad_data.get('magnitude', 0.):.3E}")
+    snr_data = analysis_data.get('snr', {})
+    base_logger.info(
+        f"{estimator_id}, K = {iw} | snr | p5 = {snr_data.get('p5', 0.):.3E}, p25 = {snr_data.get('p25', 0.):.3E}, p50 = {snr_data.get('p50', 0.):.3E}, p75 = {snr_data.get('p75', 0.):.3E}, p95 = {snr_data.get('p95', 0.):.3E}")

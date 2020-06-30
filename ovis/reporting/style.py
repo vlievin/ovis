@@ -44,7 +44,8 @@ ESTIMATOR_STYLE = {
     'wake-wake': {'color': "#77B6D7", 'marker': "X", 'linestyle': "-"},
     'wake-sleep': {'color': "#7091d4", 'marker': "x", 'linestyle': "-"},
     'pathwise-iwae': {'color': "#968FA1", 'marker': "s", 'linestyle': "-"},
-    'pathwise-vae': {'color': "#554c5e", 'marker': "d", 'linestyle': "-"}
+    'pathwise-vae': {'color': "#554c5e", 'marker': "d", 'linestyle': "-"},
+    'gs': {'color': "#968FA1", 'marker': "s", 'linestyle': "-"}
 }
 
 ESTIMATOR_ORDER = [
@@ -62,7 +63,8 @@ ESTIMATOR_ORDER = [
     'wake-sleep',
     'tvo',
     'pathwise-iwae',
-    'pathwise-vae'
+    'pathwise-vae',
+    'gs'
 ]
 
 ESTIMATOR_GROUPS = {
@@ -79,7 +81,8 @@ ESTIMATOR_GROUPS = {
     'wake-sleep': 3,
     'tvo': 3,
     'pathwise-iwae': 3,
-    'pathwise-vae': 3
+    'pathwise-vae': 3,
+    'gs': 3
 }
 
 ESTIMATOR_DISPLAY_NAME = {
@@ -97,7 +100,8 @@ ESTIMATOR_DISPLAY_NAME = {
     'wake-wake': r"$\operatorname{RWS}$",
     'wake-sleep': r"$\operatorname{RWS}(\operatorname{WS})$",
     'pathwise-iwae': r"$\operatorname{pathwise}\ (\operatorname{IWAE})$",
-    'pathwise-vae': r"$\operatorname{pathwise}\ (\operatorname{VAE})$"
+    'pathwise-vae': r"$\operatorname{pathwise}\ (\operatorname{VAE})$",
+    'gs': r"$\operatorname{Concrete})$"
 }
 
 LINE_STYLES = 10 * ["-", "--", ":", "-."]
@@ -151,11 +155,3 @@ METRIC_DISPLAY_NAME = {
     'active_units/au': r"active units"
 
 }
-
-
-def format_estimator_name(name):
-    """add special rules to format the estimator name"""
-    if 'tvo' in name:
-        return 'tvo'
-    else:
-        return name

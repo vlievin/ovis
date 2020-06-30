@@ -6,7 +6,8 @@ from shutil import rmtree
 import pandas as pd
 from booster.utils import logging_sep
 
-from ovis.asymptotic.plotting import plot_statistics, plot_gradients_distribution
+from ovis.reporting.asymptotic import plot_statistics, plot_gradients_distribution
+from ovis.reporting.parsing import format_estimator_name
 from ovis.reporting.style import *
 from ovis.training.logging import get_loggers
 

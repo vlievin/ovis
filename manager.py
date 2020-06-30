@@ -49,20 +49,20 @@ def run_manager():
     opt = parser.parse_args()
 
     # get the list of devices
-    deviceIDs = GPUtil.getAvailable(order='memory',
+    device_ids = GPUtil.getAvailable(order='memory',
                                     limit=opt.max_gpus,
                                     maxLoad=opt.max_load,
                                     maxMemory=opt.max_memory,
                                     includeNan=False,
                                     excludeID=[],
                                     excludeUUID=[])
-    if len(deviceIDs):
-        deviceIDs = [f"cuda:{d}" for d in deviceIDs]
+    if len(device_ids):
+        device_ids = [f"cuda:{d}" for d in device_ids]
     else:
-        deviceIDs = ['cpu']
+        device_ids = ['cpu']
 
     # total number of processes
-    processes = opt.processes * len(deviceIDs)
+    processes = opt.processes * len(device_ids)
 
     # get absolute path to logging directories
     exps_root, exp_root, exp_data_root = get_abs_paths(opt.root, opt.exp, opt.data_root)
@@ -105,7 +105,7 @@ def run_manager():
     # log config
     print(logging_sep("="))
     logger.info(
-        f"Available devices: {deviceIDs}")
+        f"Available devices: {device_ids}")
     logger.info(
         f"Experiment id = {opt.exp}, running {opt.processes} processes/device, logdir = {exp_root}")
     print(logging_sep())
@@ -153,7 +153,7 @@ def run_manager():
 
     # run processes in parallel (spawning `processes` processes)
     pool = Pool(processes=processes)
-    job_args = [{"opt": opt, "exp_root": exp_root, "devices": deviceIDs} for _ in range(n_queued_exps)]
+    job_args = [{"opt": opt, "exp_root": exp_root, "devices": device_ids} for _ in range(n_queued_exps)]
 
     if opt.max_jobs > 0:
         job_args = job_args[:opt.max_jobs * processes]

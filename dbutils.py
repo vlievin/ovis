@@ -18,9 +18,6 @@ parser.add_argument('--requeue', action='store_true', help='requeue experiment w
 parser.add_argument('--hard_requeue', action='store_true', help='also recover experiments without the `success` file. Warning: will delete runs of currently running exps.')
 opt = parser.parse_args()
 
-
-print(f"## dbutils: root = {opt.root}")
-
 _sep = os.get_terminal_size().columns * "-"
 
 _success_flag = "Success"

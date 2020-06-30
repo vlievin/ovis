@@ -7,6 +7,20 @@ from typing import Iterable, Optional
 import torch
 
 
+class Success():
+    file = 'success.txt'
+    success_message = f"Success."
+    keyboard_interrupt_message = f"Failed. Interrupted (keyboard)."
+
+    @staticmethod
+    def failed_message(exception):
+        return f"Failed. Exception : \n{exception}\n\n{exception.__traceback__}"
+
+
+BASE_ARGS_EXCEPTIONS = ['root', 'data_root', 'workers', 'silent', 'sequential_computation',
+                        'test_sequential_computation', 'epochs', 'nsteps', 'valid_bs', 'test_bs']
+
+
 class ManualSeed():
     """A simple class to execute a statement with a manual random seed
     without breaking the randomness. Another random seed is sampled and set when exiting the `with` statement. Usage:

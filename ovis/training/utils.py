@@ -1,12 +1,11 @@
 import hashlib
 
 from torch import Tensor
-
+from ..utils.utils import BASE_ARGS_EXCEPTIONS
 
 def get_hash_from_opt(opt, exceptions=None):
     if exceptions is None:
-        exceptions = ['root', 'data_root', 'workers', 'silent', 'sequential_computation',
-                      'test_sequential_computation', 'epochs', 'nsteps', 'valid_bs', 'test_bs']
+        exceptions = BASE_ARGS_EXCEPTIONS
     filtered_opt_dict = {k: v for k, v in vars(opt).items() if k not in exceptions}
     opt_string = ",".join(("{}={}".format(*i) for i in filtered_opt_dict.items()))
     return hashlib.md5(opt_string.encode('utf-8')).hexdigest()

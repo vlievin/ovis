@@ -1,16 +1,19 @@
 {
   "description": "Training a 1 layer VAE with non-linnear connections and Gaussian prior on a toy dataset.",
   "args": [
-    "--estimator pathwise-iwae",
+    "--estimator gs",
     "--estimator tvo-part5-config2",
-    "--estimator ovis-gamma1 --alpha 0.7"
+    "--estimator tvo-part2-config1",
+    "--estimator ovis-gamma1 --alpha_max 0.01 --warmup 100000"
   ],
-  "global": "--silent --deterministic --nsteps 100000",
+  "global": "--silent --deterministic --nsteps 200000",
   "parameters": {
     "model":["vae"],
-    "prior": ["normal"],
+    "prior": ["categorical"],
+    "learn_prior": [true],
     "N": [32],
-    "hdim" : [64],
+    "K": [8],
+    "hdim" : [128],
     "nlayers" :[2],
     "iw" : [50, 10, 5],
     "seed":[1, 2],

@@ -90,7 +90,7 @@ def retrieve_exp_and_run(job_args):
                 except:
                     print(f"Command `{command}` failed.")
 
-                print(f"@ manager.subprocess [id={process_id}] : experiment completed. Arguments = \n{args}\n\n")
+                print(f"@ manager.subprocess [id={process_id}, pid={_pid}] : experiment completed. Arguments = \n{args}\n\n")
 
         except KeyboardInterrupt:
             print(f"@ manager.subprocess : Keyboard Interrupt")

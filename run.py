@@ -24,7 +24,7 @@ from ovis.training.ops import training_step, test_step
 from ovis.training.schedule import Schedule
 from ovis.training.session import Session
 from ovis.training.utils import get_run_id, get_number_of_epochs, preprocess
-from ovis.utils.utils import notqdm, ManualSeed
+from ovis.utils.utils import notqdm, ManualSeed, Success
 
 
 def parse_args():
@@ -75,7 +75,7 @@ def parse_args():
     parser.add_argument('--warmup', default=0, type=int, help='period of the posterior warmup (alpha : 0 -> 1)')
     parser.add_argument('--warmup_offset', default=0, type=int, help='number of steps before increasing beta')
     parser.add_argument('--warmup_mode', default='log', type=str, help='interpolation mode [linear | log]')
-    parser.add_argument('--alpha_min', default=0.9, type=float, help='minimum alpha value')
+    parser.add_argument('--alpha_max', default=0.9, type=float, help='maximum alpha value')
 
     # evaluation
     parser.add_argument('--eval_freq', default=10, type=int, help='frequency for the evaluation [test set + grads]')
@@ -198,7 +198,7 @@ if __name__ == '__main__':
 
         # Rényi warmup
         if opt.warmup > 0:
-            scheduler = Schedule(opt.warmup, opt.alpha_min, opt.alpha, offset=opt.warmup_offset, mode=opt.warmup_mode)
+            scheduler = Schedule(opt.warmup, opt.alpha_max, opt.alpha, offset=opt.warmup_offset, mode=opt.warmup_mode)
         else:
             scheduler = lambda x: opt.alpha
 
@@ -335,17 +335,17 @@ if __name__ == '__main__':
 
         # write outcome to a file (success, interrupted, error)
         print(f"{logging_sep('=')}\nSucces.\n{logging_sep('=')}")
-        with open(os.path.join(logdir, "success.txt"), 'w') as f:
-            f.write(f"Success.")
+        with open(os.path.join(logdir, Success.file), 'w') as f:
+            f.write(Success.success_message)
 
     except KeyboardInterrupt:
         print(f"{logging_sep()}\nKeyboard Interrupt.\n{logging_sep()}")
-        with open(os.path.join(logdir, "success.txt"), 'w') as f:
-            f.write(f"Failed. Interrupted (keyboard).")
+        with open(os.path.join(logdir, Success.file), 'w') as f:
+            f.write(Success.keyboard_interrupt_message)
 
 
     except Exception as ex:
         print(f"{logging_sep()}\nFailed with exception {type(ex).__name__} = `{ex}` \n{logging_sep()}")
         traceback.print_exception(type(ex), ex, ex.__traceback__)
-        with open(os.path.join(logdir, "success.txt"), 'w') as f:
-            f.write(f"Failed. Exception : \n{ex}\n\n{ex.__traceback__}")
+        with open(os.path.join(logdir, Success.file), 'w') as f:
+            f.write(Success.failed_message(ex))

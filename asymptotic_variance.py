@@ -7,16 +7,23 @@ import torch
 from booster.utils import logging_sep
 
 from ovis.analysis.gradients import get_gradients_statistics
-from ovis.asymptotic.plotting import *
-from ovis.asymptotic.utils import evaluate_and_log, init_estimator, log_grads_data
 from ovis.estimators.config import get_config
 from ovis.models import GaussianToyVAE
+from ovis.reporting.asymptotic import *
+from ovis.reporting.parsing import format_estimator_name
 from ovis.reporting.style import *
-from ovis.reporting.style import format_estimator_name
+from ovis.training.evaluation import evaluate_minibatch_and_log
 from ovis.training.initialization import init_logging_directory
-from ovis.training.logging import get_loggers
+from ovis.training.logging import get_loggers, log_grads_data
 from ovis.training.utils import get_hash_from_opt
-from ovis.utils.utils import notqdm, ManualSeed
+from ovis.utils.utils import notqdm, ManualSeed, Success
+
+
+def init_estimator(estimator_id, iw):
+    """initialize the gradient estimator based on the `estimator_id` and the number of particles `iw`"""
+    Estimator, config = get_config(estimator_id)
+    return Estimator(baseline=None, mc=1, iw=iw, **config), config
+
 
 parser = argparse.ArgumentParser()
 
@@ -113,7 +120,8 @@ try:
 
     # evaluate model at initialization
     with ManualSeed(seed=opt.seed):
-        diagnostics = evaluate_and_log(estimator_ref, model, x, config_ref, base_logger, "Before perturbation")
+        diagnostics = evaluate_minibatch_and_log(estimator_ref, model, x, config_ref, base_logger,
+                                                 "Before perturbation")
 
     grads_stats = []
     grads_data = []
@@ -129,14 +137,15 @@ try:
 
         # evaluate model
         with ManualSeed(seed=opt.seed):
-            diagnostics = evaluate_and_log(estimator_ref, model, x, config_ref, base_logger, "After init.")
+            diagnostics = evaluate_minibatch_and_log(estimator_ref, model, x, config_ref, base_logger, "After init.")
 
         # add perturbation to the weights
         model.perturbate_weights(epsilon)
 
         # evaluate model
         with ManualSeed(seed=opt.seed):
-            diagnostics = evaluate_and_log(estimator_ref, model, x, config_ref, base_logger, "After perturbation")
+            diagnostics = evaluate_minibatch_and_log(estimator_ref, model, x, config_ref, base_logger,
+                                                     "After perturbation")
 
         # gradients analysis args and config
         meta = {'seed': opt.seed, 'noise': epsilon, 'mc_samples': int(opt.mc_samples),
@@ -208,17 +217,19 @@ try:
         grads_data['estimator'] = list(map(format_estimator_name, grads_data['estimator'].values))
         plot_gradients_distribution(grads_data, logdir)
 
+    # write outcome to a file (success, interrupted, error)
+    print(f"{logging_sep('=')}\nSucces.\n{logging_sep('=')}")
+    with open(os.path.join(logdir, Success.file), 'w') as f:
+        f.write(Success.success_message)
 
 except KeyboardInterrupt:
-    print("## KEYBOARD INTERRUPT")
-    with open(os.path.join(logdir, "success.txt"), 'w') as f:
-        f.write(f"Failed. Interrupted (keyboard).")
+    print(f"{logging_sep()}\nKeyboard Interrupt.\n{logging_sep()}")
+    with open(os.path.join(logdir, Success.file), 'w') as f:
+        f.write(Success.keyboard_interrupt_message)
+
 
 except Exception as ex:
-    print("## FAILED. Exception:")
-    print("--------------------------------------------------------------------------------")
+    print(f"{logging_sep()}\nFailed with exception {type(ex).__name__} = `{ex}` \n{logging_sep()}")
     traceback.print_exception(type(ex), ex, ex.__traceback__)
-    print("--------------------------------------------------------------------------------")
-    print("\nException: ", ex, "\n")
-    with open(os.path.join(logdir, "success.txt"), 'w') as f:
-        f.write(f"Failed. Exception : \n{ex}")
+    with open(os.path.join(logdir, Success.file), 'w') as f:
+        f.write(Success.failed_message(ex))

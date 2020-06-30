@@ -1,587 +1,185 @@
 import argparse
-import json
 import os
-from datetime import datetime
 from shutil import rmtree
-from collections import defaultdict
-from tqdm import tqdm
-import numpy as np
 
-import pandas as pd
-from dotmap import DotMap
+from booster.utils import logging_sep
 
-from ovis.training.logging import get_loggers
-from ovis.reporting.style import *
-from ovis.reporting.style import LOG_PLOT_RULES, METRIC_DISPLAY_NAME, format_estimator_name
-from ovis.utils.utils import parse_numbers
+from ovis.reporting.parsing import format_estimator_name, read_experiments, \
+    extract_global_attributes_and_join_into_logs, aggregate_metrics, parse_keys_headers_metrics, build_pivot_table, \
+    exponential_moving_average, downsample, parse_ylims
 from ovis.reporting.plotting import pivot_plot, plot_logs, detailed_plot
-
-set_matplotlib_style()
-
-try:
-    from tbparser.summary_reader import SummaryReader
-    from tbparser import EventsFileReader
-except:
-    print("You probably need to install tbparser:\n   pip install git+https://github.com/velikodniy/tbparser.git")
-    exit()
+from ovis.reporting.style import *
+from ovis.reporting.style import LOG_PLOT_RULES, METRIC_DISPLAY_NAME
+from ovis.training.logging import get_loggers
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--root', default='runs/', help='experiment directory')
 parser.add_argument('--output', default='reports/', help='output directory')
-parser.add_argument('--exp', default='exclude-sample-0.1', type=str, help='experiment id')
+parser.add_argument('--exp', default='mini-vae', type=str, help='experiment id')
 parser.add_argument('--include', default='', type=str, help='filter run by id')
 parser.add_argument('--exclude', default='', type=str, help='filter run by id')
-parser.add_argument('--pivot_metrics', default='max:train:loss/elbo, avg:train:grads/log_snr, avg:train:loss/r_eff',
+parser.add_argument('--pivot_metrics', default='max:train:loss/L_k,min:train:loss/kl_q_p,mean:train:grads/snr',
                     type=str,
-                    help='comma separated list of metrics to report in the table, the prefix defines the aggregation function (min, avg, max)')
+                    help='comma separated list of metrics to report in the table, '
+                         'the prefix defines the aggregation function (min, mean, max)')
 parser.add_argument('--metrics',
-                    default='train:reinforce/l1, train:grads/log_snr, train:loss/elbo, train:loss/r_eff, train:loss/nll, train:loss/kl',
+                    default='train:loss/L_k,train:loss/kl_q_p,train:loss/ess,train:grads/snr',
                     type=str,
                     help='comma separated list of keys to read from the tensorboard logs')
 parser.add_argument('--ylims', default='', type=str,
-                    help='comma separated list of limit values for the curve plot (syntax: key:min:max), example: `elbo:-60:-5,kl:4:10`')
-parser.add_argument('--keys', default='estimator, iw', type=str,
-                    help='comma separated list of keys to include in the report by decreasing order of importance, more than 3 keys is not yet handled for plotting.')
-parser.add_argument('--detailed_metrics', default='train:grads/log_snr, train:loss/elbo', type=str,
-                    help='comma separated list of keys for the `spot-on` plots. ')
+                    help='comma separated list of limit values for the curve plot (syntax: key:min:max), '
+                         'example: `train:loss/ess:1:3.5,train:loss/L_k:-89:-84,test:loss/L_k:-91:-87`')
+parser.add_argument('--keys', default='dataset, estimator, iw', type=str,
+                    help='comma separated list of keys to include in the report by decreasing order of importance, '
+                         'more than 4 keys is not yet handled for plotting.')
+parser.add_argument('--detailed_metrics', default='train:loss/L_k,train:loss/kl_q_p,train:loss/ess,train:grads/snr',
+                    type=str, help='comma separated list of keys for the `detailed` plots. ')
 parser.add_argument('--parse_estimator_args', action='store_true',
-                    help='parse estimator arguments such that `vimco-outer` -> `vimco` + outer=True')
-parser.add_argument('--counterfactuals', action='store_true',
-                    help='create on run for each counterfactual record')
+                    help='parse estimator arguments such that `ovis-gamma1` -> `ovis` + gamma=1')
 parser.add_argument('--latex', action='store_true', help='print as latex table')
 parser.add_argument('--float_format', default=".2f", help='float format')
-parser.add_argument('--nsamples', default=0, type=int, help='target number of points in the line plot (downsampling)')
+parser.add_argument('--downsample', default=0, type=int, help='maximum number of point for the curves (downsampling)')
 parser.add_argument('--ema', default=0, type=float, help='exponential moving average')
-parser.add_argument('--non_completed', action='store_true', help='also keep runs that are not yet completed.')
+parser.add_argument('--non_completed', action='store_true', help='allows reading non-completed runs')
 parser.add_argument('--max_records', default=-1, type=int,
                     help='only read the first `max_records` data point (`-1` = no limit)')
-parser.add_argument('--skip_level', default=-1, type=int,
-                    help='skip nesting levels while plotting')
-parser.add_argument('--merge_args', default='', type=str, help='list of args to merge into one')
-parser.add_argument('--adjust_ess', action='store_true', help='use ess = ess/K_test * K')
+parser.add_argument('--merge_args', default='', type=str, help='comma separated list of args to be merged')
 opt = parser.parse_args()
 
-_sep = os.get_terminal_size().columns * "-"
-
-# get path to the experiment directory
-path = os.path.join(opt.root, opt.exp)
-experiments = [e for e in os.listdir(path) if '.' != e[0]]
-
-# prepare output diorectory
-_id = opt.exp
+# define the run identifier
+run_id = opt.exp
 if len(opt.include):
-    _id += f"-inc={opt.include}"
+    run_id += f"-inc={opt.include}"
 if len(opt.exclude):
-    _id += f"-exc={opt.exclude}"
-if opt.counterfactuals:
-    _id += f"-counterfactuals"
+    run_id += f"-exc={opt.exclude}"
 if opt.ema > 0:
-    _id += f"-ema{opt.ema}"
-output_path = os.path.join(opt.output, _id)
+    run_id += f"-ema{opt.ema}"
+
+# define, create output directory and get the logger
+output_path = os.path.join(opt.output, run_id)
 if os.path.exists(output_path):
     rmtree(output_path)
 os.makedirs(output_path)
-
-# log console output to file
 logger, *_ = get_loggers(output_path, keys=['report'], format="%(message)s")
-logger.info(f"{datetime.now()}\n\n")
 
 
-# utilities
-def _print_df(df):
+def print_df(df):
+    """custom print function based on `opt.latex` and `opt.float_format`"""
     if opt.latex:
         logger.info(df.to_latex(float_format=f"%{opt.float_format}"))
     else:
         logger.info(df)
 
 
-def get_counterfactuals_headers(exp_path):
-    headers = (p for p in os.listdir(exp_path) if os.path.isdir(os.path.join(exp_path, p)))
-    return [p for p in headers if p not in ['train', 'valid', 'test']]
+"""
+read experiments, parse metrics and join attributes
+"""
 
-
-def read_tf_record(exp_path, exp, dict_metrics, force_header=None, meta=dict()):
-    for header in dict_metrics.keys():
-        _dir = os.path.join(exp_path, header)
-        _tf_log = [os.path.join(_dir, o) for o in os.listdir(_dir) if 'events.out.tfevents' in o][0]
-        with open(_tf_log, 'rb') as f:
-            reader = EventsFileReader(f)
-            for item in reader:
-                step = item.step
-                for v in item.summary.value:
-                    if v.tag in dict_metrics[header]:
-                        if force_header is not None:
-                            _header = force_header
-                        else:
-                            _header = header
-                        yield {'id': exp, 'step': step, '_key': f"{_header}:{v.tag}", '_value': float(v.simple_value),
-                               'header': header, **meta}
-
-
-# define the metrics for the grid of line plots
-curves_metrics = opt.metrics.replace(" ", "").split(',')
-
-# define the metrics for the `spot-on` plot
-keys = list(opt.keys.replace(" ", "").split(','))
-detailed_metrics = list(opt.detailed_metrics.replace(" ", "").split(','))
-if detailed_metrics[0] == "":
-    detailed_metrics = []
-
-
-# define the `pivot table` metrics
-def _parse_pivot_metric(u):
-    """a metric is expressed as a `:` separated string with syntax `agg_fn:header:key`, e.g. `avg:train:loss/elbo`"""
-    agg_fn_id, header, key = u.split(":")
-    return agg_fn_id, f"{header}:{key}"
-
-
-def _get_agg_fn(agg_fn_id):
-    return {'min': np.min, 'max': np.max, 'avg': np.mean, 'mean': np.mean, 'last': lambda x: list(x)[-1]}[agg_fn_id]
-
-
-pivot_metrics_agg_ids, pivot_metrics = zip(
-    *[_parse_pivot_metric(u) for u in opt.pivot_metrics.replace(" ", "").split(",")])
-pivot_metrics = list(pivot_metrics)
-pivot_metrics_agg_fns = map(_get_agg_fn, pivot_metrics_agg_ids)
-pivot_metrics_agg_ids = {m: f for m, f in zip(pivot_metrics, pivot_metrics_agg_ids)}
-
-# define the metrics to read from tensorboard
-all_metrics = list(set(curves_metrics + detailed_metrics + pivot_metrics))
-_headers, _all_metrics = zip(*[u.split(":") for u in all_metrics])
-dict_metrics = defaultdict(list)
-[dict_metrics[h].append(k) for (h, k) in zip(_headers, _all_metrics)]
-
-# filters
-filters_inc = opt.include.replace(" ", "").split(',') if len(opt.include) else ""
-print("Filters include:", filters_inc)
-filters_exc = opt.exclude.replace(" ", "").split(',') if len(opt.exclude) else ""
-print("Filters exclude", filters_exc)
-
-
-def is_filtered(exp, filters_inc, filters_exc):
-    return any([(u in exp) for u in filters_exc]) or (filters_inc != "" and all([(u not in exp) for u in filters_inc]))
-
-
-_success_file = 'success.txt'
-
-
-def is_successful(exp_path):
-    with open(os.path.join(exp_path, _success_file), 'r') as fp:
-        success_ = fp.read()
-
-    return "Success." in success_
-
-
-print("# Metrics:", all_metrics)
-print("# Agg. Fns:", pivot_metrics_agg_fns)
-
-# read data
-logger.info(f"# reading experiments from path: {path}")
-logger.info(_sep)
-data = []  # store hyperparameters and configs
-logs = []  # store training data from tensorboard logs
-counterfactual_logs = []  # store logs form counterfactuals
-pbar = tqdm(experiments)
-for e in pbar:
-    pbar.set_description(f"{e}")
-
-    exp_path = os.path.join(path, e)
-    files = os.listdir(exp_path)
-    try:
-        if (not opt.non_completed) and (not _success_file in files):
-            logger.info(f" >>>  Not yet completed: {e}")
-        elif is_filtered(e, filters_inc, filters_exc):
-            logger.info(f" >>>  filtered: {e}")
-        else:
-            if not opt.non_completed and not is_successful(exp_path):
-                logger.info(f" >>> Failed: {e}")
-            else:
-                # reading configuration files with run parameter
-                with open(os.path.join(exp_path, 'config.json'), 'r') as fp:
-                    args = DotMap(json.load(fp))
-                    args.pop("hostname")
-                    args.pop("root")  # todo
-
-                # parse estimator args: e.g.
-                # * `vimco-outer` -> estimator=vimco, outer=True
-                # * `vimco-alpha0.6` -> estimator=vimco, alpha=0.6
-                if opt.parse_estimator_args and "-" in args.estimator:
-
-                    estimator_args = args.estimator.split("-")
-
-                    # estimator is the first arg
-                    args['estimator'] = estimator_args[0]
-
-                    # for each estimator arg
-                    for arg in estimator_args[1:]:
-                        if arg == "geometric":
-                            args.estimator = args.estimator.replace(f"-geometric", "")
-                            args["w_hat"] = "geometric"
-                        elif arg == "arithmetic":
-                            args.estimator = args.estimator.replace(f"-arithmetic", "")
-                            args["w_hat"] = "arithmetic"
-                        else:
-                            numbers = parse_numbers(arg)
-                            if len(numbers):
-                                value = numbers[0]
-                                arg = arg.replace(str(value), "")
-                                args[arg] = value
-                            else:
-                                args[arg] = True
-
-                # read tensorboard logs
-                logs += [r for r in read_tf_record(exp_path, e, dict_metrics)]
-
-                # store counterfactuals data
-                if opt.counterfactuals:
-                    # build a ditctionary with keys=counterfactual id, values = dict_metrics['train']
-                    c_dict_metrics = {k: dict_metrics['train'] for k in get_counterfactuals_headers(exp_path)}
-                    counterfactual_logs += [r for r in
-                                            read_tf_record(exp_path, e, c_dict_metrics, force_header='train')]
-
-                # gather config/hyperparameters
-                d = dict(args)
-                d['id'] = e
-                # append data and logs
-                data += [d]
-
-                if opt.max_records > 0 and len(data) > opt.max_records:
-                    break
-
-    except Exception as ex:
-        logger.info("## FAILED. Exception:")
-        logger.info(_sep)
-        traceback.print_exception(type(ex), ex, ex.__traceback__)
-        logger.info(_sep)
-        logger.info("\nException: ", ex, "\n")
-
-# exit if not data
-if len(data) == 0:
-    logger.info(
-        f"{_sep}\nCouldn't read any record. Either they are errors or the experiments are not yet completed.\n{_sep}")
-    exit()
-
-# compile data into a dataframe
-df = pd.DataFrame(data)
-
-# replace void estimator arguments with False (important since nans are dropped afterwards)
-# for instance, for thwo different estimator names
-# * `vimco-outer` -> estimator=vimco, outer=True
-# * `vimco-alpha0.6` -> estimator=vimco, alpha=0.6
-df = df.fillna(0)  # todo: fill with zero when numbers else False
-
-# merging
-if opt.merge_args != "":
-    a, b = opt.merge_args.replace(" ", "").split(",")
-    merge_name = f"{a}-{b}"
-    df[merge_name] = [f"{x}-{y}" for x, y in zip(df[a].values, df[b].values)]
-    df = df.drop(a, 1)
-    df = df.drop(b, 1)
-
-# drop columns that contain the same attributes (they will be dropped from `df`)
-nunique = df.apply(pd.Series.nunique)
-global_attributes = [k for k in list(nunique[nunique == 1].index) if k not in ['id']]
-# remove some metrics from the global attributes if they have to be indexed from `df` later on.
-for k in pivot_metrics + ['seed', 'dataset'] + keys:
-    if k in global_attributes:
-        global_attributes.remove(k)
-
-df = df.drop(global_attributes, axis=1)
-
-# compile log data and merge with the attributes
-logs = pd.DataFrame(logs)
-
-# join df.config into logs
-_keys_to_merge = [k for k in df.keys() if k not in pivot_metrics]
-logs = logs.merge(df[_keys_to_merge], left_on="id", right_on="id", how='left')
-
-if opt.adjust_ess:
-
-    print(">>> logs:", logs.keys())
-
-    for key in ['train']:
-        iw_test = args['iw_test']
-        _key = f"{key}:loss/ess"
-        logs.loc[logs["_key"] == _key, '_value'] = logs.loc[logs["_key"] == _key, '_value'] * logs.loc[
-            logs["_key"] == _key, 'iw'] / iw_test
-
-# integrate counterfactuals data into the logs
-if len(counterfactual_logs):
-
-    counterfactual_logs = pd.DataFrame(counterfactual_logs)
-
-    counterfactual_logs.dropna(inplace=True)
-
-    # replace header by `train` and create new `counterfactual` column
-    counterfactual_logs.rename(columns={'header': 'counterfactual'}, inplace=True)
-    counterfactual_logs['header'] = 'train'
-
-
-    # extract counter factual id
-    def extract_iw(id, c, df):
-        """extract iw number of c identifier if available else retrieve value from `df`"""
-        last_split = c.split("-")[-1]
-        splits = c.split("-")[:-1]
-        if "iw" and not "iwae" in last_split:
-            return "-".join(splits), eval(last_split.replace("iw", ""))
-        else:
-            return c, df[df['id'] == id]['iw'].values[0]
-
-
-    counterfactual_logs['counterfactual'], counterfactual_logs['c_iw'] = zip(*[extract_iw(*u, df) for u in
-                                                                               zip(counterfactual_logs['id'].values,
-                                                                                   counterfactual_logs[
-                                                                                       'counterfactual'].values)])
-
-    # merge counterfactuals into the logs
-    logs = counterfactual_logs.merge(logs, left_on=["id", "step", "header", "_key"],
-                                     right_on=["id", "step", "header", "_key"], how='outer')
-
-
-    # solve values conflict (i.e. keep counterfacutal data when available)
-    def _merge_value(x, y):
-        return x if x == x else y
-
-
-    logs['_value'] = [_merge_value(*u) for u in zip(logs['_value_x'].values, logs['_value_y'].values)]
-    logs.drop(['_value_x', '_value_y'], 1, inplace=True)
-
-    # fill `c_iw` and `counterfactual` wen missing
-    if 'estimator' in logs.keys():
-        logs['counterfactual'].fillna(logs['estimator'], inplace=True)
-    else:
-        logs['counterfactual'].fillna(args['estimator'], inplace=True)
-    if 'iw' in logs.keys():
-        logs['c_iw'].fillna(logs['iw'], inplace=True)
-    else:
-        logs['c_iw'].fillna(args['iw'], inplace=True)
-
-    # update `id` column for a transparent merge/groupby
-    new_ids = defaultdict(list)
-    # hack to get the list of values for _ids[0] and update `new_ids` in _ids[1] = None
-    _ids = [(f"{i}-{e}-{iw}", new_ids[i].append(f"{i}-{e}-{iw}")) for i, e, iw in
-            zip(*[logs[key] for key in ['id', 'counterfactual', 'c_iw']])]
-    logs['id'] = list(zip(*_ids))[0]  # id-counterfactual-iw -> id
-    # repeat each `id` in df with the values from `new_ids`
-    new_df = []
-    for idx, row in df.iterrows():
-        row = dict(**row)
-        old_id = row.pop('id')
-        for new_id in new_ids[old_id]:
-            # get c_iw and _estimator
-            *counterfactual, c_iw = new_id.split('-')
-            counterfactual = "-".join(counterfactual).replace(f"{old_id}-",
-                                                              "")  # retrieve original name in a rather hacky way
-            new_df += [{'id': new_id, 'counterfactual': counterfactual, 'c_iw': eval(c_iw, {'nan': 0}), **row}]
-    df = pd.DataFrame(new_df)
-
-    # drop header
-    logs.drop('header', 1, inplace=True)
-
-    # drop potential nans
-    # print("-> DROP:", len(logs), len(df))
-    # logs.dropna(inplace=True)
-    # df.dropna(inplace=True)
-    # print("---> DROP:", len(logs), len(df))
-
-# aggregate `metric` over logs and join into `df`
-for m, agg_fn in zip(pivot_metrics, pivot_metrics_agg_fns):
-    logs_m = logs[logs["_key"] == m]
-    agg_log_m = pd.DataFrame(logs_m[['id', "_value"]].groupby('id')["_value"].apply(agg_fn))
-    agg_log_m.rename(columns={'_value': m}, inplace=True)
-    df = df.merge(agg_log_m, left_on="id", right_on="id", how='right')
-
-# drop id (exp name)
-df.drop('id', 1, inplace=True)
+metrics = parse_keys_headers_metrics(opt)
+path, data, logs = read_experiments(opt, metrics, logger)
+data, logs, global_attributes = extract_global_attributes_and_join_into_logs(opt, metrics, data, logs)
+data = aggregate_metrics(data, logs, metrics)
+# drop id (exp_id used for joins)
+data.drop('id', 1, inplace=True)
 logs.drop('id', 1, inplace=True)
-
 # format estimator names
-print(">>>> ", df.keys())
-print(">>>> ", logs.keys())
-df['estimator'] = list(map(format_estimator_name, df['estimator'].values))
+data['estimator'] = list(map(format_estimator_name, data['estimator'].values))
 logs['estimator'] = list(map(format_estimator_name, logs['estimator'].values))
 
-if 'warmup' in df.keys():
-    df['gamma_min'] = [1 if w == 0 else g for w,g in zip(df['warmup'].values, df['gamma_min'].values)]
-    logs['gamma_min'] = [1 if w == 0 else g for w,g in zip(logs['warmup'].values, logs['gamma_min'].values)]
-
-# handle warmup
-# if "warmup" in df.keys():
-#     df['estimator'] = [f"{e}{'-warmup' if w else ''}" for e,w in zip(df['estimator'].values, df['warmup'].values)]
-#     logs['estimator'] = [f"{e}{'-warmup' if w else ''}" for e, w in zip(logs['estimator'].values, logs['warmup'].values)]
 """
 print all results
 """
 
-# sort by the first metric
-df = df.sort_values(pivot_metrics[0], ascending=False)
-
-# print all results
-logger.info("\n" + _sep)
-for g in global_attributes:
-    logger.info(f"{g} : {args[g]}")
-logger.info(_sep)
-logger.info(os.path.abspath(path))
-logger.info(_sep)
-logger.info(f"all data: varying parameters: {[k for k in df.keys() if k not in pivot_metrics]}")
-logger.info(_sep)
-_print_df(df)
+logger.info(f"{logging_sep('=')}\nGlobal Attributes\n{logging_sep('-')}")
+for k, v in global_attributes.items():
+    logger.info(f"{k} : {v}")
+logger.info(f"{logging_sep('-')}\nExperiment path : {os.path.abspath(path)}\n{logging_sep('-')}")
+logger.info(f"Varying Parameters: {[k for k in data.keys() if k not in metrics['pivot_metrics']]}")
+logger.info(f"{logging_sep('-')}\nData (sorted by {metrics['pivot_metrics'][0]})\n{logging_sep('-')}")
+print_df(data)
+logger.info(logging_sep("="))
 
 """
-pivot table
+build the pivot table and print
 """
 
-
-def aggfunc(serie):
-    """function use to aggregate the results into the pivot table"""
-    mean = np.mean(serie)
-    std = np.std(serie)
-    return f"{mean:{opt.float_format}} +/- {std:{opt.float_format}} (n={len(serie)})"
-
-
-_columns = []  # [opt.aux_key] if len(opt.aux_key) > 0 else []
-_excluded_keys = all_metrics + _columns + ["seed"] + keys[::-1]
-_index = [k for k in df.keys() if k not in _excluded_keys]
-_index = _index + keys[::-1]
-# pivot table
-pivot = df.pivot_table(index=_index, columns=_columns, values=pivot_metrics, aggfunc=aggfunc)
-
-# build another pivot table using only the first metric to sort the original pivot table accordingly
-mean_pivot = df.pivot_table(index=_index, values=pivot_metrics[0], aggfunc=np.mean)
-mean_pivot = mean_pivot.sort_values(pivot_metrics[0], ascending=False)
-# sort the original pivot table
-pivot = pivot.reindex(mean_pivot.index)
-
-# sort index
-for idx in _index[::-1][1:]:
-    pivot.sort_index(level=idx, sort_remaining=False, inplace=True)
-
-logger.info("\n" + _sep)
-logger.info("Pivot table:\n" + _sep)
-_print_df(pivot)
-logger.info(_sep)
+pivot = build_pivot_table(opt, data, metrics)
+logger.info("\n" + logging_sep('='))
+logger.info("Pivot table\n" + logging_sep())
+print_df(pivot)
+logger.info(logging_sep('='))
 
 # save to file
-df.to_csv(os.path.join(output_path, "pivot.csv"))
+data.to_csv(os.path.join(output_path, "pivot.csv"))
 
 """
-plot line plots with uncertainty intervals
+post processsing: smoothing + downsampling
 """
 
 if opt.ema > 0:
-    # curve smoothing
-    logs.sort_values("step", inplace=True)
-    sort_index = [k for k in logs.keys() if k not in ['step', '_value', '_key']] + ['_key', 'step']
+    logs = exponential_moving_average(logs, opt.ema)
 
-    logs.set_index(keys=sort_index, inplace=True)
-    for idx in sort_index[::-1]:
-        logs.sort_index(level=idx, sort_remaining=False, inplace=True)
+if opt.downsample > 0:
+    logs = downsample(logs, opt.downsample, logger=logger)
 
-    for k, (idx, record) in enumerate(logs.groupby(level=list(range(len(sort_index) - 1)))):
-        steps = record.index.get_level_values(-1)  # get `step` values
-        record = record['_value']
-
-        # exponential moving average
-        record = record.ewm(alpha=1 - opt.ema).mean()
-
-        logs.loc[idx, :] = record
-
-    logs.reset_index(inplace=True)
-
-_last_indexes = ['seed', '_key', 'step']
-_index = [k for k in logs.keys() if k != '_value' and k not in _last_indexes]
-_index += _last_indexes
-
-if opt.nsamples > 0:
-    # get max step
-    M = logs['step'].max()
-    bins = [int(s) for s in range(0, M, M // opt.nsamples)]
-
-    n_full = len(logs['step'].unique())
-    ratio = n_full // opt.nsamples
-
-    # reshape data with index [..., seed, _key, step] and sort by steps
-    # logs = logs.pivot_table(index=_index, values='_value', aggfunc=np.mean)
-    # for idx in _index[::-1]:
-    #     logs.sort_index(level=idx, sort_remaining=False, inplace=True)
-
-    logger.info(f"Downsampling data.. (n={opt.nsamples})")
-    logs.reset_index(level=-1, inplace=True)
-    _index.remove("step")
-    logs = logs.groupby(_index + [pd.cut(logs.step, bins)]).mean()
-    logs.index.rename(level=[-1], names=['step_bucket'], inplace=True)
-    logs.reset_index(inplace=True)
-    logs.drop("step_bucket", 1, inplace=True)
-
-# drop nan
+"""drop nans + save to file"""
 logs.dropna(inplace=True)
-
-# save to file
 logs.to_csv(os.path.join(output_path, "curves.csv"))
 
+"""plotting pivot plots, curve plots and detailed plots"""
+# set style
+set_matplotlib_style()
+
 # plot for all auxiliary keys
-if len(opt.ylims):
-    ylims = [(u.split(":")[:-2],u.split(":")[-2:]) for u in opt.ylims.replace(" ", "").split(',')]
-    ylims = {":".join(u[0]) : [eval(u[1][0]), eval(u[1][1])] for u in ylims}
-else:
-    ylims = {}
+ylims = parse_ylims(opt)
 
-# todo: nested loop
-
-_keys = keys
-if logs['dataset'].nunique() > 1 and _keys[0] != 'dataset':  # TODO fix this
-    _keys = ['dataset'] + _keys
-
-print(_sep)
-level = 1
-print(f">>> Level = {level}, Plotting with keys:", _keys)
-print(_sep)
+# ensure the first key to be `dataset`
+keys = metrics['keys']
+if logs['dataset'].nunique() > 1 and keys[0] != 'dataset':
+    keys = ['dataset'] + keys
 
 # define keys used for styling
-cat_key = _keys[0]
-main_key = _keys[1]  # color
-aux_key = _keys[2] if len(_keys) > 2 else None  # line style (in main plot)
-third_key = _keys[3] if len(_keys) > 3 else None  # line style (in auxiliary plots)
-fourth_key = _keys[4] if len(_keys) > 4 else None
+cat_key = keys[0]
+main_key = keys[1]  # color
+aux_key = keys[2] if len(keys) > 2 else None  # line style (in main plot)
+third_key = keys[3] if len(keys) > 3 else None  # line style (in auxiliary plots)
 
-meta = {'log_rules': LOG_PLOT_RULES, 'metric_dict': METRIC_DISPLAY_NAME, 'agg_fns': pivot_metrics_agg_ids}
+meta = {'log_rules': LOG_PLOT_RULES, 'metric_dict': METRIC_DISPLAY_NAME, 'agg_fns': metrics['pivot_metrics_agg_ids']}
 
-if logs[cat_key].nunique() > 0:
+if logs[cat_key].nunique() > 1:
+    level = 1
     # pivot plot
-    logger.info(f"|- Generating pivot plots with key = {cat_key} ..")
-    _path = os.path.join(output_path, f"pivot-plot-all-level={level}-by={cat_key}-hue={main_key}.png")
-    pivot_plot(df, _path, pivot_metrics, cat_key, main_key, aux_key, style_key=third_key, **meta)
-
-    # if cat_key != 'dataset':
-    #     _path = os.path.join(output_path, f"curves-all-level={level}.png")
-    #     plot_logs(logs, _path, curves_metrics, main_key, ylims=ylims, style_key=aux_key, **meta)
+    logger.info(f"|- Generating pivot plots for all keys {cat_key} ..")
+    _path = os.path.join(output_path, f"{level}-pivot-plot-{cat_key}-hue={main_key}.png")
+    pivot_plot(data, _path, metrics['pivot_metrics'], cat_key, main_key, aux_key, style_key=third_key, **meta)
 
 # plot all data for each key
-level = 2
 for cat in logs[cat_key].unique():
-    print(_sep)
+    level = 2
+    print(logging_sep())
     logger.info(f"[{cat_key} = {cat}]")
+    # slice data
     cat_logs = logs[logs[cat_key] == cat]
-    cat_df = df[df[cat_key] == cat]
+    cat_data = data[data[cat_key] == cat]
 
     logger.info(f"|- Generating pivot plots with key = {cat_key} ..")
-    _path = os.path.join(output_path, f"{level}-pivot-plot-{cat_key}={cat}-by={cat_key}-hue={main_key}.png")
-    pivot_plot(cat_df, _path, pivot_metrics, cat_key, main_key, aux_key, style_key=third_key, **meta)
+    _path = os.path.join(output_path, f"{level}-{cat_key}={cat}-pivot-plot-hue={main_key}-style={third_key}.png")
+    pivot_plot(cat_data, _path, metrics['pivot_metrics'], cat_key, main_key, aux_key, style_key=third_key, **meta)
 
     logger.info(f"|- Generating merged curves plots..")
-    # main plot
-    # _path = os.path.join(output_path, f"{level}-curves-all-{cat_key}={cat}.png")
-    # plot_logs(cat_logs, _path, curves_metrics, main_key, ylims=ylims, style_key=aux_key, **meta)
+    _path = os.path.join(output_path, f"{level}-{cat_key}={cat}-curves-hue={main_key}-style={aux_key}.png")
+    plot_logs(cat_logs, _path, metrics['curves_metrics'], main_key, ylims=ylims, style_key=aux_key, **meta)
 
     if aux_key is not None:
-
         level = 3
 
-        # spot on plots
-        if len(detailed_metrics):
+        # detailed plots
+        if len(metrics['detailed_metrics']):
             logger.info(f"|- Generating detailed plots for aux. key = {aux_key}")
-            _path = os.path.join(output_path, f"{level}-{cat_key}={cat}-detailed.png")
-            detailed_plot(cat_logs, _path, detailed_metrics, main_key, aux_key, style_key=third_key, ylims=ylims,
+            _path = os.path.join(output_path,
+                                 f"{level}{cat_key}={cat}-detailed-plot-hue={main_key}-style={aux_key}.png")
+            detailed_plot(cat_logs, _path, metrics['detailed_metrics'], main_key, aux_key, style_key=third_key,
+                          ylims=ylims,
                           **meta)
 
         # on plot for each auxiliary key
@@ -592,5 +190,7 @@ for cat in logs[cat_key].unique():
             logger.info(f"|--- Generating plots for {aux_key} = {v} [{i + 1} / {len(aux_key_values)}]")
 
             # auxiliary plot
-            _path = os.path.join(output_path, f"{level}-{cat_key}={cat}-curves-{aux_key}={v}.png")
-            plot_logs(aux_cat_logs, _path, curves_metrics, main_key, ylims=ylims, style_key=third_key, **meta)
+            _path = os.path.join(output_path,
+                                 f"{level}-{cat_key}={cat}-{aux_key}={v}-curves-hue={main_key}-style={third_key}.png")
+            plot_logs(aux_cat_logs, _path, metrics['curves_metrics'], main_key, ylims=ylims, style_key=third_key,
+                      **meta)

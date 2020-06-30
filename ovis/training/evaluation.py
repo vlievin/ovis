@@ -1,5 +1,6 @@
 import torch
 from booster import Diagnostic, Aggregator
+from booster.utils import logging_sep
 from tqdm import tqdm
 
 from ovis.analysis.gradients import get_gradients_statistics
@@ -73,3 +74,15 @@ def evaluation(model, estimator, config, loader, exp_id, device='cpu', ref_summa
         summary['loss']['overfitting'] = ref_summary['loss']['L_k'].mean() - summary['loss']['L_k'].mean()
 
     return summary
+
+
+def evaluate_minibatch_and_log(estimator, model, x, config, base_logger, desc):
+    """Evaluate the model using the estimator on a mini-batch of data and log to the Logger"""
+    print(logging_sep())
+    loss, diagnostics, output = estimator(model, x, backward=False, **config)
+    base_logger.info(
+        f"{desc} | L_{estimator.iw} = {diagnostics['loss']['elbo'].mean().item():.6f}, "
+        f"KL = {diagnostics['loss']['kl'].mean().item():.6f}, "
+        f"NLL = {diagnostics['loss']['nll'].mean().item():.6f}, "
+        f"ESS = {diagnostics['loss']['ess'].mean().item():.6f}")
+    return diagnostics
