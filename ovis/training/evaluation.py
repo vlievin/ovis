@@ -58,7 +58,7 @@ def evaluation(model, estimator, config, loader, exp_id, device='cpu', ref_summa
     k = 0
     model.eval()
     agg = Aggregator()
-    for batch in tqdm(loader, desc=f"{exp_id}-eval"):
+    for batch in tqdm(loader, desc=f"[evaluation] {exp_id}"):
         x, y = preprocess(batch, device)
         diagnostics = test_step(x, model, estimator, y=y, **config)
         agg.update(diagnostics)

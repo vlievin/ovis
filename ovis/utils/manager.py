@@ -5,20 +5,8 @@ import socket
 import time
 import traceback
 
-from tinydb import TinyDB, Query  # pip install tinydb
-
+from ovis.utils.dbutils import open_db, get_filelock
 from ovis.utils.filelock import FileLock
-
-
-def open_db(logdir):
-    _file = os.path.join(logdir, '.db.json')
-    db = TinyDB(_file, indent=4)
-    query = Query()
-    return db.table('experiments'), query
-
-
-def get_filelock(abs_logdir):
-    return os.path.join(abs_logdir, ".db.json")
 
 
 def snapshot_dir(logdir):
@@ -90,7 +78,8 @@ def retrieve_exp_and_run(job_args):
                 except:
                     print(f"Command `{command}` failed.")
 
-                print(f"@ manager.subprocess [id={process_id}, pid={_pid}] : experiment completed. Arguments = \n{args}\n\n")
+                print(
+                    f"@ manager.subprocess [id={process_id}, pid={_pid}] : experiment completed. Arguments = \n{args}\n\n")
 
         except KeyboardInterrupt:
             print(f"@ manager.subprocess : Keyboard Interrupt")

@@ -223,14 +223,14 @@ try:
         f.write(Success.success_message)
 
 except KeyboardInterrupt:
-    print(f"{logging_sep()}\n@ asymptotic_variance.py: Keyboard Interrupt.\n{logging_sep()}")
+    print(f"{logging_sep('=')}\n@ asymptotic_variance.py: Keyboard Interrupt.\n{logging_sep('=')}")
     with open(os.path.join(logdir, Success.file), 'w') as f:
         f.write(Success.keyboard_interrupt_message)
 
 
 except Exception as ex:
-    print(f"{logging_sep()}\n@ asymptotic_variance.py: "
-          f"Failed with exception {type(ex).__name__} = `{ex}` \n{logging_sep()}")
+    print(f"{logging_sep('=')}\n@ asymptotic_variance.py: "
+          f"Failed with exception {type(ex).__name__} = `{ex}` \n{logging_sep('=')}")
     traceback.print_exception(type(ex), ex, ex.__traceback__)
     with open(os.path.join(logdir, Success.file), 'w') as f:
         f.write(Success.failed_message(ex))

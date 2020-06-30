@@ -22,19 +22,20 @@ def read_tf_record(exp_path, exp, dict_metrics, force_header=None, meta=dict()):
     """read individual Tensorboard records and index by `exp`"""
     for header in dict_metrics.keys():
         _dir = os.path.join(exp_path, header)
-        _tf_log = [os.path.join(_dir, o) for o in os.listdir(_dir) if 'events.out.tfevents' in o][0]
-        with open(_tf_log, 'rb') as f:
-            reader = EventsFileReader(f)
-            for item in reader:
-                step = item.step
-                for v in item.summary.value:
-                    if v.tag in dict_metrics[header]:
-                        if force_header is not None:
-                            _header = force_header
-                        else:
-                            _header = header
-                        yield {'id': exp, 'step': step, '_key': f"{_header}:{v.tag}", '_value': float(v.simple_value),
-                               'header': header, **meta}
+        for tf_log in [os.path.join(_dir, o) for o in os.listdir(_dir) if 'events.out.tfevents' in o]:
+            with open(tf_log, 'rb') as f:
+                reader = EventsFileReader(f)
+                for item in reader:
+                    step = item.step
+                    for v in item.summary.value:
+                        if v.tag in dict_metrics[header]:
+                            if force_header is not None:
+                                _header = force_header
+                            else:
+                                _header = header
+                            yield {'id': exp, 'step': step, '_key': f"{_header}:{v.tag}",
+                                   '_value': float(v.simple_value),
+                                   'header': header, **meta}
 
 
 def parse_pivot_metric(u):

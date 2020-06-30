@@ -12,8 +12,8 @@ from booster.utils import logging_sep
 from tqdm import tqdm
 
 from ovis.utils.filelock import FileLock
-from ovis.utils.manager import open_db, snapshot_dir, read_experiment_json_file, get_abs_paths, get_filelock, \
-    retrieve_exp_and_run
+from ovis.utils.manager import snapshot_dir, read_experiment_json_file, get_abs_paths, retrieve_exp_and_run
+from ovis.utils.dbutils import open_db, get_filelock
 
 
 def run_manager():

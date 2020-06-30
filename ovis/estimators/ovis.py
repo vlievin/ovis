@@ -65,7 +65,7 @@ class OvisAsymptotic(Reinforce):
         self.control_loss_weight = 0
 
     @torch.no_grad()
-    def compute_control_variate(self, x: Tensor, alpha: float = 0, gamma: float = 1,
+    def compute_control_variate(self, x: Tensor, alpha: float = 0, gamma: float = 1, overflow_eps=1e-7,
                                 **data: Dict[str, Tensor]) -> Tensor:
         """
         Compute the control variate using the equation (17):
@@ -77,12 +77,13 @@ class OvisAsymptotic(Reinforce):
         :param x: observation
         :param alpha: parameter for the IWR bound
         :param gamma: parameter for the ESS limit case: gamma==1: ESS >> 1, gamma==0: ESS \approx 1
+        :param overflow_eps: epsilon value to safely compute `log(1 - v_k)` using `v_k = min(1-eps, v_k)`
         :param data: additional data
         :return: control variate
         """
         L_k, v_k = [data[k] for k in ['L_k', 'v_k']]
         # avoid overflow: warning using a low epsilon value is equivalent to "truncated importance sampling"
-        v_k_safe = torch.min((1 - 1e-7) * torch.ones_like(v_k), v_k)
+        v_k_safe = torch.min((1 - overflow_eps) * torch.ones_like(v_k), v_k)
 
         # c_k = L_k
         logZ_diff = self.log_1_m_uniform - torch.log1p(- v_k_safe)

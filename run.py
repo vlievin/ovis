@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import pickle
+import sys
 import traceback
 
 import numpy as np
@@ -11,7 +12,6 @@ from booster.utils import logging_sep, available_device
 from torch import Tensor
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
-from tqdm import tqdm
 
 from ovis import get_datasets
 from ovis.analysis.active_units import latent_activations
@@ -119,7 +119,7 @@ def parse_args():
 
     # active units analysis
     parser.add_argument('--mc_au_analysis', default=0, type=int,
-                        help='number of Monte-Carlo samples used to estimate the number of active units')
+                        help='number of Monte-Carlo samples used to estimate the number of active units (skip if zero)')
     parser.add_argument('--npoints_au_analysis', default=1000, type=int,
                         help='number of data points x')
 
@@ -158,16 +158,32 @@ def parse_args():
     return parser.parse_args()
 
 
-if __name__ == '__main__':
+def run():
+    """
+    Learn the parameters of the specified model and evaluate. Evaluation is performed every `opt.eval_freq` epochs
+    on the test set using the `estimator_test`. At each evaluation step is also performed:
+        * gradient analysis
+        * measure the number of active units
+        * sampling from the prior
+        * evaluation on a subset of the training dataset
+        * checkpointing best on `log p(x) = L_K (test)`
+
+    A final evaluation step is performed on the `validation` set using the parameters of the model that scored the
+    highest `L_K (test)`.
+
+    Each session is identified by a unique deterministic `run_id`. Starting a novel session that matches an existing
+    `run_id` will result in loading the last checkpoint from the existing session.
+    """
     opt = parse_args()
 
-    # deterministic backend, silent mode and checking args
+    # deterministic backend and silent mode
     if opt.deterministic:
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
-
     if opt.silent:
         tqdm = notqdm
+    else:
+        from tqdm import tqdm
 
     # defining the run identifiers
     run_id, exp_id = get_run_id(opt)
@@ -187,6 +203,7 @@ if __name__ == '__main__':
         base_logger.info(f"Run id: {run_id}")
         base_logger.info(f"Logging directory: {logdir}")
         base_logger.info(f"Torch version: {torch.__version__}")
+        base_logger.info(f"Python version: {sys.version.splitlines()[0]}")
         print(logging_sep("="))
 
         # setting the random seed
@@ -217,7 +234,7 @@ if __name__ == '__main__':
         pickle.dump(hyperparameters, open(os.path.join(logdir, "hyperparameters.pkl"), "wb"))
 
         print(logging_sep("="))
-        print(f"Parameters ({sum(p.numel() for p in model.parameters()):.3E})")
+        print(f"Parameters (N = {sum(p.numel() for p in model.parameters()):.3E})")
         print(logging_sep())
         for k, v in model.named_parameters():
             base_logger.info(f"{k} : N = {v.numel()}, mean = {v.mean().item():.3f}, std = {v.std().item():.3f}")
@@ -273,7 +290,7 @@ if __name__ == '__main__':
             """training epoch"""
             [o.zero_grad() for o in optimizers]
             model.train()
-            for batch in tqdm(loader_train, desc=f"{exp_id}-training"):
+            for batch in tqdm(loader_train, desc=f"[training] {exp_id}"):
                 alpha = scheduler(session.global_step)
                 x, y = preprocess(batch, device)
                 training_step(x, model, estimator, optimizers, y=y, return_diagnostics=False, alpha=alpha, **config)
@@ -368,29 +385,37 @@ if __name__ == '__main__':
         model.eval()
         agg = Aggregator()
         with torch.no_grad():
-            for batch in tqdm(loader_valid, desc=f"{exp_id}-K={estimator_valid.iw}-M={estimator_valid.mc}"):
+            for batch in tqdm(loader_valid, desc=f"[final evaluation] {exp_id}"):
                 x, y = preprocess(batch, device)
                 diagnostics = test_step(x, model, estimator_valid, y=y, **config_test)
                 agg.update(diagnostics)
             summary = agg.data.to('cpu')
 
-        # log
         _, global_step, epoch = session.best_elbo
         log_summary(summary, global_step, epoch, logger=valid_logger, best=None, writer=writer_valid, exp_id=exp_id)
 
+        # prior sampling
+        with ManualSeed(seed=opt.seed):
+            sample_prior_and_save_img("prior-sample", model, logdir, global_step=session.global_step,
+                                      writer=writer_test)
+
         # write outcome to a file (success, interrupted, error)
-        print(f"{logging_sep('=')}\n@run.py: Succes.\n{logging_sep('=')}")
+        print(f"{logging_sep('=')}\n@ run.py: Succes.\n{logging_sep('=')}")
         with open(os.path.join(logdir, Success.file), 'w') as f:
             f.write(Success.success_message)
 
     except KeyboardInterrupt:
-        print(f"{logging_sep()}\n@run.py: Keyboard Interrupt.\n{logging_sep()}")
+        print(f"{logging_sep('=')}\n@ run.py: Keyboard Interrupt.\n{logging_sep('=')}")
         with open(os.path.join(logdir, Success.file), 'w') as f:
             f.write(Success.keyboard_interrupt_message)
 
 
     except Exception as ex:
-        print(f"{logging_sep()}\n@run.py: Failed with exception {type(ex).__name__} = `{ex}` \n{logging_sep()}")
+        print(f"{logging_sep('=')}\n@ run.py: Failed with exception {type(ex).__name__} = `{ex}` \n{logging_sep('=')}")
         traceback.print_exception(type(ex), ex, ex.__traceback__)
         with open(os.path.join(logdir, Success.file), 'w') as f:
             f.write(Success.failed_message(ex))
+
+
+if __name__ == '__main__':
+    run()
