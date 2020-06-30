@@ -7,7 +7,7 @@ from typing import Iterable, Optional
 import torch
 
 BASE_ARGS_EXCEPTIONS = ['root', 'data_root', 'workers', 'silent', 'sequential_computation',
-                        'test_sequential_computation', 'epochs', 'nsteps', 'valid_bs', 'test_bs']
+                        'epochs', 'nsteps', 'valid_bs', 'test_bs']
 
 
 class Success():
@@ -56,8 +56,7 @@ def parse_numbers(s):
 
 def notqdm(iterable, *args, **kwargs):
     """
-    replacement for tqdm that just passes back the iterable
-    useful to silence `tqdm` in tests
+    silent replacement for `tqdm`
     """
     return iterable
 

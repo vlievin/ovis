@@ -1,46 +1,82 @@
-# Rewiewing the existing estimators for discrete latent variable VAEs
+# Optimal Variance Control of the Score Function Gradient Estimator for Importance Weighted Bounds
 
-## Estimators
+Code for the *Optimal Variance Control of the Score Function Gradient Estimator for Importance Weighted Bounds* (a.k.a **OVIS**).
 
-* REINFORCE
-* REINFORCE with baseline
-* REINFORCE with baseline and Importance-Weighted objective)
-* VIMCO
-* Concrete/Gumbel-Softmax
-* Straight-Through Concrete/Gumbel-Softmax
-* Optimal Covariance Baseline (see overleaf doc)
-* RELAX ([TODO]: learn temperature, [TODO]: use iw samples) 
-* ! [TODO] TVO
-* [TODO] VQ 
-* [TODO] REBAR (special case of RELAX)
+## install as a Package
 
-## Datasets
-
-* Shapes Dataset
-* Binarized MNIST
-* Omniglot
-* Fashion MNIST
-* [TODO] BookCorpus Dataset
+```bash
+pip install git+https://github.com/vlievin/ovis.git
+```
 
 ## Experiments
 
-* Binary Images Modelling
-    * nsamples x CovBaseline vs. Vimco (Categorical)
-    * nsamples x CovBaseline vs. Vimco vs Pathwise (Gaussian)
-    * [TODO] nsamples x CovBaseline vs. TVO
-    * [TODO] optimal budget: iw vs. mc samples
+### Asymptotic Variance
 
-* [TODO] Bernoulli toy
-    * RELAX: L(θ) = Ep(b|θ) [(b − 0.499)**2]
-    * visualize gradients, parameter space, ... 
-    
-* [TODO] Attend, Infer and Repeat
-    * Covbaseline vs. Vimco vs. Reinforce+baseline vs. TVO
+Anayse the gradients for a simple Gaussian model. Reproduce the figure 1:
 
-* [TODO] Langugage as a Latent Variable
-    * Covbaseline vs. Vimco vs. Reinforce+baseline vs. TVO
-    
-   
-* Secondary
-    * kdim: effect of the query model 
-    * [TODO] nz, kz: best configuration
+```bash
+# run the experiment
+python manager.py --exp asymptotic-analysis
+# produce the figures
+python report_asymptotic_variance --exp asymptotic-analysis
+# access the results
+open reports/asymptotic-variance/
+```
+
+Train the Gaussian model:
+
+```bash
+# run the experiment
+python manager.py --exp gaussian-toy
+# produce the figures
+python report.py --exp gaussian-toy \
+    --keys=dataset,estimator,iw \
+    --metrics=train:grads/snr,train:grads/dsnr,valid:gaussian_toy/mse_A,valid:gaussian_toy/mse_b,valid:gaussian_toy/mse_mu \ 
+    --detailed_metrics=test:gaussian_toy/mse_A,train:grads/variance,train:grads/snr,train:loss/ess \
+    --pivot_metrics=min:test:gaussian_toy/mse_A,min:test:gaussian_toy/mse_b,min:test:gaussian_toy/mse_mu,avg:train:grads/snr
+# access the results
+open reports/gaussian-toy/
+```
+
+### Gaussian Mixture Model
+
+Train a simple Gaussian Mixture model. Reproduce the figure 2:
+
+```bash
+# run the experiment
+python manager.py --exp gaussian-mixture-model
+# produce the figures
+python report.py --exp gaussian-mixture-model \
+    --keys=dataset,estimator,iw \
+    --metrics=test:gmm/posterior_mse,test:gmm/prior_mse,train:grads/variance,train:grads/snr \
+    --detailed_metrics=test:gmm/posterior_mse,test:gmm/prior_mse,train:loss/ess,train:grads/variance,train:grads/snr \
+    --pivot_metrics=min:test:gmm/posterior_mse,min:test:gmm/prior_mse,mean:train:grads/snr 
+# access the results
+open reports/gaussian-mixture-model/
+```
+
+### Sigmoid Belief Network
+
+Train a 3-layers Sigmoid Belief Network. Reproduce the figure 3 (left):
+
+```bash
+# run the experiment
+python manager.py --exp sigmoid-belief-network
+# produce the figures
+[todo: write script]
+# access the results
+open reports/sigmoid-belief-network/
+```
+
+### Gaussian VAE
+
+Train a 1-layer Gaussian VAE. Reproduce the figure 3 (right):
+
+```bash
+# run the experiment
+python manager.py --exp gaussian-vae
+# produce the figures
+[todo: write script]
+# access the results
+open reports/gaussian-vae/
+```

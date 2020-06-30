@@ -47,7 +47,7 @@ def latent_activations(model: Template,
             return x.view(x.size(0), -1)
 
         if isinstance(z[0], Tuple):
-            # quick 'n' dirty: handle SBM case
+            # quick 'n' dirty: handle the TVO models
             z = z[0]
 
         if isinstance(z, List) or isinstance(z, Tuple):

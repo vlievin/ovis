@@ -11,9 +11,9 @@ import GPUtil
 from booster.utils import logging_sep
 from tqdm import tqdm
 
+from ovis.utils.dbutils import open_db, get_filelock
 from ovis.utils.filelock import FileLock
 from ovis.utils.manager import snapshot_dir, read_experiment_json_file, get_abs_paths, retrieve_exp_and_run
-from ovis.utils.dbutils import open_db, get_filelock
 
 
 def run_manager():
@@ -34,19 +34,31 @@ def run_manager():
     """
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--script', default='run.py', help='script name')
-    parser.add_argument('--root', default='runs/', help='experiment directory')
-    parser.add_argument('--data_root', default='data/', help='data directory')
-    parser.add_argument('--exp', default='gaussian-mixture-model', type=str, help='experiment id')
-    parser.add_argument('--max_gpus', default=8, type=int, help='maximum number of GPUs')
-    parser.add_argument('--max_load', default=0.5, type=float, help='only use GPUs with load < `max_load`')
-    parser.add_argument('--max_memory', default=0.01, type=float, help='only use GPUs with memory < `max_memory`')
-    parser.add_argument('--processes', default=1, type=int, help='number of processes per GPU')
+    parser.add_argument('--script', default='run.py',
+                        help='script name')
+    parser.add_argument('--root', default='runs/',
+                        help='experiment directory')
+    parser.add_argument('--data_root', default='data/',
+                        help='data directory')
+    parser.add_argument('--exp', default='gaussian-mixture-model', type=str,
+                        help='experiment id pointing to a .json file in experiments/')
+    parser.add_argument('--max_gpus', default=8, type=int,
+                        help='maximum number of GPUs')
+    parser.add_argument('--max_load', default=0.5, type=float,
+                        help='only use GPUs with load < `max_load`')
+    parser.add_argument('--max_memory', default=0.01, type=float,
+                        help='only use GPUs with memory < `max_memory`')
+    parser.add_argument('--processes', default=1, type=int,
+                        help='number of processes per GPU')
     parser.add_argument('--rf', action='store_true', help='delete the previous experiment')
-    parser.add_argument('--resume', action='store_true', help='resume the manager')
-    parser.add_argument('--update_exp', action='store_true', help='update experiment file in the snapshot')
-    parser.add_argument('--update_lib', action='store_true', help='update the entire lib snapshot')
-    parser.add_argument('--max_jobs', default=-1, type=int, help='maximum jobs per thread (stop after `max_jobs` jobs)')
+    parser.add_argument('--resume', action='store_true',
+                        help='resume an experiment')
+    parser.add_argument('--update_exp', action='store_true',
+                        help='update snapshot experiment file')
+    parser.add_argument('--update_lib', action='store_true',
+                        help='update the entire snapshot')
+    parser.add_argument('--max_jobs', default=-1, type=int,
+                        help='maximum jobs per thread (stop after `max_jobs` jobs)')
     opt = parser.parse_args()
 
     # get the list of devices
@@ -136,7 +148,7 @@ def run_manager():
                     _args += [f"--{_arg} {v} " + a for a in args]
             args = _args
 
-    # write all experiments to tinydb database
+    # write all experiments to `tinydb` database
     with FileLock(get_filelock(exp_root), timeout=60):
         db, query = open_db(exp_root)
         # add missing exps (when using `--resume` + `--update_exp`)

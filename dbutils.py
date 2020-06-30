@@ -5,17 +5,27 @@ import argparse
 import shutil
 import traceback
 from filelock import filelock
-from ovis.utils.manager import open_db, snapshot_dir, read_experiment_json_file, get_abs_paths, get_filelock
+from ovis.utils.manager import snapshot_dir, read_experiment_json_file, get_abs_paths
+from ovis.utils.dbutils import open_db, get_filelock
+from ovis.utils.utils import Success
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--root', default='runs/', help='experiment directory')
-parser.add_argument('--exp', default='gaussian-mixture-model', type=str, help='experiment id')
-parser.add_argument('--update', default='', help='comma separated list of args :key:value:new_value, eg `data:path:newpath,iw:10:100`')
-parser.add_argument('--delete', default='', help='pattern to be match in exp')
-parser.add_argument('--show', action='store_true', help='show all records')
-parser.add_argument('--check', action='store_true', help='check potential failed experiments')
-parser.add_argument('--requeue', action='store_true', help='requeue experiment without successful outcome in `success.txt`')
-parser.add_argument('--hard_requeue', action='store_true', help='also recover experiments without the `success` file. Warning: will delete runs of currently running exps.')
+parser.add_argument('--root', default='runs/',
+                    help='experiment directory')
+parser.add_argument('--exp', default='gaussian-mixture-model', type=str,
+                    help='experiment id')
+parser.add_argument('--update', default='',
+                    help='comma separated list of args :key:value:new_value, eg `data:path:newpath,iw:10:100`')
+parser.add_argument('--delete', default='',
+                    help='pattern to be match in exp')
+parser.add_argument('--show', action='store_true',
+                    help='show all records')
+parser.add_argument('--check', action='store_true',
+                    help='check potential failed experiments')
+parser.add_argument('--requeue', action='store_true',
+                    help='requeue experiment without successful outcome in `success.txt`')
+parser.add_argument('--hard_requeue', action='store_true',
+                    help='also recover experiments without the `success` file. Warning: will delete runs of currently running exps.')
 opt = parser.parse_args()
 
 _sep = os.get_terminal_size().columns * "-"
@@ -26,7 +36,7 @@ _success_flag = "Success"
 exps_root, exp_root, _ = get_abs_paths(opt.root, opt.exp, None)
 
 try:
-    with filelock.FileLock(get_filelock(exp_root), timeout=10):
+    with filelock.FileLock(get_filelock(exp_root), timeout=2):
         db, query = open_db(exp_root)
 except Exception as ex:
     print("--------------------------------------------------------------------------------")
@@ -102,15 +112,14 @@ if opt.check or opt.requeue:
         if exp[0] != '.':
 
             exp_path = os.path.join(exp_root, exp)
-            success_file = 'success.txt'
 
             # check if experiment needs to be recovered
             recover_exp = False
-            if success_file in os.listdir(exp_path):
-                with open(os.path.join(exp_path, success_file), 'r')  as fp:
+            if Success.file in os.listdir(exp_path):
+                with open(os.path.join(exp_path, Success.file), 'r')  as fp:
                     outcome = fp.read()
 
-                recover_exp = not _success_flag in outcome
+                recover_exp = not Success.success_message in outcome
 
             else:
                 if opt.hard_requeue:

@@ -28,23 +28,36 @@ def init_estimator(estimator_id, iw):
 parser = argparse.ArgumentParser()
 
 # run directory, id and seed
-parser.add_argument('--root', default='runs/', help='directory to store training logs')
-parser.add_argument('--data_root', default='data/', help='directory to store the data')
-parser.add_argument('--exp', default='asymptotic-variance-final', help='experiment directory')
-parser.add_argument('--id', default='', type=str, help='run id suffix')
-parser.add_argument('--seed', default=1, type=int, help='random seed')
-parser.add_argument('--rm', action='store_true', help='delete previous run')
-parser.add_argument('--silent', action='store_true', help='silence tqdm')
-parser.add_argument('--deterministic', action='store_true', help='use deterministic backend')
+parser.add_argument('--root', default='runs/',
+                    help='directory to store training logs')
+parser.add_argument('--data_root', default='data/',
+                    help='directory to store the data')
+parser.add_argument('--exp', default='asymptotic-variance-final',
+                    help='experiment directory')
+parser.add_argument('--id', default='', type=str,
+                    help='run id suffix')
+parser.add_argument('--seed', default=1, type=int,
+                    help='random seed')
+parser.add_argument('--rm', action='store_true',
+                    help='delete previous run')
+parser.add_argument('--silent', action='store_true',
+                    help='silence tqdm')
+parser.add_argument('--deterministic', action='store_true',
+                    help='use deterministic backend')
 
 # estimator, perturbation level and number of particles
-parser.add_argument('--estimators', default='ovis-gamma0, pathwise-iwae', help='[accepts comma separated list]')
+parser.add_argument('--estimators', default='ovis-gamma0, pathwise-iwae',
+                    help='accepts comma separated list')
 parser.add_argument('--epsilon', default='0.01', type=str,
                     help='scale of the noise added to the optimal parameters [accepts comma separated list]')
-parser.add_argument('--iw_min', default=5, type=float, help='min umber of Importance-Weighted samples')
-parser.add_argument('--iw_max', default=1e2, type=float, help='max number of Importance-Weighted samples')
-parser.add_argument('--iw_steps', default=3, type=int, help='number of Importance-Weighted samples samples')
-parser.add_argument('--iw_valid', default=1000, type=int, help='number of iw samples for testing')
+parser.add_argument('--iw_min', default=5, type=float,
+                    help='min umber of Importance-Weighted samples')
+parser.add_argument('--iw_max', default=1e2, type=float,
+                    help='max number of Importance-Weighted samples')
+parser.add_argument('--iw_steps', default=3, type=int,
+                    help='number of Importance-Weighted samples samples')
+parser.add_argument('--iw_valid', default=1000, type=int,
+                    help='number of iw samples for testing')
 
 # evaluation of the gradients
 parser.add_argument('--key_filter', default='b', type=str,
@@ -57,8 +70,10 @@ parser.add_argument('--draw_individual', action='store_true',
                     help='draw SNR and Variance independently for each parameter.')
 
 # dataset
-parser.add_argument('--npoints', default=1024, type=int, help='number of datapoints')
-parser.add_argument('--D', default=20, type=int, help='latent space dimension')
+parser.add_argument('--npoints', default=1024, type=int,
+                    help='number of datapoints')
+parser.add_argument('--D', default=20, type=int,
+                    help='latent space dimension')
 
 # geometric spacing of the particles `iws`
 opt = parser.parse_args()
@@ -132,10 +147,10 @@ try:
 
     for epsilon in epsilons:
 
-        # initizalize model using the optimal parameters
+        # initialize the model using the optimal parameters
         model.set_optimal_parameters()
 
-        # evaluate model
+        # evaluate the model
         with ManualSeed(seed=opt.seed):
             diagnostics = evaluate_minibatch_and_log(estimator_ref, model, x, config_ref, base_logger, "After init.")
 
@@ -147,7 +162,7 @@ try:
             diagnostics = evaluate_minibatch_and_log(estimator_ref, model, x, config_ref, base_logger,
                                                      "After perturbation")
 
-        # gradients analysis args and config
+        # define the gradients analysis arguments and the meta-data
         meta = {'seed': opt.seed, 'noise': epsilon, 'mc_samples': int(opt.mc_samples),
                 **{k: v.mean().item() for k, v in diagnostics['loss'].items()}}
         grad_args = {'mc_samples': int(opt.mc_samples), **global_grad_args}

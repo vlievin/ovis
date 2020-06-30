@@ -58,8 +58,6 @@ def parse_args():
                         help='use deterministic backend')
     parser.add_argument('--sequential_computation', action='store_true',
                         help='compute each iw sample sequentially during validation')
-    parser.add_argument('--test_sequential_computation', action='store_true',
-                        help='compute each iw sample sequentially during validation')
 
     # epochs, batch size, MC samples, lr
     parser.add_argument('--epochs', default=-1, type=int,
@@ -377,8 +375,8 @@ def run():
 
         config_valid = {'tau': 0, 'zgrads': False}
         Estimator_valid = VariationalInference
-        estimator_valid = Estimator_valid(mc=1, iw=opt.iw_valid,
-                                          sequential_computation=opt.test_sequential_computation)
+        estimator_valid = Estimator_valid(mc=1, iw=opt.iw_valid, sequential_computation=opt.sequential_computation,
+                                          **config_valid)
 
         # load best model and run over the test set
         load_model(model, logdir)
@@ -387,7 +385,7 @@ def run():
         with torch.no_grad():
             for batch in tqdm(loader_valid, desc=f"[final evaluation] {exp_id}"):
                 x, y = preprocess(batch, device)
-                diagnostics = test_step(x, model, estimator_valid, y=y, **config_test)
+                diagnostics = test_step(x, model, estimator_valid, y=y, **config_valid)
                 agg.update(diagnostics)
             summary = agg.data.to('cpu')
 
