@@ -1,9 +1,6 @@
 ![Optimal Variance Control of the Score Function Gradient Estimator for Importance Weighted Bounds (a.k.a **OVIS**)](.images/ovis-banner.png)
 
-# Optimal Variance Control of the Score Function Gradient Estimator for Importance Weighted Bounds
-
-
-Code for the *Optimal Variance Control of the Score Function Gradient Estimator for Importance Weighted Bounds* (a.k.a **OVIS**).
+Code for the *Optimal Variance Control of the Score Function Gradient Estimator for Importance Weighted Bounds* (a.k.a **OVIS** of Optimal Variance -- Importance Sampling).
 
 ## install as a Package
 
