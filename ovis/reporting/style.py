@@ -10,7 +10,7 @@ STEP_FORMAT = '{x:.0e}'
 
 def set_matplotlib_style():
     """
-    Set a custom `matplotlib` style and enable Latex.
+    Set a custom `matplotlib` style and enable `Latex`.
     """
     matplotlib.rc('text', usetex=True)
     matplotlib.rcParams['text.latex.preamble'] = [

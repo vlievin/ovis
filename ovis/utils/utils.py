@@ -6,8 +6,12 @@ from typing import Iterable, Optional
 
 import torch
 
+BASE_ARGS_EXCEPTIONS = ['root', 'data_root', 'workers', 'silent', 'sequential_computation',
+                        'test_sequential_computation', 'epochs', 'nsteps', 'valid_bs', 'test_bs']
+
 
 class Success():
+    """handles the `success.txt` file generated for each run."""
     file = 'success.txt'
     success_message = f"Success."
     keyboard_interrupt_message = f"Failed. Interrupted (keyboard)."
@@ -15,10 +19,6 @@ class Success():
     @staticmethod
     def failed_message(exception):
         return f"Failed. Exception : \n{exception}\n\n{exception.__traceback__}"
-
-
-BASE_ARGS_EXCEPTIONS = ['root', 'data_root', 'workers', 'silent', 'sequential_computation',
-                        'test_sequential_computation', 'epochs', 'nsteps', 'valid_bs', 'test_bs']
 
 
 class ManualSeed():

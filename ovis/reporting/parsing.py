@@ -37,13 +37,13 @@ def read_tf_record(exp_path, exp, dict_metrics, force_header=None, meta=dict()):
                                'header': header, **meta}
 
 
-def _parse_pivot_metric(u):
+def parse_pivot_metric(u):
     """a metric is expressed as a `:` separated string with syntax `agg_fn:header:key`, e.g. `avg:train:loss/elbo`"""
     agg_fn_id, header, key = u.split(":")
     return agg_fn_id, f"{header}:{key}"
 
 
-def _get_agg_fn(agg_fn_id):
+def get_agg_fn(agg_fn_id):
     return {'min': np.min, 'max': np.max, 'avg': np.mean, 'mean': np.mean, 'last': lambda x: list(x)[-1]}[agg_fn_id]
 
 
@@ -254,9 +254,9 @@ def parse_keys_headers_metrics(opt):
 
     # define the `pivot table` metrics (aggregated statistics)
     pivot_metrics_agg_ids, pivot_metrics = zip(
-        *[_parse_pivot_metric(u) for u in opt.pivot_metrics.replace(" ", "").split(",")])
+        *[parse_pivot_metric(u) for u in opt.pivot_metrics.replace(" ", "").split(",")])
     pivot_metrics = list(pivot_metrics)
-    pivot_metrics_agg_fns = map(_get_agg_fn, pivot_metrics_agg_ids)
+    pivot_metrics_agg_fns = map(get_agg_fn, pivot_metrics_agg_ids)
     pivot_metrics_agg_ids = {m: f for m, f in zip(pivot_metrics, pivot_metrics_agg_ids)}
 
     # gather all the metrics to be read from the tensorboard logs
@@ -323,7 +323,6 @@ def exponential_moving_average(logs, value=0.5):
         logs.sort_index(level=idx, sort_remaining=False, inplace=True)
 
     for k, (idx, record) in enumerate(logs.groupby(level=list(range(len(sort_index) - 1)))):
-        steps = record.index.get_level_values(-1)  # get `step` values
         record = record['_value']
 
         # exponential moving average

@@ -6,11 +6,7 @@ import seaborn as sns
 
 from ovis.reporting.plotting import PLOT_WIDTH, PLOT_HEIGHT, ESTIMATOR_STYLE, Legend
 from ovis.reporting.style import DPI, MARKERS, set_matplotlib_style
-
-
-def get_outliers_boundaries(values, k=1.5):
-    a, b = np.percentile(values, [25, 75])
-    return [a - k * (b - a), b + k * (b - a)]
+from ovis.reporting.utils import get_outliers_boundaries
 
 
 def plot_statistics(df, opt, logdir):
