@@ -32,7 +32,7 @@ def get_abs_paths(root, exp, data_root):
     return exps_root, exp_root, exp_data_root
 
 
-def read_experiment(exp):
+def read_experiment_json_file(exp):
     with open(f'experiments/{exp}.json') as json_file:
         experiment_args = json.load(json_file)
 

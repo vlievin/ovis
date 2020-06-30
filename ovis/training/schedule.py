@@ -2,6 +2,8 @@ import numpy as np
 
 
 class Schedule():
+    """A simple parameter schedule used for Rényi-warmup."""
+
     def __init__(self, period, init_value, end_value, offset=0, mode='linear'):
         self.offset = offset
         self.period = period

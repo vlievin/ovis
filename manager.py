@@ -12,7 +12,8 @@ from booster.utils import logging_sep
 from tqdm import tqdm
 
 from ovis.utils.filelock import FileLock
-from ovis.utils.manager import open_db, snapshot_dir, read_experiment, get_abs_paths, get_filelock, retrieve_exp_and_run
+from ovis.utils.manager import open_db, snapshot_dir, read_experiment_json_file, get_abs_paths, get_filelock, \
+    retrieve_exp_and_run
 
 
 def run_manager():
@@ -50,12 +51,12 @@ def run_manager():
 
     # get the list of devices
     device_ids = GPUtil.getAvailable(order='memory',
-                                    limit=opt.max_gpus,
-                                    maxLoad=opt.max_load,
-                                    maxMemory=opt.max_memory,
-                                    includeNan=False,
-                                    excludeID=[],
-                                    excludeUUID=[])
+                                     limit=opt.max_gpus,
+                                     maxLoad=opt.max_load,
+                                     maxMemory=opt.max_memory,
+                                     includeNan=False,
+                                     excludeID=[],
+                                     excludeUUID=[])
     if len(device_ids):
         device_ids = [f"cuda:{d}" for d in device_ids]
     else:
@@ -110,9 +111,10 @@ def run_manager():
         f"Experiment id = {opt.exp}, running {opt.processes} processes/device, logdir = {exp_root}")
     print(logging_sep())
 
-    experiment_args = read_experiment(opt.exp)
+    # read the experiment file
+    experiment_args = read_experiment_json_file(opt.exp)
 
-    # replace script arg if available
+    # replace the default `script` argument if specified
     if "script" in experiment_args.keys():
         opt.script = experiment_args.pop("script")
 
@@ -158,7 +160,7 @@ def run_manager():
     if opt.max_jobs > 0:
         job_args = job_args[:opt.max_jobs * processes]
 
-    logger.info(f"Max. jobs = {len(job_args)}, processes = {processes}")
+    logger.info(f"Max. number of jobs = {len(job_args)}, processes = {processes} [{len(device_ids)} devices]")
     for _ in tqdm(pool.imap_unordered(retrieve_exp_and_run, job_args, chunksize=1), total=n_queued_exps,
                   desc="Job Manager"):
         pass

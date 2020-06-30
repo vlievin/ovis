@@ -5,7 +5,7 @@ import argparse
 import shutil
 import traceback
 from filelock import filelock
-from ovis.utils.manager import open_db, snapshot_dir, read_experiment, get_abs_paths, get_filelock
+from ovis.utils.manager import open_db, snapshot_dir, read_experiment_json_file, get_abs_paths, get_filelock
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--root', default='runs/', help='experiment directory')
@@ -81,7 +81,7 @@ if opt.check or opt.requeue:
     # move path to snapshot directory
     os.chdir(snapshot_dir(exp_root))
 
-    exp_args = read_experiment(opt.exp)
+    exp_args = read_experiment_json_file(opt.exp)
 
     # find the arguments to focus on
     focus = list(exp_args['parameters'].keys())

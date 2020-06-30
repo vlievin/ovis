@@ -53,7 +53,7 @@ class Legend():
             labels, handles = labels[1:], handles[1:]
 
         # parse `style` labels (when using seaborn)
-        for special_key in ['iw', 'warmup', 'alpha_max', 'alpha']:
+        for special_key in ['iw', 'warmup', 'alpha_init', 'alpha']:
             if special_key in labels:
                 q = labels.index(special_key)
                 style_labels, style_handles = labels[q + 1:], handles[q + 1:]
@@ -65,7 +65,7 @@ class Legend():
                 if special_key == 'warmup':
                     _f = lambda l: eval(l) if isinstance(l, str) else l
                     style_labels = ["warmup" if _f(l) > 0 else "no warmup" for l in style_labels]
-                if special_key == 'alpha_max':
+                if special_key == 'alpha_init':
                     style_labels = [r"$\alpha_{\operatorname{init}}=" + f"{l}$" for l in style_labels]
                 if special_key == 'alpha':
                     style_labels = [r"$\alpha=" + f"{l}$" for l in style_labels]

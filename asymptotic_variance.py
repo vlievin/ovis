@@ -218,18 +218,19 @@ try:
         plot_gradients_distribution(grads_data, logdir)
 
     # write outcome to a file (success, interrupted, error)
-    print(f"{logging_sep('=')}\nSucces.\n{logging_sep('=')}")
+    print(f"{logging_sep('=')}\n@ asymptotic_variance.py: Succes.\n{logging_sep('=')}")
     with open(os.path.join(logdir, Success.file), 'w') as f:
         f.write(Success.success_message)
 
 except KeyboardInterrupt:
-    print(f"{logging_sep()}\nKeyboard Interrupt.\n{logging_sep()}")
+    print(f"{logging_sep()}\n@ asymptotic_variance.py: Keyboard Interrupt.\n{logging_sep()}")
     with open(os.path.join(logdir, Success.file), 'w') as f:
         f.write(Success.keyboard_interrupt_message)
 
 
 except Exception as ex:
-    print(f"{logging_sep()}\nFailed with exception {type(ex).__name__} = `{ex}` \n{logging_sep()}")
+    print(f"{logging_sep()}\n@ asymptotic_variance.py: "
+          f"Failed with exception {type(ex).__name__} = `{ex}` \n{logging_sep()}")
     traceback.print_exception(type(ex), ex, ex.__traceback__)
     with open(os.path.join(logdir, Success.file), 'w') as f:
         f.write(Success.failed_message(ex))
