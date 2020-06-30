@@ -150,3 +150,5 @@ experiments/check-tvo-bernoulli.json
 experiments/test-tvo.json
 
 make_exp.py
+
+ovis.psd
