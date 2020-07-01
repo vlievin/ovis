@@ -27,8 +27,6 @@ opt = parser.parse_args()
 
 _sep = os.get_terminal_size().columns * "-"
 
-_success_flag = "Success"
-
 # get absolute path to logging directories
 exps_root, logdir, _ = get_abs_paths(opt.root, opt.exp, None)
 
@@ -50,7 +48,7 @@ if opt.find:
         find_records(logdir, eval(opt.find))
 
 if len(opt.update):
-    with Header(f"Updating records with regex pattern `{opt.update}`"):
+    with Header(f"Updating records with pattern `{opt.update}`"):
         update_records(logdir, opt.update)
 
 if len(opt.delete) > 0:

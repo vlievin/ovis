@@ -125,7 +125,7 @@ def get_gradients_statistics(estimator: Estimator,
     all_grads = None
 
     # compute each MC sample sequentially
-    for i in tqdm(range(mc_samples), desc="Batch Gradients Analysis"):
+    for i in tqdm(range(mc_samples), desc="Gradients Analysis"):
 
         # compute number of chuncks based on the capacity `samples_per_batch`
         if samples_per_batch is None:

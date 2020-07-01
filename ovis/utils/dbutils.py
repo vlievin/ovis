@@ -16,15 +16,17 @@ class FileLockedTinyDB(FileLock, TinyDB):
     """
     A TinyDB json database guarded by a `filelock`. Usage:
     ```python
+    logdir = './'
     # write data
-    with FileLockedTinyDB('./') as db:
+    with FileLockedTinyDB(logdir) as db:
         query = Query()
         for a in ["--dataset aa", "--dataset bb"]:
             if not db.contains(query.arg == a):
                     db.insert({'arg': a, 'queued': True})
 
     # retrieve data
-    with FileLockedTinyDB('./') as db:
+    with FileLockedTinyDB(logdir) as db:
+        query = db.query()
         print(db.search(query.queued))
     ```
     """
@@ -125,8 +127,9 @@ def requeue_records(logdir, level=1):
     requeue (i.e. set record.queue==True) based on the `level`value. Levels:
     * 0: do not requeue
     * 1: requeue `keyboard_interrupt`
-    * 2: requeue `failed`
+    * 2: requeue `failed``
     * 100: requeue `running`
+    * 10000: all including `success`
     """
 
     def requeue(queue, record, exp):
@@ -147,7 +150,7 @@ def requeue_records(logdir, level=1):
         # retrieve all non-queued records from the db and get the run_id hash
         db_hashes = {get_hash(record): record for record in db.search(query.queued == False)}
         db_hashes_set = set(db_hashes.keys())
-        # iterate through experiments files and requeue experiments that have been interrupted
+        # iterate through experiments files and store the experiments that have been interrupted
         to_be_requeued = []
         for exp in [e for e in os.listdir(logdir) if e[0] != '.']:
             with open(os.path.join(logdir, exp, 'config.json'), 'r') as f:
@@ -164,6 +167,9 @@ def requeue_records(logdir, level=1):
                                 requeue(to_be_requeued, db_hashes[exp_hash], exp)
 
                         elif Success.success == message:
+                            if level >= 10000:
+                                requed_status['success'] += 1
+                                requeue(to_be_requeued, db_hashes[exp_hash], exp)
                             status['success'] += 1
 
                         elif Success.failure_base in message:
@@ -179,7 +185,7 @@ def requeue_records(logdir, level=1):
                             requed_status['running'] += 1
                             requeue(to_be_requeued, db_hashes[exp_hash], exp)
 
-        # requeue
+        # requeue the stored experiments
         db.write_back(to_be_requeued)
 
         # print status

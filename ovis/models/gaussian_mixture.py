@@ -60,11 +60,7 @@ class GaussianMixture(BaseVAE):
         return self.likelihood(logits=mu, scale=self.p_scale)
 
     def get_logits(self, x):
-        logits = self.phi(x.view(-1, 1)).view(-1, 1, self.C)
-
-        logits.retain_grad()
-
-        return logits
+        return self.phi(x.view(-1, 1)).view(-1, 1, self.C)
 
     def forward(self, x, tau=0, zgrads=False, **kwargs):
         qz, meta = self.infer(x, tau=tau)

@@ -159,7 +159,7 @@ def run_manager():
                 db.insert({'arg': a, 'queued': True, "job_id": "none"})
                 n_added += 1
 
-        n_queued_exps = len(db.search(query.queued))
+        n_queued_exps = len(db.search(query.queued==True))
         n_exps = len(db)
 
     # potentially check the database status requeue fail experiment

@@ -3,8 +3,8 @@ import sys
 import torch
 from torch import nn
 
-from .base import Template
 from ovis.models.distributions import NormalFromLoc, Normal
+from .base import Template
 
 
 class SafeSeed():
@@ -100,22 +100,14 @@ class GaussianToyVAE(Template):
         return self.likelihood(logits=z)
 
     def infer(self, x, tau=0):
-        # retain grads in `b` instead of the qlogits for the gradients analysis
         b = self.b[None, :].expand(x.size(0), self.b.shape[0])
-        b.retain_grad()
-
         qlogits = x @ self.A + b
-        qlogits.retain_grad()
-
-        qz = self.prior_dist(logits=qlogits, scale=self.q_scale)
-        meta = {'qlogits': [qlogits], 'b': [b]}
-
-        return qz, meta
+        return self.prior_dist(logits=qlogits, scale=self.q_scale)
 
     def forward(self, x, tau=0, zgrads=False, **kwargs):
 
         # q(z | x) = N(z | Ax+b, 2/3 I)
-        qz, meta = self.infer(x, tau=tau)
+        qz = self.infer(x, tau=tau)
         z = qz.rsample()
 
         if not zgrads:
@@ -130,7 +122,7 @@ class GaussianToyVAE(Template):
         # MSE between the parameters and the optimal paramters
         diagnostics = self._get_diagnostics()
 
-        return {'px': px, 'z': [z], 'qz': [qz], 'pz': [pz], **meta, **diagnostics}
+        return {'px': px, 'z': [z], 'qz': [qz], 'pz': [pz], **diagnostics}
 
     def sample_from_prior(self, N, mu=None, **kwargs):
         if mu is None:

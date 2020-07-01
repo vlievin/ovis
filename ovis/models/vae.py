@@ -105,9 +105,6 @@ class BaseVAE(Template):
             keys = self.keys / (1e-8 + self.keys.norm(dim=-1, p=2, keepdim=True) ** 2)
             logits = torch.einsum("bnh, nkh -> bnk", [logits, keys])
 
-        # important: this is required tp analyse the gradients of the tensor `logits`
-        logits.retain_grad()
-
         return logits
 
     def infer(self, x, tau=0):
@@ -120,10 +117,7 @@ class BaseVAE(Template):
         """
 
         qlogits = self.get_logits(x)
-        qz = self.prior_dist(logits=qlogits, tau=tau)
-        meta = {'qlogits': [qlogits]}
-
-        return qz, meta
+        return self.prior_dist(logits=qlogits, tau=tau)
 
     def forward(self, x, tau=0, zgrads=False, **kwargs):
         """
@@ -136,7 +130,7 @@ class BaseVAE(Template):
         :return: {'px' p(x|z), 'z': latent samples, 'qz': q(z|x), 'pz': p(z), ** additional data}:
         """
 
-        qz, meta = self.infer(x, tau=tau)
+        qz = self.infer(x, tau=tau)
 
         z = qz.rsample()
 
@@ -147,7 +141,7 @@ class BaseVAE(Template):
 
         px = self.generate(z)
 
-        return {'px': px, 'z': [z], 'qz': [qz], 'pz': [pz], **meta}
+        return {'px': px, 'z': [z], 'qz': [qz], 'pz': [pz]}
 
     def sample_from_prior(self, N, **kwargs):
         """
