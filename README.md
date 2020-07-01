@@ -9,7 +9,7 @@ Install the requirements
 ```bash
 conda create -n ovis python=3.7
 conda activate ovis
-
+pip install -r requirements.txt
 ```
 
 Install using *pip*

@@ -39,10 +39,10 @@ def read_and_report_asymptotic_experiment():
     # get path to the experiment directory
     path = os.path.join(opt.root, opt.exp)
     experiments = [e for e in os.listdir(path) if '.' != e[0]]
+    assert len(experiments) > 0, "No experiment found."
 
     # prepare output directory
-    _id = opt.exp
-    output_path = os.path.join(opt.output, _id)
+    output_path = os.path.join(opt.output, opt.exp)
     if os.path.exists(output_path):
         rmtree(output_path)
     os.makedirs(output_path)
@@ -57,7 +57,11 @@ def read_and_report_asymptotic_experiment():
     configs = None
     for e in experiments:
         exp_dir = os.path.join(path, e)
-        if (not len(opt.filter) or (len(opt.filter) and opt.filter not in e)) and "data.csv" in os.listdir(exp_dir):
+        if len(opt.filter) and opt.filter in e:
+            print(f"-- Filtered:", e)
+        elif "data.csv" not in os.listdir(exp_dir):
+            print(f"-- not completed:", e)
+        else:
             # read grads. stats.
             e_df = pd.read_csv(os.path.join(exp_dir, "data.csv"))
 
@@ -82,8 +86,8 @@ def read_and_report_asymptotic_experiment():
                 configs = conf
             else:
                 configs = pd.concat([configs, conf])
-        else:
-            print(f"-- Filtered:", e)
+
+    assert df is not None, "No experiment could be parsed."
 
     # infer global parameters from the individual configurations
     opt.key_filter = infer_parameter(configs, "key_filter")

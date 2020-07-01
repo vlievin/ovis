@@ -25,8 +25,6 @@ parser.add_argument('--requeue_level', default=1, type=int,
                     help='Requeue level {0: nothing, 1: keyboard_interrupt, 2: failed, 3: not completed}')
 opt = parser.parse_args()
 
-_sep = os.get_terminal_size().columns * "-"
-
 # get absolute path to logging directories
 exps_root, logdir, _ = get_abs_paths(opt.root, opt.exp, None)
 

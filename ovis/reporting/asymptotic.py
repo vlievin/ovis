@@ -44,6 +44,20 @@ def plot_statistics(df, opt, logdir):
         for k, metric in enumerate(metrics):
             ax = axes[n, k]
 
+            # plot boundaries (gray lines)
+            if k < 2:
+                iws = list(sorted(df['iw'].unique()))
+                _alpha = 0.3
+                expected_max = [1e1 / k ** 0.5 for k in iws]
+                expected_min = [1e-1 / k ** 0.5 for k in iws]
+                ax.loglog(iws, expected_min, ":", color="#333333", basex=10, basey=10, alpha=_alpha)
+                ax.loglog(iws, expected_max, ":", color="#333333", basex=10, basey=10, alpha=_alpha)
+
+                expected_max = [1e1 * k ** 0.5 for k in iws]
+                expected_min = [1e-1 * k ** 0.5 for k in iws]
+                ax.loglog(iws, expected_min, ":", color="#666666", basex=10, basey=10, alpha=_alpha)
+                ax.loglog(iws, expected_max, ":", color="#666666", basex=10, basey=10, alpha=_alpha)
+
             for e, estimator_id in enumerate(estimators):
                 sub_df = noise_df[noise_df['estimator'] == estimator_id]
                 iws = sub_df['iw'].values
@@ -70,20 +84,12 @@ def plot_statistics(df, opt, logdir):
                     _label = estimator_id if i == 0 else None
                     ax.loglog(iws, values, label=_label, basex=10, basey=10, **kwargs)
 
-            # plot boundaries (gray lines)
-            if k < 2:
-                ax.autoscale(False)
-                iws = list(sorted(df['iw'].unique()))
-                _alpha = 0.3
-                expected_max = [1e1 / k ** 0.5 for k in iws]
-                expected_min = [1e-1 / k ** 0.5 for k in iws]
-                ax.loglog(iws, expected_min, ":", color="#333333", basex=10, basey=10, alpha=_alpha)
-                ax.loglog(iws, expected_max, ":", color="#333333", basex=10, basey=10, alpha=_alpha)
 
-                expected_max = [1e1 * k ** 0.5 for k in iws]
-                expected_min = [1e-1 * k ** 0.5 for k in iws]
-                ax.loglog(iws, expected_min, ":", color="#666666", basex=10, basey=10, alpha=_alpha)
-                ax.loglog(iws, expected_max, ":", color="#666666", basex=10, basey=10, alpha=_alpha)
+            # y axis scaling
+            y_min, y_max = np.log10(noise_df[_metrics].values.min()), np.log10(noise_df[_metrics].values.max())
+            height = y_max - y_min
+            margin = 0.1
+            ax.set_ylim([10**(y_min - margin * height), 10**(y_max + margin * height)])
 
             if n == nrows - 1:
                 pass  # ax.set_xlabel("") #ax.set_xlabel("$K$")
