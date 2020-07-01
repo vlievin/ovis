@@ -132,7 +132,7 @@ class GaussianToyVAE(Template):
 
         return {'px': px, 'z': [z], 'qz': [qz], 'pz': [pz], **meta, **diagnostics}
 
-    def sample_from_prior(self, N, mu=None):
+    def sample_from_prior(self, N, mu=None, **kwargs):
         if mu is None:
             mu = self.mu
         else:

@@ -4,7 +4,7 @@ import traceback
 
 import pandas as pd
 import torch
-from booster.utils import logging_sep
+from booster.utils import logging_sep, available_device
 
 from ovis.analysis.gradients import get_gradients_statistics
 from ovis.estimators.config import get_config
@@ -123,7 +123,7 @@ try:
     estimator_ref = Estimator(mc=1, iw=opt.iw_valid, **config_ref)
 
     # get device and move models
-    device = "cuda:0" if torch.cuda.device_count() else "cpu"
+    device = available_device()
     model.to(device)
     estimator_ref.to(device)
 
@@ -136,7 +136,7 @@ try:
     # evaluate model at initialization
     with ManualSeed(seed=opt.seed):
         diagnostics = evaluate_minibatch_and_log(estimator_ref, model, x, config_ref, base_logger,
-                                                 "Before perturbation")
+                                                 "Random Initialisation")
 
     grads_stats = []
     grads_data = []
@@ -152,7 +152,8 @@ try:
 
         # evaluate the model
         with ManualSeed(seed=opt.seed):
-            diagnostics = evaluate_minibatch_and_log(estimator_ref, model, x, config_ref, base_logger, "After init.")
+            diagnostics = evaluate_minibatch_and_log(estimator_ref, model, x, config_ref, base_logger,
+                                                     "Optimal parameters")
 
         # add perturbation to the weights
         model.perturbate_weights(epsilon)
@@ -207,8 +208,8 @@ try:
                 if idx is None:
                     _, idx = grads.mean(dim=1).abs().sort(descending=True)
 
-                # sort gradients according to idx
-                # identical results are obtained without sorting however sorting
+                # sort gradients according to idx. Identical results are obtained without sorting however sorting
+                # ensures tracking a parameter with a non-trivial gradient
                 grads = grads[idx]
 
                 # return gradients for the first param
@@ -235,12 +236,12 @@ try:
     # write outcome to a file (success, interrupted, error)
     print(f"{logging_sep('=')}\n@ asymptotic_variance.py: Succes.\n{logging_sep('=')}")
     with open(os.path.join(logdir, Success.file), 'w') as f:
-        f.write(Success.success_message)
+        f.write(Success.success)
 
 except KeyboardInterrupt:
     print(f"{logging_sep('=')}\n@ asymptotic_variance.py: Keyboard Interrupt.\n{logging_sep('=')}")
     with open(os.path.join(logdir, Success.file), 'w') as f:
-        f.write(Success.keyboard_interrupt_message)
+        f.write(Success.keyboard_interrupt)
 
 
 except Exception as ex:
@@ -248,4 +249,4 @@ except Exception as ex:
           f"Failed with exception {type(ex).__name__} = `{ex}` \n{logging_sep('=')}")
     traceback.print_exception(type(ex), ex, ex.__traceback__)
     with open(os.path.join(logdir, Success.file), 'w') as f:
-        f.write(Success.failed_message(ex))
+        f.write(Success.failure(ex))

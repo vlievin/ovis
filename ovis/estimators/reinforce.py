@@ -80,9 +80,6 @@ class Reinforce(VariationalInference):
         # final loss
         loss = loss_theta + loss_phi + self.control_loss_weight * control_variate_loss
 
-        if torch.isnan(loss).sum() > 0:
-            exit()
-
         # prepare diagnostics
         diagnostics = Diagnostic()
 

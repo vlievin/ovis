@@ -13,17 +13,17 @@ BASE_ARGS_EXCEPTIONS = ['root', 'data_root', 'workers', 'silent', 'sequential_co
 class Success():
     """handles the `success.txt` file generated for each run."""
     file = 'success.txt'
-    success_message = f"Success."
-    keyboard_interrupt_message = f"Failed. Interrupted (keyboard)."
+    success = f"Success."
+    keyboard_interrupt = f"Failed. Interrupted (keyboard)."
+    failure_base = "Failed."
 
-    @staticmethod
-    def failed_message(exception):
-        return f"Failed. Exception : \n{exception}\n\n{exception.__traceback__}"
+    def failure(exception):
+        return f"{Success.failure_base} Exception : \n{exception}\n\n{exception.__traceback__}"
 
 
 class ManualSeed():
-    """A simple class to execute a statement with a manual random seed
-    without breaking the randomness. Another random seed is sampled and set when exiting the `with` statement. Usage:
+    """A simple class to execute a statement with a manual random seed without breaking the randomness.
+    Another random seed is sampled and set when exiting the `with` statement. Usage:
     ```python
     with ManualSeed(seed=42):
         # code to execute with the random seed 42

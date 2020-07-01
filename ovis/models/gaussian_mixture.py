@@ -21,7 +21,7 @@ class GaussianMixture(BaseVAE):
                  hdim: int = 16,
                  **kwargs):
         """
-        Initizialize a Gaussian-Mixture model.
+        Initialise a Gaussian-Mixture model.
 
         :param N: number of clusters
         :param hdim: hidden dimensions of the perceptrons
@@ -82,7 +82,7 @@ class GaussianMixture(BaseVAE):
 
         return {'px': px, 'z': [z], 'qz': [qz], 'pz': [pz], **meta, **diagnostics}
 
-    def sample_from_prior(self, N, from_optimal=False):
+    def sample_from_prior(self, N, from_optimal=False, **kwargs):
         if from_optimal:
             prior = self.log_theta_opt.expand(N, 1, self.C)
         else:

@@ -1,0 +1,14 @@
+{
+    "_default": {
+        "1": {
+            "arg": "--dataset aa",
+            "queued": true,
+            "job_id": "none"
+        },
+        "2": {
+            "arg": "--dataset bb",
+            "queued": true,
+            "job_id": "none"
+        }
+    }
+}

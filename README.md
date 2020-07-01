@@ -1,9 +1,16 @@
-![Optimal Variance Control of the Score Function Gradient Estimator for Importance Weighted Bounds (a.k.a **OVIS**)](.images/ovis-banner.png)
+![Optimal Variance Control of the Score Function Gradient Estimator for Importance Weighted Bounds (a.k.a **OVIS**) credits: Thomas Jarrand](.images/ovis-banner.png)
 
-Code for the *Optimal Variance Control of the Score Function Gradient Estimator for Importance Weighted Bounds* (a.k.a **OVIS** of Optimal Variance -- Importance Sampling).
+Code for the *Optimal Variance Control of the Score Function Gradient Estimator for Importance Weighted Bounds* (a.k.a **OVIS** for Optimal Variance -- Importance Sampling).
 
 ## install as a Package
 
+Install the requirements
+
+```bash
+
+```
+
+Install using *pip*
 ```bash
 pip install git+https://github.com/vlievin/ovis.git
 ```
@@ -12,7 +19,7 @@ pip install git+https://github.com/vlievin/ovis.git
 
 ### Asymptotic Variance
 
-Anayse the gradients for a simple Gaussian model. Reproduce the figure 1:
+Anaysis of the gradients for a simple Gaussian model. Reproduce the figure 1:
 
 ```bash
 # run the experiment
@@ -62,6 +69,8 @@ Train a 3-layers Sigmoid Belief Network. Reproduce the figure 3 (left):
 ```bash
 # run the experiment
 python manager.py --exp sigmoid-belief-network
+# gather the data
+[...]
 # produce the figures
 [todo: write script]
 # access the results
@@ -75,8 +84,15 @@ Train a 1-layer Gaussian VAE. Reproduce the figure 3 (right):
 ```bash
 # run the experiment
 python manager.py --exp gaussian-vae
+# gather the data
+[...]
 # produce the figures
 [todo: write script]
 # access the results
 open reports/gaussian-vae/
 ```
+
+## Extend the Library 
+
+
+

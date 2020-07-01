@@ -62,7 +62,7 @@ def is_successful(exp_path):
     with open(os.path.join(exp_path, Success.file), 'r') as fp:
         success_text = fp.read()
 
-    return Success.success_message in success_text
+    return Success.success in success_text
 
 
 def parse_estimator_args(args):

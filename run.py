@@ -1,4 +1,4 @@
-import argparse
+import json
 import json
 import os
 import pickle
@@ -16,6 +16,7 @@ from torch.utils.tensorboard import SummaryWriter
 from ovis import get_datasets
 from ovis.analysis.active_units import latent_activations
 from ovis.estimators import VariationalInference
+from ovis.training.arguments import get_run_parser
 from ovis.training.evaluation import analyse_gradients_and_log, evaluation
 from ovis.training.initialization import init_model, init_neural_baseline, init_main_estimator, init_test_estimator, \
     init_optimizers, init_logging_directory
@@ -26,134 +27,6 @@ from ovis.training.schedule import Schedule
 from ovis.training.session import Session
 from ovis.training.utils import get_run_id, get_number_of_epochs, preprocess
 from ovis.utils.utils import notqdm, ManualSeed, Success
-
-
-def parse_args():
-    """Parse the command line arguments"""
-
-    parser = argparse.ArgumentParser()
-
-    # run directory, id and seed
-    parser.add_argument('--dataset', default='shapes',
-                        help='dataset [shapes | binmnist | omniglot | fashion | gmm-toy | gaussian-toy]')
-    parser.add_argument('--mini', action='store_true',
-                        help='use a down-sampled version of the dataset')
-    parser.add_argument('--root', default='runs/',
-                        help='directory to store training logs')
-    parser.add_argument('--data_root', default='data/',
-                        help='directory to store the data')
-    parser.add_argument('--exp', default='sandbox',
-                        help='experiment directory')
-    parser.add_argument('--id', default='', type=str,
-                        help='run id suffix')
-    parser.add_argument('--seed', default=1, type=int,
-                        help='random seed')
-    parser.add_argument('--workers', default=1, type=int,
-                        help='number of dataloader workers')
-    parser.add_argument('--rm', action='store_true',
-                        help='delete the previous run')
-    parser.add_argument('--silent', action='store_true',
-                        help='silence tqdm')
-    parser.add_argument('--deterministic', action='store_true',
-                        help='use deterministic backend')
-    parser.add_argument('--sequential_computation', action='store_true',
-                        help='compute each iw sample sequentially during validation')
-
-    # epochs, batch size, MC samples, lr
-    parser.add_argument('--epochs', default=-1, type=int,
-                        help='number of epochs (use n_steps if `epochs` < 0)')
-    parser.add_argument('--nsteps', default=500000, type=int,
-                        help='number of optimization steps')
-    parser.add_argument('--optimizer', default='adam',
-                        help='[sgd | adam | adamax | rmsprop]')
-    parser.add_argument('--lr', default=2e-3, type=float,
-                        help='base learning rate')
-    parser.add_argument('--freebits', default=None, type=float,
-                        help='number of `freebits` per layer')
-    parser.add_argument('--baseline_lr', default=5e-3, type=float,
-                        help='learning rate for the weight of the baseline')
-    parser.add_argument('--bs', default=32, type=int,
-                        help='training batch size')
-    parser.add_argument('--valid_bs', default=50, type=int,
-                        help='validation evaluation batch size')
-    parser.add_argument('--test_bs', default=50, type=int,
-                        help='test evaluation batch size')
-    parser.add_argument('--grad_bs', default=10, type=int,
-                        help='gradients analysis batch size')
-    parser.add_argument('--lr_reduce_steps', default=0, type=int,
-                        help='number of learning rate reduce steps')
-    parser.add_argument('--only_train_set', action='store_true',
-                        help='only use the training dataset: useful to isolate the optimization behaviour.')
-
-    # estimator
-    parser.add_argument('--estimator', default='reinforce',
-                        help='see estimators.config for the full list [pathwise-iwae, reinforce, reinforce-baseline, '
-                             'ovis-S*, ovis-gamma*, tvo, vimco-arithmetic]')
-    parser.add_argument('--mc', default=1, type=int,
-                        help='number of `outer` Monte-Carlo samples')
-    parser.add_argument('--iw', default=1, type=int,
-                        help='number of `inner` Importance-Weighted samples')
-    parser.add_argument('--beta', default=1.0, type=float,
-                        help='Beta weight for the KL term (i.e. Beta-VAE)')
-    parser.add_argument('--alpha', default=0, type=float,
-                        help='alpha weight for the unormalized weights: w_k^alpha')
-    parser.add_argument('--warmup', default=0, type=int,
-                        help='period of the posterior warmup (alpha : `alpha_init` -> 0)')
-    parser.add_argument('--warmup_offset', default=0, type=int,
-                        help='number of initial steps before increasing beta')
-    parser.add_argument('--warmup_mode', default='log', type=str,
-                        help='interpolation mode [linear | log]')
-    parser.add_argument('--alpha_init', default=0.9, type=float,
-                        help='initial alpha value')
-
-    # evaluation
-    parser.add_argument('--eval_freq', default=10, type=int,
-                        help='frequency of evalution [evaluate log p(x), analyse grads and sample the prior]')
-    parser.add_argument('--max_eval', default=None, type=int,
-                        help='maximum number of data points for evaluation')
-    parser.add_argument('--iw_valid', default=100, type=int,
-                        help='number of Importance-Weighted samples for validation')
-    parser.add_argument('--iw_test', default=1000, type=int, help='number of Importance-Weighted samples for testing')
-
-    # active units analysis
-    parser.add_argument('--mc_au_analysis', default=0, type=int,
-                        help='number of Monte-Carlo samples used to estimate the number of active units (skip if zero)')
-    parser.add_argument('--npoints_au_analysis', default=1000, type=int,
-                        help='number of data points x')
-
-    # gradients analysis
-    parser.add_argument('--grad_samples', default=100, type=int,
-                        help='number of MC samples used to evaluate the Variance and SNR of the gradients.')
-    parser.add_argument('--grad_key', default='inference_network', type=str,
-                        help='key matching the name of the parameters used for the gradients analysis')
-
-    # model architecture
-    parser.add_argument('--model', default='vae',
-                        help='[vae, conv-vae, gmm, gaussian-toy, sbm, gaussian-vae]')
-    parser.add_argument('--hdim', default=64, type=int,
-                        help='number of hidden units for each layer')
-    parser.add_argument('--nlayers', default=3, type=int,
-                        help='number of hidden layers in each MLP')
-    parser.add_argument('--depth', default=3, type=int,
-                        help='number of stochastic layers when using hierarchical models')
-    parser.add_argument('--b_nlayers', default=1, type=int,
-                        help='number of MLP hidden layers for the neural baseline')
-    parser.add_argument('--norm', default='none', type=str,
-                        help='normalization layer for the VAE model [none | layernorm | batchnorm]')
-    parser.add_argument('--dropout', default=0, type=float,
-                        help='dropout value')
-    parser.add_argument('--prior', default='normal',
-                        help='prior for the VAE model [normal, categorical, bernoulli]')
-    parser.add_argument('--N', default=32, type=int,
-                        help='number of latent variables for each stochastic layer')
-    parser.add_argument('--K', default=8, type=int,
-                        help='number of categories when using a categorical prior')
-    parser.add_argument('--kdim', default=0, type=int,
-                        help='dimension of the keys model for categorical prior')
-    parser.add_argument('--learn_prior', action='store_true',
-                        help='learn the prior parameters (VAE model)')
-
-    return parser.parse_args()
 
 
 def run():
@@ -172,7 +45,7 @@ def run():
     Each session is identified by a unique deterministic `run_id`. Starting a novel session that matches an existing
     `run_id` will result in loading the last checkpoint from the existing session.
     """
-    opt = parse_args()
+    opt = get_run_parser().parse_args()
 
     # deterministic backend and silent mode
     if opt.deterministic:
@@ -184,14 +57,16 @@ def run():
         from tqdm import tqdm
 
     # defining the run identifiers
-    run_id, exp_id = get_run_id(opt)
+    run_id, exp_id, hash = get_run_id(opt)
 
     # defining the run directory
     logdir = init_logging_directory(opt, run_id)
 
     # save run configuration to the log directory
     with open(os.path.join(logdir, 'config.json'), 'w') as fp:
-        fp.write(json.dumps(vars(opt), default=lambda x: str(x), indent=4))
+        config = vars(opt)
+        config['hash'] = hash
+        fp.write(json.dumps(config, default=lambda x: str(x), indent=4))
 
     # wrap the training loop inside a try/except so we can write potential errors to a file.
     try:
@@ -400,19 +275,19 @@ def run():
         # write outcome to a file (success, interrupted, error)
         print(f"{logging_sep('=')}\n@ run.py: Succes.\n{logging_sep('=')}")
         with open(os.path.join(logdir, Success.file), 'w') as f:
-            f.write(Success.success_message)
+            f.write(Success.success)
 
     except KeyboardInterrupt:
         print(f"{logging_sep('=')}\n@ run.py: Keyboard Interrupt.\n{logging_sep('=')}")
         with open(os.path.join(logdir, Success.file), 'w') as f:
-            f.write(Success.keyboard_interrupt_message)
+            f.write(Success.keyboard_interrupt)
 
 
     except Exception as ex:
         print(f"{logging_sep('=')}\n@ run.py: Failed with exception {type(ex).__name__} = `{ex}` \n{logging_sep('=')}")
         traceback.print_exception(type(ex), ex, ex.__traceback__)
         with open(os.path.join(logdir, Success.file), 'w') as f:
-            f.write(Success.failed_message(ex))
+            f.write(Success.failure(ex))
 
 
 if __name__ == '__main__':

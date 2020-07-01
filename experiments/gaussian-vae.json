@@ -3,11 +3,7 @@
   "args": [
     "--estimator pathwise-iwae",
     "--estimator tvo-part5-config2",
-    "--estimator ovis-gamma0 --alpha 0.7",
-    "--estimator ovis-gamma1 --alpha 0.7",
-    "--estimator ovis-S1 --alpha 0.7",
-    "--estimator ovis-S10 --alpha 0.7",
-    "--estimator ovis-S50 --alpha 0.7"
+    "--estimator ovis-gamma1 --alpha 0.7"
   ],
   "global": "--silent --deterministic --nsteps 4000000",
   "parameters": {

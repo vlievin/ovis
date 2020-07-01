@@ -14,7 +14,7 @@ def get_hash_from_opt(opt, exceptions=None):
 def get_run_id(opt):
     """define a unique run identifier"""
 
-    deterministic_opt_id = get_hash_from_opt(opt)
+    hash = get_hash_from_opt(opt)
     warmup_id = ""
     if opt.alpha > 0:
         warmup_id += f"-{opt.alpha}"
@@ -23,8 +23,8 @@ def get_run_id(opt):
     exp_id = f"{opt.dataset}-{opt.model}-{opt.estimator}-K{opt.iw}-M{opt.mc}{warmup_id}-seed{opt.seed}"
     if opt.id != "":
         exp_id += f"-{opt.id}"
-    run_id = f"{exp_id}-{deterministic_opt_id}"
-    return run_id, exp_id
+    run_id = f"{exp_id}-{hash}"
+    return run_id, exp_id, hash
 
 
 def get_number_of_epochs(opt, loader_train):

@@ -5,8 +5,7 @@ import socket
 import time
 import traceback
 
-from ovis.utils.dbutils import open_db, get_filelock
-from ovis.utils.filelock import FileLock
+from ovis.utils.dbutils import FileLockedTinyDB
 
 
 def snapshot_dir(logdir):
@@ -45,8 +44,8 @@ def retrieve_exp_and_run(job_args):
         try:
             # retrieve the next queued experiment from the database and mark `queued==False`
             # lock db file to avoid concurrency problems
-            with FileLock(get_filelock(abs_logdir), timeout=60):
-                db, query = open_db(abs_logdir)
+            with FileLockedTinyDB(abs_logdir) as db:
+                query = db.query()
                 item = db.get(query.queued == True)
                 if item is not None:
                     item['queued'] = False

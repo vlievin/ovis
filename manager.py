@@ -3,7 +3,6 @@ import logging
 import os
 import shutil
 import sys
-import time
 import warnings
 from multiprocessing import Pool
 
@@ -11,8 +10,8 @@ import GPUtil
 from booster.utils import logging_sep
 from tqdm import tqdm
 
-from ovis.utils.dbutils import open_db, get_filelock
-from ovis.utils.filelock import FileLock
+from ovis.utils.dbutils import FileLockedTinyDB
+from ovis.utils.dbutils import requeue_records, Header
 from ovis.utils.manager import snapshot_dir, read_experiment_json_file, get_abs_paths, retrieve_exp_and_run
 
 
@@ -30,7 +29,7 @@ def run_manager():
     ```
 
     NB: You may experience issues when using this script with a shared filed system across multiple machines. Sometimes
-    deleting the `.lock` file may solve the issue.
+    deleting the `.db.json.lock` file may solve the issue.
     """
 
     parser = argparse.ArgumentParser()
@@ -59,6 +58,8 @@ def run_manager():
                         help='update the entire snapshot')
     parser.add_argument('--max_jobs', default=-1, type=int,
                         help='maximum jobs per thread (stop after `max_jobs` jobs)')
+    parser.add_argument('--requeue_level', default=1, type=int,
+                        help='[db] Requeue level {0: nothing, 1: keyboard_interrupt, 2: failed, 3: not completed}')
     opt = parser.parse_args()
 
     # get the list of devices
@@ -148,9 +149,9 @@ def run_manager():
                     _args += [f"--{_arg} {v} " + a for a in args]
             args = _args
 
-    # write all experiments to `tinydb` database
-    with FileLock(get_filelock(exp_root), timeout=60):
-        db, query = open_db(exp_root)
+    # write all experiments to `tinydb` database guarded by a `filelock`
+    with FileLockedTinyDB(exp_root) as db:
+        query = db.query()
         # add missing exps (when using `--resume` + `--update_exp`)
         n_added = 0
         for i, a in enumerate(args):
@@ -160,7 +161,11 @@ def run_manager():
 
         n_queued_exps = len(db.search(query.queued))
         n_exps = len(db)
-        time.sleep(0.2)
+
+    # potentially check the database status requeue fail experiment
+    if opt.script == 'run.py':  # only handled for `run.py`
+        with Header(f"Status"):
+            requeue_records(exp_root, opt.requeue_level)
 
     # remaining queued experiments
     logger.info(f"Queued experiments : {n_queued_exps} / {n_exps}. Added exps. {n_added}")
