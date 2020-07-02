@@ -63,4 +63,9 @@ class Vimco(Reinforce):
 
         #  c_k = log 1/k \sum_{l \neq k} w_l + \hat{w}_{-k}
         log_wk_samples = log_wk.unsqueeze(-1) + torch.diag_embed(log_wk_hat - log_wk)
-        return torch.logsumexp(log_wk_samples, dim=2) - self.log_iw
+        c_k = torch.logsumexp(log_wk_samples, dim=2) - self.log_iw
+
+        if use_double:
+            c_k = c_k.to(_dtype)
+
+        return c_k
