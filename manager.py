@@ -160,13 +160,15 @@ def run_manager():
                 db.insert({'arg': a, 'queued': True, "job_id": "none"})
                 n_added += 1
 
-        n_queued_exps = len(db.search(query.queued == True))
-        n_exps = len(db)
-
     # potentially check the database status requeue fail experiment
-    if opt.script == 'run.py':  # only handled for `run.py`
+    if opt.script == 'run.py':  # only handled for `run.py` because matching exps relies on `get_run_parser`
         with Header(f"Status"):
             requeue_records(exp_root, opt.requeue_level)
+
+    # count queued exps and total exps
+    with FileLockedTinyDB(exp_root) as db:
+        n_queued_exps = db.count(query.queued == True)
+        n_exps = len(db)
 
     # remaining queued experiments
     logger.info(f"Queued experiments : {n_queued_exps} / {n_exps}. Added exps. {n_added}")
