@@ -71,7 +71,7 @@ Run all experiments:
 python manager.py --exp sigmoid-belief-network
 ```
 
-Figure 3 (left, Vimco + ovis-IW):
+Figure 3 (left, VIMCO + OVIS-IW):
 
 ```bash
 # gather the data
@@ -88,7 +88,7 @@ python report_figure3.py --figure left
 open reports/sigmoid-belief-network-inc=iwbound
 ```
 
-Figure 3 (right, TVO + ovis-IWR):
+Figure 3 (right, TVO + OVIS-IWR):
 
 ```bash
 # gather the data
@@ -120,13 +120,11 @@ python report.py --exp=gaussian-vae  \
 open reports/gaussian-vae
 ```
 
-## Install as a Package
- 
+## Using and Extending OVIS
+
 ```bash
 pip install git+https://github.com/vlievin/ovis.git
 ```
-
-### Usage
 
 The full example is available in `example.py`. 
 
@@ -141,6 +139,7 @@ estimator = Estimator(mc=1, iw=16, **config)
 #### Train your model and analyse the gradients
 
 ```python
+from booster import Aggregator
 agg = Aggregator()
 for x in loader:
     global_step += 1
@@ -163,13 +162,13 @@ summary.update(grad_stats)
 summary.log(tensorboard_writer, global_step)
 ```
 
-#### Implemet your own models following the `Template` class (`ovis/models/template.py`):
+#### Implemet your own model following the `Template` class (`ovis/models/template.py`):
 
 ```python
 from torch import nn, Tensor, zeros
 from torch.distributions import Bernoulli
-
 from ovis.models import Template
+
 class SimpleModel(Template):
     def __init__(self, xdim, zdim):
         super().__init__()
