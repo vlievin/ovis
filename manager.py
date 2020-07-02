@@ -12,8 +12,8 @@ from tqdm import tqdm
 
 from ovis.utils.dbutils import FileLockedTinyDB
 from ovis.utils.dbutils import requeue_records
-from ovis.utils.utils import Header
 from ovis.utils.manager import snapshot_dir, read_experiment_json_file, get_abs_paths, retrieve_exp_and_run
+from ovis.utils.utils import Header
 
 
 def run_manager():
@@ -103,7 +103,7 @@ def run_manager():
 
         # copy lib
         shutil.copytree('./', snapshot_dir(exp_root),
-                        ignore=shutil.ignore_patterns('.*', '*.git', 'runs', 'reports', 'data', '__pycache__'))
+                        ignore=shutil.ignore_patterns('.*', '*.git', 'runs', 'reports', 'data', '__pycache__', '*.psd'))
 
     # udpate experiment file
     if opt.update_exp:
@@ -160,7 +160,7 @@ def run_manager():
                 db.insert({'arg': a, 'queued': True, "job_id": "none"})
                 n_added += 1
 
-        n_queued_exps = len(db.search(query.queued==True))
+        n_queued_exps = len(db.search(query.queued == True))
         n_exps = len(db)
 
     # potentially check the database status requeue fail experiment

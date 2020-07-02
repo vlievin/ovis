@@ -36,7 +36,8 @@ def analyse_gradients_and_log(opt, global_step, writer_train, train_logger, load
     grad_args = {'seed': opt.seed,
                  'batch_size': opt.bs * opt.mc * opt.iw,
                  'mc_samples': opt.grad_samples,
-                 'key_filter': opt.grad_key}
+                 'key_filter': opt.grad_key,
+                 'eps': opt.grad_epsilon}
 
     # gradients analysis for the training estimator
     with ManualSeed(seed=opt.seed):

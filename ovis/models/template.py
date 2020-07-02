@@ -17,7 +17,9 @@ class Template(nn.Module):
     """A template of VAE model, follow these guidelines to make your model compatible
     with the gradient estimators and the training loop"""
 
-    def forward(self, x: Tensor, **kwargs) -> Dict[str, Union[Tensor, List[Tensor], List[Distribution], Distribution]]:
+    def forward(self, x: Tensor,
+                zgrads: bool = True,
+                **kwargs) -> Dict[str, Union[Tensor, List[Tensor], List[Distribution], Distribution]]:
         """perform a forward pass and return the latent samples `z` and the distribution `p(x|z)`, `p(z)`, `q(z|x)`"""
 
         raise NotImplementedError
@@ -39,6 +41,10 @@ class Template(nn.Module):
 
         # sample posterior
         z = qz.rsample()
+
+        # detach `z` gradients to prevent the gradients to flow through z ~ q(z|x)
+        if not zgrads:
+            z = z.detach()
 
         # p(x|z)
         decoder = nn.Linear(N * K, prod(dims))

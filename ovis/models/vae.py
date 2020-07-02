@@ -6,7 +6,7 @@ from torch.distributions import Distribution, Bernoulli
 
 from ovis.models.distributions import PseudoCategorical, PseudoBernoulli, NormalFromLogits
 from ovis.utils.utils import prod, flatten
-from .base import Template
+from .template import Template
 from .layers import MLP, ConvEncoder, ConvDecoder
 
 

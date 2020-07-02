@@ -99,6 +99,8 @@ def get_run_parser():
                         help='number of MC samples used to evaluate the Variance and SNR of the gradients.')
     parser.add_argument('--grad_key', default='inference_network', type=str,
                         help='key matching the name of the parameters used for the gradients analysis')
+    parser.add_argument('--grad_epsilon', default=1e-15, type=float,
+                        help='Minimum variance value')
 
     # model architecture
     parser.add_argument('--model', default='vae',

@@ -114,7 +114,6 @@ def get_gradients_statistics(estimator: Estimator,
                                     },
             meta : additional data including the gradients values if `return_grads`
     """
-
     _start = time()
     grads_dsnr = None
     grads_mean = RunningMean()
@@ -180,7 +179,7 @@ def get_gradients_statistics(estimator: Estimator,
 
         # compute signal-to-noise ratio. see `tighter variational bounds are not necessarily better` (eq. 4)
         grad_var_sqrt = grads_variance.pow(0.5)
-        clipped_variance_sqrt = torch.where(grad_var_sqrt > eps, grad_var_sqrt, eps * torch.ones_like(grad_var_sqrt))
+        clipped_variance_sqrt = grad_var_sqrt.clamp(min=eps)
         grads_snr = grads_mean.abs() / (clipped_variance_sqrt)
 
         # compute DSNR,  see `tighter variational bounds are not necessarily better` (eq. 12)

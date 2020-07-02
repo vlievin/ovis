@@ -2,7 +2,7 @@ from typing import *
 
 from torch import Tensor, nn
 
-from .base import Template
+from .template import Template
 from .tvo_sbm import GenerativeModel as DiscreteGenerativeModel
 from .tvo_sbm import InferenceNetwork as DiscreteInferenceNetwork
 from .tvo_sbm import init_mlp

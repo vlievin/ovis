@@ -2,7 +2,6 @@
   "description": "Training a 3 layers Sigmoid Belief Network with linear connections as in `The Thermodynamic Variational Objective`.",
   "args": [
     "--estimator tvo-part2-config1 --id iwrbound",
-    "--estimator ovis-gamma0 --alpha_init 0.99 --warmup 1000000 --warmup_mode log --id iwrbound",
     "--estimator ovis-gamma1 --alpha_init 0.99 --warmup 1000000 --warmup_mode log --id iwrbound",
     "--estimator ovis-S1 --alpha_init 0.99 --warmup 1000000 --warmup_mode log --id iwrbound",
     "--estimator ovis-S10 --alpha_init 0.99 --warmup 1000000 --warmup_mode log --id iwrbound",

@@ -4,7 +4,7 @@ import torch
 from torch import nn, Tensor
 from torch.distributions import Distribution
 
-from .base import Template
+from .template import Template
 from ..utils.utils import prod
 
 """

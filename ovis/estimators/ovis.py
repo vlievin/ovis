@@ -4,17 +4,14 @@ import numpy as np
 import torch
 from torch import Tensor
 
-from .reinforce import Reinforce
+from .vimco import Vimco
 
 
-class OvisMonteCarlo(Reinforce):
+class OvisMonteCarlo(Vimco):
     """Sample based approximation of the Optimal control variate (eq 12)"""
 
     def __init__(self, *args, auxiliary_samples=1, **kwargs):
         super().__init__(*args, auxiliary_samples=auxiliary_samples, **kwargs)
-        self.baseline = None
-        self.control_loss_weight = 0
-
         # The `S` samples used to compute the control variate.
         # The auxiliary samples are not use to learn the generative model, although it is straightforward to do so.
         assert auxiliary_samples > 0
@@ -55,18 +52,15 @@ class OvisMonteCarlo(Reinforce):
         return d_k_hat
 
 
-class OvisAsymptotic(Reinforce):
+class OvisAsymptotic(Vimco):
     """Unified expression of the optimal asymptotic control variate (eq 17)"""
 
     def __init__(self, *args, auxiliary_samples=0, **kwargs):
         super().__init__(*args, auxiliary_samples=auxiliary_samples, **kwargs)
-        self.baseline = None
         self.register_buffer('log_1_m_uniform', torch.tensor(np.log(1. - 1. / self.iw)))
-        self.control_loss_weight = 0
 
     @torch.no_grad()
-    def compute_control_variate(self, x: Tensor, alpha: float = 0, gamma: float = 1, overflow_eps=1e-7,
-                                **data: Dict[str, Tensor]) -> Tensor:
+    def compute_control_variate(self, x: Tensor, gamma: float = 1, **data: Dict[str, Tensor]) -> Tensor:
         """
         Compute the control variate using the equation (17):
           * c_k = log Z_{-k} - gamma v_k + (1-gamma) log (1-1/K)
@@ -75,16 +69,25 @@ class OvisAsymptotic(Reinforce):
           * logZ - logZ_{-k} = log \frac{1 - 1/K}{1 - v_k}
 
         :param x: observation
-        :param alpha: parameter for the IWR bound
         :param gamma: parameter for the ESS limit case: gamma==1: ESS >> 1, gamma==0: ESS \approx 1
-        :param overflow_eps: epsilon value to safely compute `log(1 - v_k)` using `v_k = min(1-eps, v_k)`
         :param data: additional data
         :return: control variate
         """
         L_k, v_k = [data[k] for k in ['L_k', 'v_k']]
-        # avoid overflow: warning using a low epsilon value is equivalent to "truncated importance sampling"
-        v_k_safe = torch.min((1 - overflow_eps) * torch.ones_like(v_k), v_k)
+        # avoid overflow: [warning] using a large epsilon value is equivalent to "truncated importance sampling"
+        one_minus_v_k = (1 - v_k).clamp(min=torch.finfo(v_k.dtype).tiny)
 
         # c_k = L_k
-        logZ_diff = self.log_1_m_uniform - torch.log1p(- v_k_safe)
+        logZ_diff = self.log_1_m_uniform - one_minus_v_k.log()
         return L_k[:, :, None] - logZ_diff - gamma * v_k + (1 - gamma) * self.log_1_m_uniform
+
+
+class OvisAsymptoticGeometric(OvisAsymptotic):
+    """`OvisAsymptotic` using the geometric average for `\hat{Z}_{[-k]}`. Not tested in the original paper."""
+
+    @torch.no_grad()
+    def compute_control_variate(self, x: Tensor, alpha: float = 0, gamma: float = 1, arithmetic: bool = False,
+                                **data: Dict[str, Tensor]) -> Tensor:
+        v_k = data['v_k']
+        log_Z_no_k = Vimco.compute_control_variate(self, x, arithmetic=arithmetic, **data)
+        return log_Z_no_k - gamma * v_k + (1 - gamma) * self.log_1_m_uniform

@@ -54,16 +54,27 @@ def get_config(estimator_id):
         elif 'ovis' in estimator_id:
 
             if "-S" in estimator_id:  # parse `-S` : number of auxiliary particles
+                # the original OVIS-MC used in the paper
                 auxiliary_samples = int(eval([s for s in estimator_id.split("-") if 'S' in s][0].replace("S", "")))
                 Estimator = OvisMonteCarlo
                 config = {**reinforce_args, 'auxiliary_samples': auxiliary_samples}
+
+            elif "-arithmetic" in estimator_id or "-geometric" in estimator_id:
+                # OVIS~ implementation using `log Z_{[-k]}` given by Vimco.
+                assert "-gamma" in estimator_id
+                gamma = float(eval([s for s in estimator_id.split("-") if 'gamma' in s][0].replace("gamma", "")))
+                Estimator = OvisAsymptoticGeometric
+                config = {**reinforce_args, 'gamma': gamma, 'arithmetic': '-arithmetic' in estimator_id}
+
             elif "-gamma" in estimator_id:  # parse `-gamma` : parameter of the unified asymptotic approximation
+                # the original OVIS~ used in the paper
                 gamma = float(eval([s for s in estimator_id.split("-") if 'gamma' in s][0].replace("gamma", "")))
                 Estimator = OvisAsymptotic
                 config = {**reinforce_args, 'gamma': gamma}
+
             else:
                 raise ValueError(
-                    f"Ovis estimators should have either of the arguments `-S*` or `-gamma*`. (e.g. ovis-gamma1)")
+                    f"Ovis estimators should have either of the arguments `-S*` or `-gamma*`. (e.g. `ovis-gamma1`)")
 
         else:
             raise ValueError(

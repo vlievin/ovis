@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 
-from .base import Template
+from .template import Template
 from .vae import BaseVAE
 from ovis.models.distributions import PseudoCategorical, NormalFromLoc
 
@@ -63,7 +63,7 @@ class GaussianMixture(BaseVAE):
         return self.phi(x.view(-1, 1)).view(-1, 1, self.C)
 
     def forward(self, x, tau=0, zgrads=False, **kwargs):
-        qz, meta = self.infer(x, tau=tau)
+        qz = self.infer(x, tau=tau)
 
         z = qz.rsample()
 
@@ -74,9 +74,9 @@ class GaussianMixture(BaseVAE):
 
         px = self.generate(z)
 
-        diagnostics = self._get_diagnostics(x, self.prior_dist(logits=meta['qlogits'][0]))
+        diagnostics = self._get_diagnostics(x, qz)
 
-        return {'px': px, 'z': [z], 'qz': [qz], 'pz': [pz], **meta, **diagnostics}
+        return {'px': px, 'z': [z], 'qz': [qz], 'pz': [pz], **diagnostics}
 
     def sample_from_prior(self, N, from_optimal=False, **kwargs):
         if from_optimal:

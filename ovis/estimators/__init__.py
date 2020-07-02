@@ -1,5 +1,5 @@
 from .base import Estimator
-from .ovis import OvisMonteCarlo, OvisAsymptotic
+from .ovis import OvisMonteCarlo, OvisAsymptotic, OvisAsymptoticGeometric
 from .reinforce import Reinforce
 from .tvo import ThermoVariationalObjective
 from .vi import VariationalInference, PathwiseIWAE, PathwiseVAE

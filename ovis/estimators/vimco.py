@@ -16,6 +16,7 @@ class Vimco(Reinforce):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.baseline = None
+        self.control_loss_weight = 0
         self.register_buffer('log_iw_m1', torch.tensor(np.log(self.iw - 1)))
 
     @torch.no_grad()
