@@ -59,17 +59,6 @@ class FileLockedTinyDB(FileLock, TinyDB):
         FileLock.__exit__(self, *args)
 
 
-class Header():
-    def __init__(self, message):
-        self.message = message
-
-    def __enter__(self):
-        print(f"{logging_sep('=')}\n{self.message}\n{logging_sep('-')}")
-
-    def __exit__(self, *args):
-        print(f"{logging_sep('=')}")
-
-
 def print_record(index, record):
     print(f"{index + 1}# : queued = {record['queued']}, arg = \n     {record['arg']}")
 

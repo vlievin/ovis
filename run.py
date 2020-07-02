@@ -70,6 +70,9 @@ def run():
 
     # wrap the training loop inside a try/except so we can write potential errors to a file.
     try:
+        # get the device (cuda/cpu)
+        device = available_device()
+
         # define logger
         base_logger, train_logger, valid_logger, test_logger = get_loggers(logdir)
         print(logging_sep("="))
@@ -77,6 +80,7 @@ def run():
         base_logger.info(f"Logging directory: {logdir}")
         base_logger.info(f"Torch version: {torch.__version__}")
         base_logger.info(f"Python version: {sys.version.splitlines()[0]}")
+        base_logger.info(f"Device: {device}")
         print(logging_sep("="))
 
         # setting the random seed
@@ -122,8 +126,7 @@ def run():
         # test estimator (it is important that all models are evaluated using the same evaluator)
         estimator_test, estimator_test_ess, config_test = init_test_estimator(opt)
 
-        # get device and move models to device
-        device = available_device()
+        # move models to device
         model.to(device)
         estimator.to(device)
 

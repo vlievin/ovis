@@ -7,7 +7,7 @@
     "--estimator ovis-S1 --alpha_init 0.99 --warmup 1000000 --warmup_mode log --id iwrbound",
     "--estimator ovis-S10 --alpha_init 0.99 --warmup 1000000 --warmup_mode log --id iwrbound",
     "--estimator ovis-S50 --alpha_init 0.99 --warmup 1000000 --warmup_mode log --id iwrbound",
-    "--estimator vimco-geometric --id iwbound",
+    "--estimator vimco-arithmetic --id iwbound",
     "--estimator ovis-gamma0 --id iwbound",
     "--estimator ovis-gamma1 --id iwbound",
     "--estimator ovis-S1 --id iwbound",

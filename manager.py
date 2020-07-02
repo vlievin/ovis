@@ -11,7 +11,8 @@ from booster.utils import logging_sep
 from tqdm import tqdm
 
 from ovis.utils.dbutils import FileLockedTinyDB
-from ovis.utils.dbutils import requeue_records, Header
+from ovis.utils.dbutils import requeue_records
+from ovis.utils.utils import Header
 from ovis.utils.manager import snapshot_dir, read_experiment_json_file, get_abs_paths, retrieve_exp_and_run
 
 

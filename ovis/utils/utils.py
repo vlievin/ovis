@@ -5,6 +5,7 @@ from functools import reduce
 from typing import Iterable, Optional
 
 import torch
+from booster.utils import logging_sep
 
 BASE_ARGS_EXCEPTIONS = ['root', 'data_root', 'workers', 'silent', 'sequential_computation',
                         'epochs', 'nsteps', 'valid_bs', 'test_bs']
@@ -77,3 +78,14 @@ def flatten(x):
 def batch_reduce(x):
     """return x.view(x.size(0), -1).sum(1)"""
     return flatten(x).sum(1)
+
+
+class Header():
+    def __init__(self, message):
+        self.message = message
+
+    def __enter__(self):
+        print(f"{logging_sep('=')}\n{self.message}\n{logging_sep('-')}")
+
+    def __exit__(self, *args):
+        print(f"{logging_sep('=')}")
