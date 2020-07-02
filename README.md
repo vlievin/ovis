@@ -16,6 +16,11 @@ pip install -r requirements.txt
 
 ## Experiments
 
+All experiments are managed through the script `manager.py` which implement a mutli-threaded queue system based on
+`TinyDB` and a `filelock` protection. See `python manager.py --help` for more information about the number of 
+subprocesses and resuming exisitng experiments. The scripts `dbutils.py` provides a few utilities to inspect and clean 
+the experiment database. 
+
 ### Asymptotic Variance
 
 Anaysis of the gradients for a simple Gaussian model. Figure 1:
@@ -27,21 +32,6 @@ python manager.py --exp asymptotic-analysis
 python report_asymptotic_variance --exp asymptotic-analysis
 # access the results
 open reports/asymptotic-variance
-```
-
-Train the Gaussian model:
-
-```bash
-# run the experiment
-python manager.py --exp gaussian-toy
-# produce the figures
-python report.py --exp=gaussian-toy \
-    --keys=dataset,estimator,iw \
-    --metrics=train:grads/snr,train:grads/dsnr,valid:gaussian_toy/mse_A,valid:gaussian_toy/mse_b,valid:gaussian_toy/mse_mu \
-    --detailed_metrics=test:gaussian_toy/mse_A,train:grads/variance,train:grads/snr,train:loss/ess \
-    --pivot_metrics=min:test:gaussian_toy/mse_A,min:test:gaussian_toy/mse_b,min:test:gaussian_toy/mse_mu,avg:train:grads/snr
-# access the results
-open reports/gaussian-toy
 ```
 
 ### Gaussian Mixture Model
