@@ -29,8 +29,8 @@ def run_manager():
     python manager.py --exp gaussian-mixture-model --max_gpus 4 --processes 2
     ```
 
-    NB: You may experience issues when using this script with a shared filed system across multiple machines. Sometimes
-    deleting the `.db.json.lock` file may solve the issue.
+    Troubleshooting: If the `FilelockDB` exits without properly deleting the `.lock` file, you may need to delete
+    it manually using the `--purge_lock`. This must be used carefully as it may break ongoing database transactions.
     """
 
     parser = argparse.ArgumentParser()
@@ -61,6 +61,8 @@ def run_manager():
                         help='maximum jobs per thread (stop after `max_jobs` jobs)')
     parser.add_argument('--requeue_level', default=1, type=int,
                         help='[db] Requeue level {0: nothing, 1: keyboard_interrupt, 2: failed, 3: not completed}')
+    parser.add_argument('--purge_lock', action='store_true',
+                        help='purge the `.lock` file [use only if the `.lock` file has not been properly removed].')
     opt = parser.parse_args()
 
     # get the list of devices
@@ -149,6 +151,10 @@ def run_manager():
                 else:
                     _args += [f"--{_arg} {v} " + a for a in args]
             args = _args
+
+    # remove the lock file manually
+    if opt.purge_lock:
+        FileLockedTinyDB(exp_root).purge()
 
     # write all experiments to `tinydb` database guarded by a `filelock`
     with FileLockedTinyDB(exp_root) as db:
