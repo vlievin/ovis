@@ -19,9 +19,9 @@ class Estimator(nn.Module):
                  **kwargs):
         """
         A base gradient estimator class.
-        :param mc: number of Monte Carlo samples: i.e. \hat{f} = 1/M \sum_m f[m]
-        :param iw: number of Importance-weighted samples (see VariationInference class)
-        :param auxiliary_samples: number of auxiliary samples used for OVIS MC
+        :param mc: number of Monte Carlo samples: i.e. `\hat{L_1} = 1/M \sum_m \log p(x, z_m) / q(z_m | x)`
+        :param iw: number of Importance-weighted samples: i.e. `L_K = \log 1/K p(x, z_k) / q(z_k | x) `
+        :param auxiliary_samples: auxiliary_samples excluded from the computation of `L_k`.
         :param sequential_computation: compute each iw sample sequentially (save memory during evaluation)
         :param freebits: [https://arxiv.org/abs/1606.04934]
         :param kwargs: additional keyword arguments

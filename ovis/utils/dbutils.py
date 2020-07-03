@@ -63,14 +63,14 @@ def print_record(index, record):
     print(f"{index + 1}# : queued = {record['queued']}, arg = \n     {record['arg']}")
 
 
-def show_all_records(logdir):
+def show_all_experiments(logdir):
     """print all records in the database"""
     with FileLockedTinyDB(logdir) as db:
         for i, record in enumerate(db.all()):
             print_record(i, record)
 
 
-def find_records(logdir, query_statement):
+def find_experiments(logdir, query_statement):
     """print all records matching the query"""
     with FileLockedTinyDB(logdir) as db:
         search_results = db.search(query_statement)
@@ -79,7 +79,7 @@ def find_records(logdir, query_statement):
             print_record(i, record)
 
 
-def update_records(logdir, rules):
+def update_experiments(logdir, rules):
     """update the records in the database based on rules where rules follow the format `key:old_value,key:new_value`"""
     with FileLockedTinyDB(logdir) as db:
         query = db.query()
@@ -95,7 +95,7 @@ def update_records(logdir, rules):
             db.write_back(matching_exps)
 
 
-def delete_records(logdir, pattern):
+def delete_experiments(logdir, pattern):
     """delete experiments that match some pattern"""
     with FileLockedTinyDB(logdir) as db:
         query = db.query()
@@ -105,12 +105,12 @@ def delete_records(logdir, pattern):
         db.remove(query.arg.test(lambda x: pattern in x))
 
 
-def get_hash_from_record(parser, record):
+def get_hash_from_experiments(parser, record):
     db_opt = parser.parse_args(record['arg'].split(' '))
     return get_hash_from_opt(db_opt)
 
 
-def requeue_records(logdir, level=1):
+def requeue_experiments(logdir, level=1):
     """
     check queued==False records, find there corresponding experiment folder and
     requeue (i.e. set record.queue==True) based on the `level`value. Levels:
@@ -130,7 +130,7 @@ def requeue_records(logdir, level=1):
     with FileLockedTinyDB(logdir) as db:
         query = db.query()
         parser = get_run_parser()
-        get_hash = partial(get_hash_from_record, parser)
+        get_hash = partial(get_hash_from_experiments, parser)
         status = defaultdict(lambda: 0)
         requed_status = defaultdict(lambda: 0)
 
@@ -180,4 +180,4 @@ def requeue_records(logdir, level=1):
         # print status
         status['queued'] += sum([v for k, v in requed_status.items() if k != 'queued'])
         for k, v in status.items():
-            print(f"  [{k}] {v - requed_status[k]} Records (Requeud: {requed_status[k]})")
+            print(f"  [{k}] {v - requed_status[k]} experiments (Requeud: {requed_status[k]})")

@@ -11,7 +11,7 @@ from booster.utils import logging_sep
 from tqdm import tqdm
 
 from ovis.utils.dbutils import FileLockedTinyDB
-from ovis.utils.dbutils import requeue_records
+from ovis.utils.dbutils import requeue_experiments
 from ovis.utils.manager import snapshot_dir, read_experiment_json_file, get_abs_paths, retrieve_exp_and_run
 from ovis.utils.utils import Header
 
@@ -163,7 +163,7 @@ def run_manager():
     # potentially check the database status requeue fail experiment
     if opt.script == 'run.py':  # only handled for `run.py` because matching exps relies on `get_run_parser`
         with Header(f"Status"):
-            requeue_records(exp_root, opt.requeue_level)
+            requeue_experiments(exp_root, opt.requeue_level)
 
     # count queued exps and total exps
     with FileLockedTinyDB(exp_root) as db:

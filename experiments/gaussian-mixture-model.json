@@ -18,7 +18,7 @@
     "hdim": [16],
     "iw" : [20, 10, 5, 2],
     "seed": [11, 11, 12, 13, 14],
-    "dataset": ["gmm-toy"],
+    "dataset": ["gmm"],
     "optimizer": ["adam"],
     "grad_samples" : [500],
     "grad_key": ["phi"],

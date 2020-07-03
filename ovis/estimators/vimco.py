@@ -1,4 +1,5 @@
 from typing import Dict
+from booster import Diagnostic
 
 import numpy as np
 import torch
@@ -33,7 +34,6 @@ class Vimco(Reinforce):
         :param data: additional data
         :return: control variate `c_k`
         """
-
         log_wk = data['log_wk']
         log_wk = log_wk.view(-1, self.mc, self.iw)
         _dtype = log_wk.dtype

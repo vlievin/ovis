@@ -38,7 +38,7 @@ def get_datasets(opt, transform=ToTensor()):
     elif "gaussian-toy" in opt.dataset:
         dset = GaussianToyDataset()
         output = dset, dset, dset
-    elif "gmm-toy" in opt.dataset:
+    elif "gmm" in opt.dataset:
         _train_dset = GaussianMixtureDataset(N=100000, C=opt.N)
         _valid_dset = GaussianMixtureDataset(N=100, C=opt.N)
         _test_dset = GaussianMixtureDataset(N=100, C=opt.N)

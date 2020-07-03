@@ -173,7 +173,7 @@ def report():
         _path = os.path.join(output_path, f"{level}-{cat_key}={cat}-pivot-plot-hue={main_key}-style={third_key}.png")
         pivot_plot(cat_data, _path, metrics['pivot_metrics'], cat_key, main_key, aux_key, style_key=third_key, **meta)
 
-        logger.info(f"|- Generating merged curves plots..")
+        logger.info(f"|- Generating simple plots for all aux_key = {aux_key}")
         _path = os.path.join(output_path, f"{level}-{cat_key}={cat}-curves-hue={main_key}-style={aux_key}.png")
         basic_curves_plot(cat_logs, _path, metrics['curves_metrics'], main_key, ylims=ylims, style_key=aux_key, **meta)
 
@@ -193,7 +193,7 @@ def report():
             aux_key_values = list(cat_logs[aux_key].unique())
             for i, v in enumerate(sorted(aux_key_values)):
                 aux_cat_logs = cat_logs[cat_logs[aux_key] == v]
-                logger.info(f"|--- Generating plots for {aux_key} = {v} [{i + 1} / {len(aux_key_values)}]")
+                logger.info(f"|--- Generating simple plots for {aux_key} = {v} [{i + 1} / {len(aux_key_values)}]")
 
                 # auxiliary plot
                 _path = os.path.join(output_path,

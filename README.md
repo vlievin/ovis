@@ -19,7 +19,7 @@ pip install -r requirements.txt
 All experiments are managed through the script `manager.py` which implement a mutli-threaded queue system based on
 `TinyDB` and a `filelock` protection. See `python manager.py --help` for more information about the number of 
 subprocesses and resuming exisitng experiments. The scripts `dbutils.py` provides a few utilities to inspect and clean 
-the experiment database. 
+the experiment database.  `report.py` allows parsing an experiment directory and producing figures.
 
 ### Asymptotic Variance
 
@@ -68,8 +68,8 @@ Figure 3 (left, VIMCO + OVIS-IW):
 python report.py --exp=sigmoid-belief-network  \
     --include=iwbound \
     --keys=dataset,estimator,iw  \
+    --metrics=test:loss/L_k,train:loss/L_k,train:loss/kl_q_p,train:grads/snr \
     --detailed_metrics=test:loss/L_k,train:loss/L_k,train:loss/kl_q_p,train:loss/kl,train:loss/ess,train:active_units/au,train:grads/snr \
-    --metrics=test:loss/L_k,train:loss/L_k,test:loss/kl_q_p,train:grads/snr \
     --pivot_metrics=max:test:loss/L_k,max:train:loss/L_k,last:test:loss/kl_q_p,last:train:loss/ess \
     --ylims=test:loss/L_k:-94:-88,train:loss/L_k:-93:-86
 # produce the figure
@@ -85,8 +85,8 @@ Figure 3 (right, TVO + OVIS-IWR):
 python report.py --exp=sigmoid-belief-network  \
     --include=iwrbound,tvo \
     --keys=dataset,estimator,iw  \
+    --metrics=test:loss/L_k,train:loss/L_k,train:loss/kl_q_p,train:grads/snr \
     --detailed_metrics=test:loss/L_k,train:loss/L_k,train:loss/kl_q_p,train:loss/kl,train:loss/ess,train:active_units/au,train:grads/snr \
-    --metrics=test:loss/L_k,train:loss/L_k,test:loss/kl_q_p,train:grads/snr \
     --pivot_metrics=max:test:loss/L_k,max:train:loss/L_k,last:test:loss/kl_q_p,last:train:loss/ess \
     --ylims=test:loss/L_k:-94:-88,train:loss/L_k:-93:-86
 # produce the figure
@@ -103,8 +103,8 @@ Train a 1-layer Gaussian VAE. Figure 4:
 # produce the figures
 python report.py --exp=gaussian-vae  \
     --keys=dataset,estimator,iw  \
+    --metrics=test:loss/L_k,train:loss/L_k,train:loss/kl_q_p,train:grads/snr \
     --detailed_metrics=train:loss/L_k,train:loss/kl_q_p \
-    --metrics=test:loss/L_k,train:loss/L_k,test:loss/kl_q_p,train:grads/snr \
     --pivot_metrics=max:train:loss/L_k,last:train:loss/kl_q_p,mean:train:loss/ess
 # access the results
 open reports/gaussian-vae
@@ -129,6 +129,7 @@ estimator = Estimator(mc=1, iw=16, **config)
 #### Train your model and analyse the gradients
 
 ```python
+from ovis.analysis.gradients import get_gradients_statistics
 from booster import Aggregator
 agg = Aggregator()
 for x in loader:
@@ -152,7 +153,7 @@ summary.update(grad_stats)
 summary.log(tensorboard_writer, global_step)
 ```
 
-#### Implemet your own model following the `Template` class (`ovis/models/template.py`):
+#### Implemet your own `nn.Module` following the `Template` class (`ovis/models/template.py`):
 
 ```python
 from torch import nn, Tensor, zeros
@@ -190,3 +191,19 @@ model = SimpleModel(10, 10)
 output = model(x)
 output = model.sample_from_prior(1)
 ```
+
+#### Available Gradient Estimators
+
+
+
+* Reparameterization-free:
+    * Reinforce
+    * Reinforce + Neural Baseline
+    * Vimco
+    * Reweighted Wake-Sleep
+    * TVO
+    * OVIS
+
+* Reparameterization-based:
+    * VAE
+    * IWAE

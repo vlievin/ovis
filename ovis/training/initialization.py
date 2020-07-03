@@ -30,21 +30,21 @@ def init_model(opt, x, loader=None):
     }
 
     # change the model id based on the chosen dataset if required
-    model_id = {'gmm-toy': 'gmm-toy',
+    model_id = {'gmm': 'gmm',
                 'gaussian-toy': 'gaussian-toy',
                 'air': 'air'}.get(opt.dataset, opt.model)
 
     # get the right constructor
-    _MODEL = {'vae': VAE,
-              'conv-vae': ConvVAE,
-              'gaussian-toy': GaussianToyVAE,
-              'gmm-toy': GaussianMixture,
+    MODEL = {'vae': VAE,  # VAE parameterized by MLPs
+              'conv-vae': ConvVAE,  # VAE parameterized by convolutions
+              'gaussian-toy': GaussianToyVAE,  # Gaussian model for the asymptotic variance study
+              'gmm': GaussianMixture,  # Gaussian-Mixture-Model
               'sbm': SigmoidBeliefNetwork,  # official TVO SBM model
               'gaussian-vae': GaussianVAE}[model_id]  # official TVO gaussian VAE model
 
     # init the model
     torch.manual_seed(opt.seed)
-    model = _MODEL(**hyperparams)
+    model = MODEL(**hyperparams)
     return model, hyperparams
 
 

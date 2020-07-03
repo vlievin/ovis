@@ -16,13 +16,13 @@ class VariationalInference(Estimator):
         Compute the importance weighted bound for K = self.iw:
 
           * L_k = E_{q(z^1...z^K | x)} [ \log Z]
-          * Z = 1/K \sum_{i=1..K} w_k
+          * Z = 1/K \sum_{k=1..K} w_k
           * w_k  = p(x,z^k) / q(z^k|x)
 
         When using `alpha` > 0, the computed bound is the Importance Rényi Bound (IWR) given by:
 
-          * L_k^\alpha = E_{q(z^1...z^K | x)} [ \log Z(alpha)]
-          * Z(alpha) = 1/K \sum_{i=1..K} w_k^\alpha
+          * L_k^\alpha = E_{q(z^1...z^K | x)} [ 1/(1-\alpha) \log Z(alpha)]
+          * Z(alpha) = 1/K \sum_{i=1..K} w_k^{1 - \alpha}
 
         :param log_px_z: log p(x | z) of shape [bs * mc * iw]
         :param log_pzs: [log p(z_i | *) l=1..L], each of of shape [bs * mc * iw, N_i] (one value per stochastic layer)
@@ -78,7 +78,7 @@ class VariationalInference(Estimator):
         # elbo
         elbo = torch.mean(log_wk, dim=(1, 2))
 
-        # kl(q(z|x) || p(z|x)) = \log \hat{p} - elbo :  accurate when K -> \inf
+        # kl(q(z|x) || p(z|x)) = \log \hat{p} - L_1, \log \hat{p} = L_K,  accurate when K -> \inf
         kl_q_p = L_k.mean(1) - elbo
 
         # compute the effective sample size

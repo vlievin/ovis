@@ -39,25 +39,25 @@ with FileLockedTinyDB(logdir) as db:
 
 if opt.show_all:
     with Header("All records"):
-        show_all_records(logdir)
+        show_all_experiments(logdir)
 
 if opt.find:
     with Header(f"Query = `{opt.find}`"):
         query = Query()
-        find_records(logdir, eval(opt.find))
+        find_experiments(logdir, eval(opt.find))
 
 if len(opt.update):
     with Header(f"Updating records with pattern `{opt.update}`"):
-        update_records(logdir, opt.update)
+        update_experiments(logdir, opt.update)
 
 if len(opt.delete) > 0:
     with Header(f"Deleting records matching pattern `{opt.delete}`"):
-        delete_records(logdir, opt.delete)
+        delete_experiments(logdir, opt.delete)
 
 if opt.check:
     with Header(f"Status"):
-        requeue_records(logdir, level=0)
+        requeue_experiments(logdir, level=0)
 
 if opt.requeue:
     with Header(f"Requeuing"):
-        requeue_records(logdir, level=opt.requeue_level)
+        requeue_experiments(logdir, level=opt.requeue_level)

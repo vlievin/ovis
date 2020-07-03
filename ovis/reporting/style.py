@@ -32,6 +32,8 @@ def set_matplotlib_style():
 
 ESTIMATOR_STYLE = {
     'ovis-gamma1': {'color': "#E6C445", 'marker': ">", 'linestyle': "-"},
+    'ovis-gamma1-arithmetic': {'color': "#B07BF9", 'marker': 4, 'linestyle': "-"},
+    'ovis-gamma1-geometric': {'color': "#F97B9B", 'marker': 8, 'linestyle': "-"},
     'ovis-gamma0': {'color': "#B88A25", 'marker': "<", 'linestyle': "-"},
     'ovis-S1': {'color': "#E89C66", 'marker': "^", 'linestyle': ":"},
     'ovis-S10': {'color': "#D15C2A", 'marker': "^", 'linestyle': "-"},
@@ -45,7 +47,7 @@ ESTIMATOR_STYLE = {
     'wake-sleep': {'color': "#7091d4", 'marker': "x", 'linestyle': "-"},
     'pathwise-iwae': {'color': "#968FA1", 'marker': "s", 'linestyle': "-"},
     'pathwise-vae': {'color': "#554c5e", 'marker': "d", 'linestyle': "-"},
-    'gs': {'color': "#968FA1", 'marker': "s", 'linestyle': "-"}
+    'gs': {'color': "#968FA1", 'marker': "*", 'linestyle': "-"}
 }
 
 ESTIMATOR_ORDER = [
@@ -55,6 +57,8 @@ ESTIMATOR_ORDER = [
     'ovis-S1',
     'ovis-gamma0',
     'ovis-gamma1',
+    'ovis-gamma1-arithmetic',
+    'ovis-gamma1-geometric',
     'vimco',
     'vimco-arithmetic',
     'vimco-geometric',
@@ -74,6 +78,8 @@ ESTIMATOR_GROUPS = {
     'ovis-S1': 0,
     'ovis-gamma0': 1,
     'ovis-gamma1': 1,
+    'ovis-gamma1-arithmetic': 1,
+    'ovis-gamma1-geometric': 1,
     'vimco-arithmetic': 2,
     'vimco-geometric': 2,
     'reinforce': 2,
@@ -87,6 +93,8 @@ ESTIMATOR_GROUPS = {
 
 ESTIMATOR_DISPLAY_NAME = {
     'ovis-gamma1': r"$\operatorname{OVIS}_{\sim}\ (\gamma = 1)$",
+    'ovis-gamma1-arithmetic': r"$\operatorname{OVIS}_{\sim}\ (\gamma = 1) \operatorname{arith.}$",
+    'ovis-gamma1-geometric': r"$\operatorname{OVIS}_{\sim}\ (\gamma = 1) \operatorname{geo.}$",
     'ovis-gamma0': r"$\operatorname{OVIS}_{\sim}\ (\gamma = 0)$",
     'ovis-S1': r"$\operatorname{OVIS}_{\operatorname{MC}}\ (S=1)$",
     'ovis-S10': r"$\operatorname{OVIS}_{\operatorname{MC}}\ (S=10)$",
@@ -94,8 +102,8 @@ ESTIMATOR_DISPLAY_NAME = {
     'ovis-S100': r"$\operatorname{OVIS}_{\operatorname{MC}}\ (S=100)$",
     'reinforce': r"$\operatorname{REINFORCE}$",
     'vimco': r"$\operatorname{VIMCO}$",
-    'vimco-arithmetic': r"$\operatorname{VIMCO}_{\operatorname{arithmetic}}$",  # r"$\operatorname{VIMCO}$",
-    'vimco-geometric': r"$\operatorname{VIMCO}_{\operatorname{geometric}}$",
+    'vimco-arithmetic': r"$\operatorname{VIMCO} \operatorname{arith.}$",  # r"$\operatorname{VIMCO}$",
+    'vimco-geometric': r"$\operatorname{VIMCO} \operatorname{geo.}$",
     'tvo': r"$\operatorname{TVO}$",
     'wake-wake': r"$\operatorname{RWS}$",
     'wake-sleep': r"$\operatorname{RWS}(\operatorname{WS})$",

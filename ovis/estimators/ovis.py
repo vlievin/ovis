@@ -75,15 +75,19 @@ class OvisAsymptotic(Vimco):
         """
         L_k, v_k = [data[k] for k in ['L_k', 'v_k']]
         # avoid overflow: [warning] using a large epsilon value is equivalent to "truncated importance sampling"
-        one_minus_v_k = (1 - v_k).clamp(min=torch.finfo(v_k.dtype).tiny)
+        one_minus_v_k = (1 - v_k).clamp(min=torch.finfo(v_k.dtype).eps)
 
-        # c_k = L_k
+        # c_k = L_k - (L_k - L_[-k]) - gamma v_k + (1-gamma) log(1 - 1/K)
         logZ_diff = self.log_1_m_uniform - one_minus_v_k.log()
         return L_k[:, :, None] - logZ_diff - gamma * v_k + (1 - gamma) * self.log_1_m_uniform
 
 
-class OvisAsymptoticGeometric(OvisAsymptotic):
-    """`OvisAsymptotic` using the geometric average for `\hat{Z}_{[-k]}`. Not tested in the original paper."""
+class OvisAsymptoticFromVimco(OvisAsymptotic):
+    """
+    `OvisAsymptotic` using the `geometric` or `arithmetic` average for `\hat{Z}_{[-k]}`.
+    Not tested in the original paper. The `arithmetic` averge corresponds to the `OvisAsymptotic` wihtout using
+    the factorization trick.
+    """
 
     @torch.no_grad()
     def compute_control_variate(self, x: Tensor, alpha: float = 0, gamma: float = 1, arithmetic: bool = False,

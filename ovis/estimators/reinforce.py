@@ -1,3 +1,5 @@
+from booster import Diagnostic
+
 from .vi import *
 
 
@@ -7,7 +9,7 @@ class Reinforce(VariationalInference):
       * d L_K/ d\theta = \E_q(z_1, ... z_K | x) [ d/d\theta \log Z ]
 
     The gradients of the inference network are given by:
-      * d L_K/ d\phi = \E_q(z_1, ... z_K | x) [ d_k h_k ]
+      * d L_K/ d\phi = \E_q(z_1, ... z_K | x) [ \sum_k d_k h_k ]
 
     Where
       * d_k = \log Z - v_k
@@ -24,7 +26,7 @@ class Reinforce(VariationalInference):
     def __init__(self, baseline: Optional[nn.Module] = None, **kwargs: Any):
         super().__init__(**kwargs)
         self.baseline = baseline
-        self.detach_qlogits = True  # prevents propagating the gradients through log q(z|x) when differentiating L_k
+        self.detach_qlogits = True  # makes `L_k` differentiable only w.r.t `\theta` (givens no reparameterization)
         self.control_loss_weight = 1. if baseline is not None else 0.
         assert self.sequential_computation == False
 

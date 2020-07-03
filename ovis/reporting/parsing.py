@@ -151,6 +151,7 @@ def read_experiments(opt, metrics, logger):
 
                     # remove exceptions and parse `estimator` ids
                     args = drop_exceptions_from_args(args)
+                    args.pop('hash', None)
                     if opt.parse_estimator_args and "-" in args['estimator']:
                         args = parse_estimator_args(args)
 

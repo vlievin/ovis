@@ -1,3 +1,5 @@
+from booster import Diagnostic
+
 from .reinforce import *
 
 

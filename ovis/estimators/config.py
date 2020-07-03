@@ -63,7 +63,7 @@ def get_config(estimator_id):
                 # OVIS~ implementation using `log Z_{[-k]}` given by Vimco.
                 assert "-gamma" in estimator_id
                 gamma = float(eval([s for s in estimator_id.split("-") if 'gamma' in s][0].replace("gamma", "")))
-                Estimator = OvisAsymptoticGeometric
+                Estimator = OvisAsymptoticFromVimco
                 config = {**reinforce_args, 'gamma': gamma, 'arithmetic': '-arithmetic' in estimator_id}
 
             elif "-gamma" in estimator_id:  # parse `-gamma` : parameter of the unified asymptotic approximation
