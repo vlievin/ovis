@@ -6,10 +6,9 @@ import numpy as np
 import pandas as pd
 from matplotlib.lines import Line2D
 
-from ovis.reporting.plotting import update_labels
 from ovis.reporting.style import *
 from ovis.reporting.style import set_matplotlib_style
-from ovis.reporting.utils import smooth
+from ovis.reporting.utils import smooth, update_labels
 from ovis.utils.utils import Header
 
 parser = argparse.ArgumentParser()

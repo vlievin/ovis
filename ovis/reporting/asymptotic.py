@@ -4,7 +4,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 
-from ovis.reporting.plotting import PLOT_WIDTH, PLOT_HEIGHT, ESTIMATOR_STYLE, Legend
+from ovis.reporting.plotting import PLOT_WIDTH, PLOT_HEIGHT, ESTIMATOR_STYLE
+from ovis.reporting.legend import Legend
 from ovis.reporting.style import DPI, MARKERS, set_matplotlib_style
 from ovis.reporting.utils import get_outliers_boundaries
 

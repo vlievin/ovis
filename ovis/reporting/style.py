@@ -51,44 +51,44 @@ ESTIMATOR_STYLE = {
 }
 
 ESTIMATOR_ORDER = [
-    'ovis-S100',
-    'ovis-S50',
-    'ovis-S10',
-    'ovis-S1',
     'ovis-gamma0',
     'ovis-gamma1',
     'ovis-gamma1-arithmetic',
     'ovis-gamma1-geometric',
+    'ovis-S100',
+    'ovis-S50',
+    'ovis-S10',
+    'ovis-S1',
+    'tvo',
+    'wake-wake',
+    'wake-sleep',
     'vimco',
     'vimco-arithmetic',
     'vimco-geometric',
     'reinforce',
-    'wake-wake',
-    'wake-sleep',
-    'tvo',
     'pathwise-iwae',
     'pathwise-vae',
     'gs'
 ]
 
 ESTIMATOR_GROUPS = {
-    'ovis-S100': 0,
-    'ovis-S50': 0,
-    'ovis-S10': 0,
-    'ovis-S1': 0,
-    'ovis-gamma0': 1,
-    'ovis-gamma1': 1,
-    'ovis-gamma1-arithmetic': 1,
-    'ovis-gamma1-geometric': 1,
-    'vimco-arithmetic': 2,
-    'vimco-geometric': 2,
-    'reinforce': 2,
-    'wake-wake': 3,
-    'wake-sleep': 3,
-    'tvo': 3,
-    'pathwise-iwae': 3,
-    'pathwise-vae': 3,
-    'gs': 3
+    'ovis-gamma0': 0,
+    'ovis-gamma1': 0,
+    'ovis-gamma1-arithmetic': 0,
+    'ovis-gamma1-geometric': 0,
+    'ovis-S100': 1,
+    'ovis-S50': 1,
+    'ovis-S10': 1,
+    'ovis-S1': 1,
+    'wake-wake': 2,
+    'wake-sleep': 2,
+    'tvo': 2,
+    'vimco-arithmetic': 3,
+    'vimco-geometric': 3,
+    'reinforce': 3,
+    'pathwise-iwae': 4,
+    'pathwise-vae': 4,
+    'gs': 4
 }
 
 ESTIMATOR_DISPLAY_NAME = {

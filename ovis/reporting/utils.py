@@ -1,5 +1,7 @@
 import numpy as np
 
+from .style import ESTIMATOR_ORDER
+
 
 def percentile(n):
     def percentile_fn(x):
@@ -81,3 +83,64 @@ def smooth(x, window_len=5, window='hanning'):
     pad = (window_len - 1) // 2
     y = y[pad:-pad]
     return y
+
+
+def set_log_scale(ax, label, log_rules, axis='y'):
+    """use log scale for the axis `ax` depending on the `log_rules` dictionary"""
+    if ':' in label:
+        label = label.split(':')[-1]
+    rule = log_rules.get(label, 'linear')
+    if rule == 'linear':
+        pass
+    elif rule == 'log':
+        if axis == 'y':
+            ax.set_yscale('log')
+        elif axis == 'x':
+            ax.set_xscale('log')
+        else:
+            raise ValueError(f"Unknown axis type `{axis}`")
+    else:
+        raise ValueError(f"Unknown log rule `{rule}`")
+
+
+def sort_estimator_keys(keys):
+    keys.sort(key=lambda x: ESTIMATOR_ORDER.index(x) if x in ESTIMATOR_ORDER else -1, reverse=True)
+
+
+def update_labels(axes, metric_dict, agg_fns=dict()):
+    """
+    update the axes labels based on the `metric_dict` dictionary and optional `agg_fns`
+    """
+
+    def _parse(label):
+        return label.split(':')[-1]
+
+    for ax in axes.reshape(-1):
+
+        xlabel = _parse(ax.get_xlabel())
+        ylabel = _parse(ax.get_ylabel())
+
+        if xlabel in metric_dict.keys():
+            label = metric_dict[xlabel]
+            ax.set_xlabel(label)
+
+        if ylabel in metric_dict.keys():
+            label = metric_dict[ylabel]
+            _label = ax.get_ylabel()
+            # append `^{header}$` to `$\mathcal{L}`
+
+            for k in ['loss/L_k', 'loss/elbo', 'loss/kl']:
+                if k in ylabel:
+                    if 'train:' in _label:
+                        label = label[:-1] + "^{\operatorname{train}}$"
+                    elif 'valid:' in _label:
+                        label = label[:-1] + "^{\operatorname{valid}}$"
+                    elif 'test:' in _label:
+                        label = label[:-1] + "^{\operatorname{test}}$"
+
+            if len(agg_fns):
+                if _label in agg_fns.keys():
+                    agg_label = {'last': "", "mean": "train. avg. "}.get(agg_fns[_label], f"{agg_fns[_label]}. ")
+                    label = f"{agg_label}{label}"
+
+            ax.set_ylabel(label)
