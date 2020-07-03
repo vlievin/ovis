@@ -24,7 +24,7 @@ from ovis.training.logging import sample_prior_and_save_img, get_loggers, log_su
 from ovis.training.ops import training_step, test_step
 from ovis.training.schedule import Schedule
 from ovis.training.session import Session
-from ovis.training.utils import get_run_id, get_number_of_epochs, preprocess
+from ovis.training.utils import get_run_id, get_number_of_epochs, preprocess, reduce_lr
 from ovis.utils.success import Success
 from ovis.utils.utils import notqdm, ManualSeed
 
@@ -174,14 +174,7 @@ def run():
 
             """reduce learning rate"""
             if opt.lr_reduce_steps > 0:
-                lr_freq = (epochs // (opt.lr_reduce_steps + 1))
-                if session.epoch % lr_freq == 0:
-                    for o in optimizers:
-                        for i, param_group in enumerate(o.param_groups):
-                            lr = param_group['lr']
-                            new_lr = lr / 2
-                            param_group['lr'] = new_lr
-                            base_logger.info(f"Reducing lr, group = {i} : {lr:.2E} -> {new_lr:.2E}")
+                reduce_lr(optimizers, session.epoch, epochs, opt.lr_reduce_steps, base_logger)
 
             if session.epoch % opt.eval_freq == 0:
                 parameters_diagnostics = {'parameters': {'beta': config.get('beta', 1.), 'alpha': alpha}}
@@ -239,10 +232,10 @@ def run():
                 with ManualSeed(seed=opt.seed):
                     sample_prior_and_save_img("prior-sample", model, logdir, global_step=session.global_step,
                                               writer=writer_test)
-                print(logging_sep())
 
                 """Checkpointing"""
                 session.save()
+                print(logging_sep())
 
         """final testing given the parameters from the best test score"""
         print(f"{logging_sep()}\nFinal validation with best test "
@@ -250,7 +243,6 @@ def run():
 
         writer_valid = SummaryWriter(os.path.join(logdir, 'valid'))
         loader_valid = DataLoader(dset_valid, batch_size=opt.test_bs, shuffle=True, num_workers=1)
-
         config_valid = {'tau': 0, 'zgrads': False}
         Estimator_valid = VariationalInference
         estimator_valid = Estimator_valid(mc=1, iw=opt.iw_valid, sequential_computation=opt.sequential_computation,

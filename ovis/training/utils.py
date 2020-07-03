@@ -1,7 +1,9 @@
 import hashlib
 
 from torch import Tensor
+
 from ..utils.utils import BASE_ARGS_EXCEPTIONS
+
 
 def get_hash_from_opt(opt, exceptions=None):
     if exceptions is None:
@@ -63,3 +65,14 @@ def get_dataset_mean(loader_train):
         else:
             _xmean += (m - k * _xmean) / _n
     return _xmean.unsqueeze(0)
+
+
+def reduce_lr(optimizers, epoch, epochs, lr_reduce_steps, base_logger):
+    lr_freq = (epochs // (lr_reduce_steps + 1))
+    if epoch % lr_freq == 0:
+        for o in optimizers:
+            for i, param_group in enumerate(o.param_groups):
+                lr = param_group['lr']
+                new_lr = lr / 2
+                param_group['lr'] = new_lr
+                base_logger.info(f"[Reducing lr] group = {i} : {lr:.2E} -> {new_lr:.2E}")

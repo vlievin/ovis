@@ -195,9 +195,7 @@ output = model(x)
 output = model.sample_from_prior(1)
 ```
 
-#### Available Gradient Estimators
-
-
+### Available Gradient Estimators
 
 * Reparameterization-free:
     * Reinforce
