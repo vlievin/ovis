@@ -9,7 +9,7 @@ from tinydb import TinyDB, Query
 from ovis.training.arguments import get_run_parser
 from ovis.training.utils import get_hash_from_opt
 from ovis.utils.filelock import FileLock
-from ovis.utils.utils import Success
+from ovis.utils.success import Success
 
 
 class FileLockedTinyDB(FileLock, TinyDB):
@@ -115,7 +115,7 @@ def requeue_experiments(logdir, level=1):
     check queued==False records, find there corresponding experiment folder and
     requeue (i.e. set record.queue==True) based on the `level`value. Levels:
     * 0: do not requeue
-    * 1: requeue `keyboard_interrupt`
+    * 1: requeue `aborted_by_user` (keyboard_interrupt or sigterm)
     * 2: requeue `failed``
     * 100: requeue `running`
     * 10000: all including `success`
@@ -149,10 +149,10 @@ def requeue_experiments(logdir, level=1):
                     if Success.file in os.listdir(os.path.join(logdir, exp)):
                         message = open(os.path.join(logdir, exp, Success.file), 'r').read()
 
-                        if Success.keyboard_interrupt == message:
-                            status['keyboard_interrupt'] += 1
+                        if Success.aborted_by_user == message:
+                            status['aborted_by_user'] += 1
                             if level >= 1:
-                                requed_status['keyboard_interrupt'] += 1
+                                requed_status['aborted_by_user'] += 1
                                 requeue(to_be_requeued, db_hashes[exp_hash], exp)
 
                         elif Success.success == message:

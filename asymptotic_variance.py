@@ -1,6 +1,5 @@
 import argparse
 import json
-import traceback
 
 import pandas as pd
 import torch
@@ -16,7 +15,8 @@ from ovis.training.evaluation import evaluate_minibatch_and_log
 from ovis.training.initialization import init_logging_directory
 from ovis.training.logging import get_loggers, log_grads_data
 from ovis.training.utils import get_hash_from_opt
-from ovis.utils.utils import notqdm, ManualSeed, Success
+from ovis.utils.success import Success
+from ovis.utils.utils import notqdm, ManualSeed
 
 
 def init_estimator(estimator_id, iw):
@@ -102,7 +102,8 @@ with open(os.path.join(logdir, 'config.json'), 'w') as fp:
     _opt = vars(opt)
     fp.write(json.dumps(_opt, default=lambda x: str(x), indent=4))
 
-try:
+# wrap the training loop inside with `Success` to write the outcome of the run to a file
+with Success(logdir=logdir):
     # define logger
     print(logging_sep("="))
     base_logger, *_ = get_loggers(logdir, keys=['base'])
@@ -232,21 +233,3 @@ try:
     if len(grads_data):
         grads_data['estimator'] = list(map(format_estimator_name, grads_data['estimator'].values))
         plot_gradients_distribution(grads_data, logdir)
-
-    # write outcome to a file (success, interrupted, error)
-    print(f"{logging_sep('=')}\n@ asymptotic_variance.py: Succes.\n{logging_sep('=')}")
-    with open(os.path.join(logdir, Success.file), 'w') as f:
-        f.write(Success.success)
-
-except KeyboardInterrupt:
-    print(f"{logging_sep('=')}\n@ asymptotic_variance.py: Keyboard Interrupt.\n{logging_sep('=')}")
-    with open(os.path.join(logdir, Success.file), 'w') as f:
-        f.write(Success.keyboard_interrupt)
-
-
-except Exception as ex:
-    print(f"{logging_sep('=')}\n@ asymptotic_variance.py: "
-          f"Failed with exception {type(ex).__name__} = `{ex}` \n{logging_sep('=')}")
-    traceback.print_exception(type(ex), ex, ex.__traceback__)
-    with open(os.path.join(logdir, Success.file), 'w') as f:
-        f.write(Success.failure(ex))

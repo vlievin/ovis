@@ -3,7 +3,6 @@ import json
 import os
 import pickle
 import sys
-import traceback
 
 import numpy as np
 import torch
@@ -26,7 +25,8 @@ from ovis.training.ops import training_step, test_step
 from ovis.training.schedule import Schedule
 from ovis.training.session import Session
 from ovis.training.utils import get_run_id, get_number_of_epochs, preprocess
-from ovis.utils.utils import notqdm, ManualSeed, Success
+from ovis.utils.success import Success
+from ovis.utils.utils import notqdm, ManualSeed
 
 
 def run():
@@ -68,8 +68,8 @@ def run():
         config['hash'] = hash
         fp.write(json.dumps(config, default=lambda x: str(x), indent=4))
 
-    # wrap the training loop inside a try/except so we can write potential errors to a file.
-    try:
+    # wrap the training loop inside with `Success` to write the outcome of the run to a file
+    with Success(logdir=logdir):
         # get the device (cuda/cpu)
         device = available_device()
 
@@ -274,23 +274,6 @@ def run():
         with ManualSeed(seed=opt.seed):
             sample_prior_and_save_img("prior-sample", model, logdir, global_step=session.global_step,
                                       writer=writer_test)
-
-        # write outcome to a file (success, interrupted, error)
-        print(f"{logging_sep('=')}\n@ run.py: Succes.\n{logging_sep('=')}")
-        with open(os.path.join(logdir, Success.file), 'w') as f:
-            f.write(Success.success)
-
-    except KeyboardInterrupt:
-        print(f"{logging_sep('=')}\n@ run.py: Keyboard Interrupt.\n{logging_sep('=')}")
-        with open(os.path.join(logdir, Success.file), 'w') as f:
-            f.write(Success.keyboard_interrupt)
-
-
-    except Exception as ex:
-        print(f"{logging_sep('=')}\n@ run.py: Failed with exception {type(ex).__name__} = `{ex}` \n{logging_sep('=')}")
-        traceback.print_exception(type(ex), ex, ex.__traceback__)
-        with open(os.path.join(logdir, Success.file), 'w') as f:
-            f.write(Success.failure(ex))
 
 
 if __name__ == '__main__':

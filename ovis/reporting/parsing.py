@@ -8,7 +8,8 @@ import pandas as pd
 from booster.utils import logging_sep
 from tqdm import tqdm
 
-from ovis.utils.utils import parse_numbers, BASE_ARGS_EXCEPTIONS, Success
+from ovis.utils.utils import parse_numbers, BASE_ARGS_EXCEPTIONS
+from ovis.utils.success import Success
 
 try:
     from tbparser.summary_reader import SummaryReader

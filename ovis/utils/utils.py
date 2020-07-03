@@ -11,17 +11,6 @@ BASE_ARGS_EXCEPTIONS = ['root', 'data_root', 'workers', 'silent', 'sequential_co
                         'epochs', 'nsteps', 'valid_bs', 'test_bs']
 
 
-class Success():
-    """handles the `success.txt` file generated for each run."""
-    file = 'success.txt'
-    success = f"Success."
-    keyboard_interrupt = f"Failed. Interrupted (keyboard)."
-    failure_base = "Failed."
-
-    def failure(exception):
-        return f"{Success.failure_base} Exception : \n{exception}\n\n{exception.__traceback__}"
-
-
 class ManualSeed():
     """A simple class to execute a statement with a manual random seed without breaking the randomness.
     Another random seed is sampled and set when exiting the `with` statement. Usage:
