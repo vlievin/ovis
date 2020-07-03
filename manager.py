@@ -29,8 +29,8 @@ def run_manager():
     python manager.py --exp gaussian-mixture-model --max_gpus 4 --processes 2
     ```
 
-    Troubleshooting: If the `FilelockDB` exits without properly deleting the `.lock` file, you may need to delete
-    it manually using the `--purge_lock`. This must be used carefully as it may break ongoing database transactions.
+    Troubleshooting: If the `FileLockedTinyDB` exits without properly removing the `.lock` file, you may need to delete
+    it manually using `--purge_lock`. This must be used carefully as it may alter ongoing database transactions.
     """
 
     parser = argparse.ArgumentParser()

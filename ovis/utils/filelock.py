@@ -146,7 +146,9 @@ class FileLock(object):
                 if e.errno != errno.EEXIST:
                     raise
                 if self.timeout is not None and (time.time() - start_time) >= self.timeout:
-                    raise FileLock.FileLockException("Timeout occurred.")
+                    raise FileLock.FileLockException("Timeout occurred. You may need to purge the `.lock` file manually"
+                                                     " using the option `--purge` with `manager.py`. Removing the .lock"
+                                                     "may break ongoing transactions.")
                 if not blocking:
                     return False
                 time.sleep(self.delay)

@@ -18,7 +18,7 @@ pip install -r requirements.txt
 
 All experiments are managed through the script `manager.py` which implement a mutli-threaded queue system based on
 `TinyDB` and a `filelock` protection. See `python manager.py --help` for more information about the number of 
-subprocesses and resuming exisitng experiments. The scripts `dbutils.py` provides a few utilities to inspect and clean 
+subprocesses and resuming experiments. The scripts `dbutils.py` provides a few utilities to inspect and clean 
 the experiment database.  `report.py` allows parsing an experiment directory and producing figures.
 
 ### Asymptotic Variance
