@@ -113,7 +113,10 @@ open reports/gaussian-vae
 ## Using and Extending OVIS
 
 ```bash
+# install the latest release
 pip install git+https://github.com/vlievin/ovis.git
+# OR install in dev. mode
+git clone https://github.com/vlievin/ovis.git && pip install -e ovis/
 ```
 
 The full example is available in `example.py`. 
