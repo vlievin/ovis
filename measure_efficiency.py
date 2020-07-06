@@ -167,7 +167,7 @@ def main():
         keys = ['max_memory', 'elapsed_time']
         legend_height = 0.5
         fig, axes = plt.subplots(nrows=1, ncols=len(keys),
-                                 figsize=(3 * PLOT_WIDTH, 1 * PLOT_HEIGHT * (1 + legend_height)),
+                                 figsize=(2 * PLOT_WIDTH, 2 * PLOT_HEIGHT),
                                  dpi=DPI)
         hue_order = list(data['estimator'].unique())
         sort_estimator_keys(hue_order)
@@ -196,7 +196,7 @@ def main():
 
                 # plot mean value
                 ax.plot(series['iw'], series[key]['mean'], markersize=0, alpha=0.5, **style)
-                ax.scatter(series['iw'], series[key]['mean'], label=estimator, alpha=1, **style)
+                ax.plot(series['iw'], series[key]['mean'], label=estimator, alpha=1, **style)
 
             # labels and axis scale
             ax.set_yscale('log', basey=10)
