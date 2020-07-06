@@ -30,17 +30,17 @@ def analyse_gradients_and_log(opt, global_step, writer_train, train_logger, load
     # batch of data for the gradients variance evaluation (at maximum of size bs)
     batch = next(iter(loader_train))
     x, *_ = preprocess(batch, device)
-    x = x[:opt.grad_bs]
+    x = x[:opt['grad_bs']]
 
     # get the configuration for the gradients analysis
-    grad_args = {'seed': opt.seed,
-                 'batch_size': opt.bs * opt.mc * opt.iw,
-                 'mc_samples': opt.grad_samples,
-                 'key_filter': opt.grad_key,
-                 'eps': opt.grad_epsilon}
+    grad_args = {'seed': opt['seed'],
+                 'batch_size': opt['bs'] * opt['mc'] * opt['iw'],
+                 'mc_samples': opt['grad_samples'],
+                 'key_filter': opt['grad_key'],
+                 'eps': opt['grad_epsilon']}
 
     # gradients analysis for the training estimator
-    with ManualSeed(seed=opt.seed):
+    with ManualSeed(seed=opt['seed']):
         grad_data, _ = get_gradients_statistics(estimator, model, x, tqdm=tqdm, **grad_args, **config)
 
     # log the gradient analysis

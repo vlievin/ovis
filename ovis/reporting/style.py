@@ -1,5 +1,7 @@
 import matplotlib
+import matplotlib.pyplot as plt
 import seaborn as sns
+from ..utils.utils import Header
 
 DPI = 200
 PLOT_WIDTH = 5
@@ -12,16 +14,30 @@ def set_matplotlib_style():
     """
     Set a custom `matplotlib` style and enable `Latex`.
     """
-    matplotlib.rc('text', usetex=True)
-    matplotlib.rcParams['text.latex.preamble'] = [
-        r"\usepackage{amsmath}",
-        r"\usepackage{amssymb}",
-        r'\usepackage{siunitx}',
-        r'\sisetup{detect-all}',
-        r'\usepackage{helvet}',
-        r'\usepackage{sansmath}',
-        r'\sansmath'
-    ]
+
+    try:
+        matplotlib.rc('text', usetex=True)
+        matplotlib.rcParams['text.latex.preamble'] = [
+            r"\usepackage{amsmath}",
+            r"\usepackage{amssymb}",
+            r'\usepackage{siunitx}',
+            r'\sisetup{detect-all}',
+            r'\usepackage{helvet}',
+            r'\usepackage{sansmath}',
+            r'\sansmath'
+        ]
+
+        # test Latex
+        plt.scatter([0, 1], [0, 1])
+        plt.xlabel(r"$K$")
+        plt.ylabel(r"$\mathcal{L}$")
+        plt.savefig('.test_latex.png')
+        plt.close()
+
+    except Exception as ex:
+        matplotlib.rc('text', usetex=False)
+        with Header("@ style.py: couldn't load Latex"):
+            print(ex)
 
     sns.set_style("darkgrid", {"axes.facecolor": ".96", "xtick.bottom": True, "ytick.left": True, "xtick.color": "0.3",
                                "ytick.color": "0.3"})
@@ -160,6 +176,8 @@ METRIC_DISPLAY_NAME = {
     'gaussian_toy/mse_b': r"$\Vert \mathbf{b} - \mathbf{b}^\star  \Vert_2$",
     'gaussian_toy/mse_mu': r"$\Vert \mu - \mu^*\star \Vert_2$",
     'gaussian_toy/mse_phi': r"$\Vert \phi - \phi^\star  \Vert_2$",
-    'active_units/au': r"active units"
+    'active_units/au': r"active units",
+    'max_memory': r'max. memory (MB)',
+    'elapsed_time': r'epoch time (s.)'
 
 }

@@ -6,7 +6,7 @@ from functools import partial
 from booster.utils import logging_sep
 from tinydb import TinyDB, Query
 
-from ovis.training.arguments import get_run_parser
+from ovis.training.arguments import add_run_args
 from ovis.training.utils import get_hash_from_opt
 from ovis.utils.filelock import FileLock
 from ovis.utils.success import Success
@@ -129,7 +129,7 @@ def requeue_experiments(logdir, level=1):
 
     with FileLockedTinyDB(logdir) as db:
         query = db.query()
-        parser = get_run_parser()
+        parser = add_run_args()
         get_hash = partial(get_hash_from_experiments, parser)
         status = defaultdict(lambda: 0)
         requed_status = defaultdict(lambda: 0)

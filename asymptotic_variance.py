@@ -11,6 +11,7 @@ from ovis.models import GaussianToyVAE
 from ovis.reporting.asymptotic import *
 from ovis.reporting.parsing import format_estimator_name
 from ovis.reporting.style import *
+from ovis.training.arguments import add_base_args
 from ovis.training.evaluation import evaluate_minibatch_and_log
 from ovis.training.initialization import init_logging_directory
 from ovis.training.logging import get_loggers, log_grads_data
@@ -26,24 +27,7 @@ def init_estimator(estimator_id, iw):
 
 
 parser = argparse.ArgumentParser()
-
-# run directory, id and seed
-parser.add_argument('--root', default='runs/',
-                    help='directory to store training logs')
-parser.add_argument('--data_root', default='data/',
-                    help='directory to store the data')
-parser.add_argument('--exp', default='asymptotic-variance-final',
-                    help='experiment directory')
-parser.add_argument('--id', default='', type=str,
-                    help='run id suffix')
-parser.add_argument('--seed', default=1, type=int,
-                    help='random seed')
-parser.add_argument('--rm', action='store_true',
-                    help='delete previous run')
-parser.add_argument('--silent', action='store_true',
-                    help='silence tqdm')
-parser.add_argument('--deterministic', action='store_true',
-                    help='use deterministic backend')
+add_base_args(parser, exp="asymptotic-variance")
 
 # estimator, perturbation level and number of particles
 parser.add_argument('--estimators', default='ovis-gamma0, pathwise-iwae',
@@ -76,31 +60,30 @@ parser.add_argument('--D', default=20, type=int,
                     help='latent space dimension')
 
 # geometric spacing of the particles `iws`
-opt = parser.parse_args()
-iws = [int(k) for k in np.geomspace(start=opt.iw_min, stop=opt.iw_max, num=opt.iw_steps)[::-1]]
+opt = vars(parser.parse_args())
+iws = [int(k) for k in np.geomspace(start=opt['iw_min'], stop=opt['iw_max'], num=opt['iw_steps'])[::-1]]
 
-if opt.deterministic:
+if opt['deterministic']:
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-if opt.silent:
+if opt['silent']:
     tqdm = notqdm
 
 # defining the run identifier
 deterministic_id = get_hash_from_opt(opt)
-run_id = f"asymptotic-{opt.estimators}-iw{opt.iw_min}-{opt.iw_max}-{opt.iw_steps}-seed{opt.seed}-eps{opt.epsilon}"
-if opt.exp != "":
-    run_id += f"-{opt.exp}"
+run_id = f"asymptotic-{opt['estimators']}-iw{opt['iw_min']}-{opt['iw_max']}-{opt['iw_steps']}-seed{opt['seed']}-eps{opt['epsilon']}"
+if opt['exp'] != "":
+    run_id += f"-{opt['exp']}"
 run_id += f"{deterministic_id}"
-_exp_id = f"asymptotic-{opt.exp}-{opt.seed}"
+_exp_id = f"asymptotic-{opt['exp']}-{opt['seed']}"
 
 # defining the run directory
 logdir = init_logging_directory(opt, run_id)
 
 # save configuration
 with open(os.path.join(logdir, 'config.json'), 'w') as fp:
-    _opt = vars(opt)
-    fp.write(json.dumps(_opt, default=lambda x: str(x), indent=4))
+    fp.write(json.dumps(opt, default=lambda x: str(x), indent=4))
 
 # wrap the training loop inside with `Success` to write the outcome of the run to a file
 with Success(logdir=logdir):
@@ -112,16 +95,16 @@ with Success(logdir=logdir):
     base_logger.info(f"Torch version: {torch.__version__}")
 
     # setting the random seed
-    torch.manual_seed(opt.seed)
-    np.random.seed(opt.seed)
+    torch.manual_seed(opt['seed'])
+    np.random.seed(opt['seed'])
 
     # define model
-    torch.manual_seed(opt.seed)
-    model = GaussianToyVAE(xdim=(opt.D,), npoints=opt.npoints)
+    torch.manual_seed(opt['seed'])
+    model = GaussianToyVAE(xdim=(opt['D'],), npoints=opt['npoints'])
 
     # valid estimator (it is important that all models are evaluated using the same evaluator)
     Estimator, config_ref = get_config("pathwise-iwae")
-    estimator_ref = Estimator(mc=1, iw=opt.iw_valid, **config_ref)
+    estimator_ref = Estimator(mc=1, iw=opt['iw_valid'], **config_ref)
 
     # get device and move models
     device = available_device()
@@ -129,22 +112,22 @@ with Success(logdir=logdir):
     estimator_ref.to(device)
 
     # parse estimators
-    estimators = opt.estimators.replace(" ", "").split(",")
+    estimators = opt['estimators'].replace(" ", "").split(",")
 
     # get the dataset
     x = model.dset
 
     # evaluate model at initialization
-    with ManualSeed(seed=opt.seed):
+    with ManualSeed(seed=opt['seed']):
         diagnostics = evaluate_minibatch_and_log(estimator_ref, model, x, config_ref, base_logger,
                                                  "Random Initialisation")
 
     grads_stats = []
     grads_data = []
-    epsilons = [eval(x) for x in opt.epsilon.split(",")]
-    global_grad_args = {'seed': opt.seed,
-                        'samples_per_batch': opt.samples_per_batch,
-                        'key_filter': opt.key_filter}
+    epsilons = [eval(x) for x in opt['epsilon'].split(",")]
+    global_grad_args = {'seed': opt['seed'],
+                        'samples_per_batch': opt['samples_per_batch'],
+                        'key_filter': opt['key_filter']}
 
     for epsilon in epsilons:
 
@@ -152,7 +135,7 @@ with Success(logdir=logdir):
         model.set_optimal_parameters()
 
         # evaluate the model
-        with ManualSeed(seed=opt.seed):
+        with ManualSeed(seed=opt['seed']):
             diagnostics = evaluate_minibatch_and_log(estimator_ref, model, x, config_ref, base_logger,
                                                      "Optimal parameters")
 
@@ -160,14 +143,14 @@ with Success(logdir=logdir):
         model.perturbate_weights(epsilon)
 
         # evaluate model
-        with ManualSeed(seed=opt.seed):
+        with ManualSeed(seed=opt['seed']):
             diagnostics = evaluate_minibatch_and_log(estimator_ref, model, x, config_ref, base_logger,
                                                      "After perturbation")
 
         # define the gradients analysis arguments and the meta-data
-        meta = {'seed': opt.seed, 'noise': epsilon, 'mc_samples': int(opt.mc_samples),
+        meta = {'seed': opt['seed'], 'noise': epsilon, 'mc_samples': int(opt['mc_samples']),
                 **{k: v.mean().item() for k, v in diagnostics['loss'].items()}}
-        grad_args = {'mc_samples': int(opt.mc_samples), **global_grad_args}
+        grad_args = {'mc_samples': int(opt['mc_samples']), **global_grad_args}
         idx = None
 
         for estimator_id in estimators:
@@ -180,7 +163,7 @@ with Success(logdir=logdir):
                 estimator.to(device)
 
                 # evalute variance of the gradients
-                with ManualSeed(seed=opt.seed):
+                with ManualSeed(seed=opt['seed']):
                     analysis_data, grads_meta = get_gradients_statistics(estimator, model, x,
                                                                          return_grads=True, **grad_args, **config)
 

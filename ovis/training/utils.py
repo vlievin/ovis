@@ -1,40 +1,46 @@
 import hashlib
+from typing import *
 
 from torch import Tensor
 
 from ..utils.utils import BASE_ARGS_EXCEPTIONS
 
 
-def get_hash_from_opt(opt, exceptions=None):
+def get_hash_from_opt(opt: Dict, exceptions=None):
     if exceptions is None:
         exceptions = BASE_ARGS_EXCEPTIONS
-    filtered_opt_dict = {k: v for k, v in vars(opt).items() if k not in exceptions}
+    filtered_opt_dict = {k: v for k, v in opt.items() if k not in exceptions}
     opt_string = ",".join(("{}={}".format(*i) for i in filtered_opt_dict.items()))
     return hashlib.md5(opt_string.encode('utf-8')).hexdigest()
 
 
-def get_run_id(opt):
+def get_run_id(opt: Dict):
     """define a unique run identifier"""
 
     hash = get_hash_from_opt(opt)
     warmup_id = ""
-    if opt.alpha > 0:
-        warmup_id += f"-{opt.alpha}"
-    if opt.warmup > 0:
+    if opt['alpha'] > 0:
+        warmup_id += f"-{opt['alpha']}"
+    if opt['warmup'] > 0:
         warmup_id += "-warmup"
-    exp_id = f"{opt.dataset}-{opt.model}-{opt.estimator}-K{opt.iw}-M{opt.mc}{warmup_id}-seed{opt.seed}"
-    if opt.id != "":
-        exp_id += f"-{opt.id}"
+
+    base_id = "-".join(f"{opt[k]}" for k in ["dataset", "model", "estimator"])
+    base_id += '-' + '-'.join(f'{k}{opt[k]}' for k in ['mc', 'iw', 'seed'])
+    id_suffix = f"{opt['id']}-" if opt['id'] != "" else ""
+    exp_id = f"{id_suffix}{base_id}-{warmup_id}"
     run_id = f"{exp_id}-{hash}"
+
+    print(">>>>", run_id)
+
     return run_id, exp_id, hash
 
 
 def get_number_of_epochs(opt, loader_train):
     """define the number of training epochs based on the lenght of the dataset and the number of steps"""
-    epochs = opt.epochs
-    iter_per_epoch = len(loader_train.dataset) // opt.bs
+    epochs = opt['epochs']
+    iter_per_epoch = -(-len(loader_train.dataset) // opt['bs'])
     if epochs < 0:
-        epochs = 1 + opt.nsteps // iter_per_epoch
+        epochs = 1 + opt['nsteps'] // iter_per_epoch
     return epochs, iter_per_epoch
 
 

@@ -33,34 +33,34 @@ class MiniDataset(Dataset):
 
 
 def get_datasets(opt, transform=ToTensor()):
-    if "shapes" in opt.dataset:
+    if "shapes" in opt['dataset']:
         output = get_shapes_datasets(transform=transform)
-    elif "gaussian-toy" in opt.dataset:
+    elif "gaussian-toy" in opt['dataset']:
         dset = GaussianToyDataset()
         output = dset, dset, dset
-    elif "gmm" in opt.dataset:
-        _train_dset = GaussianMixtureDataset(N=100000, C=opt.N)
-        _valid_dset = GaussianMixtureDataset(N=100, C=opt.N)
-        _test_dset = GaussianMixtureDataset(N=100, C=opt.N)
+    elif "gmm" in opt['dataset']:
+        _train_dset = GaussianMixtureDataset(N=100000, C=opt['N'])
+        _valid_dset = GaussianMixtureDataset(N=100, C=opt['N'])
+        _test_dset = GaussianMixtureDataset(N=100, C=opt['N'])
         output = _train_dset, _valid_dset, _test_dset
-    elif "binmnist" in opt.dataset:
-        output = get_binmnist_datasets(opt.data_root, transform=transform)
-    elif "omniglot" in opt.dataset:
-        output = get_omniglot_datasets(opt.data_root, transform=transform, dynamic=True)
-    elif "fashion" in opt.dataset:
-        output = get_fashion_datasets(opt.data_root, transform=transform, binarize=True)
+    elif "binmnist" in opt['dataset']:
+        output = get_binmnist_datasets(opt['data_root'], transform=transform)
+    elif "omniglot" in opt['dataset']:
+        output = get_omniglot_datasets(opt['data_root'], transform=transform, dynamic=True)
+    elif "fashion" in opt['dataset']:
+        output = get_fashion_datasets(opt['data_root'], transform=transform, binarize=True)
     else:
-        raise ValueError(f"Unknown data: {opt.dataset}")
+        raise ValueError(f"Unknown data: {opt['dataset']}")
 
-    if opt.mini:
+    if opt.get('mini', False):
         def wrapper(dset_train, dset_valid, dset_test):
-            return MiniDataset(dset_train, MINI_TRAIN_SIZE, opt.seed), \
-                   MiniDataset(dset_valid, MINI_VALID_SIZE, opt.seed), \
-                   MiniDataset(dset_test, MINI_TEST_SIZE, opt.seed + 1)
+            return MiniDataset(dset_train, MINI_TRAIN_SIZE, opt['seed']), \
+                   MiniDataset(dset_valid, MINI_VALID_SIZE, opt['seed']), \
+                   MiniDataset(dset_test, MINI_TEST_SIZE, opt['seed'] + 1)
 
         output = wrapper(*output)
 
-    if opt.only_train_set:
+    if opt.get('only_train_set', False):
         def use_only_training(dset_train, *args):
             return dset_train, dset_train, dset_train
 

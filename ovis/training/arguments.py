@@ -1,12 +1,8 @@
 import argparse
 
 
-def get_run_parser():
-    """parse the arguments for the script `run.py`"""
-
-    parser = argparse.ArgumentParser()
-
-    # run directory, id and seed
+def add_base_args(parser: argparse.PARSER, exp='sandbox'):
+    """base experiments arguments use across all exps"""
     parser.add_argument('--dataset', default='shapes',
                         help='dataset [shapes | binmnist | omniglot | fashion | gmm-toy | gaussian-toy]')
     parser.add_argument('--mini', action='store_true',
@@ -15,7 +11,7 @@ def get_run_parser():
                         help='directory to store training logs')
     parser.add_argument('--data_root', default='data/',
                         help='directory to store the data')
-    parser.add_argument('--exp', default='sandbox',
+    parser.add_argument('--exp', default=exp,
                         help='experiment directory')
     parser.add_argument('--id', default='', type=str,
                         help='run id suffix')
@@ -31,6 +27,10 @@ def get_run_parser():
                         help='use deterministic backend')
     parser.add_argument('--sequential_computation', action='store_true',
                         help='compute each iw sample sequentially during validation')
+
+
+def add_run_args(parser: argparse.PARSER):
+    """parse the arguments for the script `run.py`"""
 
     # epochs, batch size, MC samples, lr
     parser.add_argument('--epochs', default=-1, type=int,
@@ -51,8 +51,6 @@ def get_run_parser():
                         help='validation evaluation batch size')
     parser.add_argument('--test_bs', default=50, type=int,
                         help='test evaluation batch size')
-    parser.add_argument('--grad_bs', default=10, type=int,
-                        help='gradients analysis batch size')
     parser.add_argument('--lr_reduce_steps', default=0, type=int,
                         help='number of learning rate reduce steps')
     parser.add_argument('--only_train_set', action='store_true',
@@ -95,6 +93,8 @@ def get_run_parser():
                         help='number of data points x')
 
     # gradients analysis
+    parser.add_argument('--grad_bs', default=10, type=int,
+                        help='gradients analysis batch size')
     parser.add_argument('--grad_samples', default=100, type=int,
                         help='number of MC samples used to evaluate the Variance and SNR of the gradients.')
     parser.add_argument('--grad_key', default='inference_network', type=str,
@@ -113,7 +113,7 @@ def get_run_parser():
                         help='number of stochastic layers when using hierarchical models')
     parser.add_argument('--b_nlayers', default=1, type=int,
                         help='number of MLP hidden layers for the neural baseline')
-    parser.add_argument('--norm', default='none', type=str,
+    parser.add_argument('--normalization', default='none', type=str,
                         help='normalization layer for the VAE model [none | layernorm | batchnorm]')
     parser.add_argument('--dropout', default=0, type=float,
                         help='dropout value')
@@ -127,5 +127,3 @@ def get_run_parser():
                         help='dimension of the keys model for categorical prior')
     parser.add_argument('--learn_prior', action='store_true',
                         help='learn the prior parameters (VAE model)')
-
-    return parser

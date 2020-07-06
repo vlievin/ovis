@@ -9,9 +9,11 @@ Code for the *Optimal Variance Control of the Score Function Gradient Estimator 
 ```bash
 conda create -n ovis python=3.7
 conda activate ovis
-# potentially use the latest instruction from https://pytorch.org/
+# use the instructions from https://pytorch.org/
 conda install pytorch=1.5.1 torchvision cudatoolkit=10.2 -c pytorch 
 pip install -r requirements.txt
+# potentially install Latex using Conda
+conda install -c conda-forge texlive-core
 ```
 
 ## Experiments

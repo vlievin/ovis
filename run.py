@@ -4,6 +4,7 @@ import os
 import pickle
 import sys
 
+import argparse
 import numpy as np
 import torch
 from booster import Aggregator, Diagnostic
@@ -15,7 +16,7 @@ from torch.utils.tensorboard import SummaryWriter
 from ovis import get_datasets
 from ovis.analysis.active_units import latent_activations
 from ovis.estimators import VariationalInference
-from ovis.training.arguments import get_run_parser
+from ovis.training.arguments import add_run_args, add_base_args
 from ovis.training.evaluation import analyse_gradients_and_log, evaluation
 from ovis.training.initialization import init_model, init_neural_baseline, init_main_estimator, init_test_estimator, \
     init_optimizers, init_logging_directory
@@ -31,7 +32,7 @@ from ovis.utils.utils import notqdm, ManualSeed
 
 def run():
     """
-    Learn the parameters of the specified model and evaluate. Evaluation is performed every `opt.eval_freq` epochs
+    Learn the parameters of the specified model and evaluate. Evaluation is performed every `opt['eval_freq']` epochs
     on the test set using the `estimator_test`. At each evaluation step is also performed:
         * gradient analysis
         * measure the number of active units
@@ -45,13 +46,16 @@ def run():
     Each session is identified by a unique deterministic `run_id`. Starting a novel session that matches an existing
     `run_id` will result in loading the last checkpoint from the existing session.
     """
-    opt = get_run_parser().parse_args()
+    parser = argparse.ArgumentParser()
+    add_base_args(parser, exp='sandbox')
+    add_run_args(parser)
+    opt = vars(parser.parse_args())
 
     # deterministic backend and silent mode
-    if opt.deterministic:
+    if opt['deterministic']:
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
-    if opt.silent:
+    if opt['silent']:
         tqdm = notqdm
     else:
         from tqdm import tqdm
@@ -64,9 +68,8 @@ def run():
 
     # save run configuration to the log directory
     with open(os.path.join(logdir, 'config.json'), 'w') as fp:
-        config = vars(opt)
-        config['hash'] = hash
-        fp.write(json.dumps(config, default=lambda x: str(x), indent=4))
+        opt['hash'] = hash
+        fp.write(json.dumps(opt, default=lambda x: str(x), indent=4))
 
     # wrap the training loop inside with `Success` to write the outcome of the run to a file
     with Success(logdir=logdir):
@@ -84,20 +87,20 @@ def run():
         print(logging_sep("="))
 
         # setting the random seed
-        torch.manual_seed(opt.seed)
-        np.random.seed(opt.seed)
+        torch.manual_seed(opt['seed'])
+        np.random.seed(opt['seed'])
 
-        # get datasets (ony use training sets if `opt.only_train_set == True`)
+        # get datasets (ony use training sets if `opt['only_train_set'] == True`)
         dset_train, dset_valid, dset_test = get_datasets(opt)
         base_logger.info(f"Dataset size: train = {len(dset_train)}, valid = {len(dset_valid)}, test = {len(dset_test)}")
 
         # training dataloader
-        loader_train = DataLoader(dset_train, batch_size=opt.bs, shuffle=True, num_workers=opt.workers, pin_memory=True)
+        loader_train = DataLoader(dset_train, batch_size=opt['bs'], shuffle=True, num_workers=opt['workers'], pin_memory=True)
 
         # evaluation loaders
-        loader_eval_train = DataLoader(dset_train, batch_size=opt.test_bs, shuffle=True, num_workers=1,
+        loader_eval_train = DataLoader(dset_train, batch_size=opt['test_bs'], shuffle=True, num_workers=1,
                                        pin_memory=False)
-        loader_eval_test = DataLoader(dset_test, batch_size=opt.test_bs, shuffle=True, num_workers=1, pin_memory=False)
+        loader_eval_test = DataLoader(dset_test, batch_size=opt['test_bs'], shuffle=True, num_workers=1, pin_memory=False)
 
         # get a sample to evaluate the input shape
         x = dset_train[0]
@@ -118,10 +121,10 @@ def run():
         print(logging_sep("="))
 
         # define a neural baseline that can be used for the different estimators
-        baseline = init_neural_baseline(opt, x) if '-baseline' in opt.estimator else None
+        baseline = init_neural_baseline(opt, x) if '-baseline' in opt['estimator'] else None
 
         # training estimator
-        estimator, config = init_main_estimator(opt, baseline)
+        estimator, config = init_main_estimator(opt, baseline=baseline)
 
         # test estimator (it is important that all models are evaluated using the same evaluator)
         estimator_test, estimator_test_ess, config_test = init_test_estimator(opt)
@@ -134,10 +137,10 @@ def run():
         optimizers = init_optimizers(opt, model, estimator)
 
         # Rényi warmup
-        if opt.warmup > 0:
-            scheduler = Schedule(opt.warmup, opt.alpha_init, opt.alpha, offset=opt.warmup_offset, mode=opt.warmup_mode)
+        if opt['warmup'] > 0:
+            scheduler = Schedule(opt['warmup'], opt['alpha_init'], opt['alpha'], offset=opt['warmup_offset'], mode=opt['warmup_mode'])
         else:
-            scheduler = lambda x: opt.alpha
+            scheduler = lambda x: opt['alpha']
 
         # tensorboard writers used to log the summary
         writer_train = SummaryWriter(os.path.join(logdir, 'train'))
@@ -145,18 +148,18 @@ def run():
 
         # define the run length based on either the number of epochs of number of steps
         epochs, iter_per_epoch = get_number_of_epochs(opt, loader_train)
-        base_logger.info(f"Dataset = {opt.dataset}: running for {epochs} epochs, {iter_per_epoch * epochs} steps, "
-                         f"{iter_per_epoch} steps / epoch, {epochs // opt.eval_freq} eval. steps\n{logging_sep()}")
+        base_logger.info(f"Dataset = {opt['dataset']}: running for {epochs} epochs, {iter_per_epoch * epochs} steps, "
+                         f"{iter_per_epoch} steps / epoch, {epochs // opt['eval_freq']} eval. steps\n{logging_sep()}")
 
         # sample model at initialization
-        sample_prior_and_save_img("prior-sample", model, logdir, global_step=0, writer=writer_test, seed=opt.seed)
+        sample_prior_and_save_img("prior-sample", model, logdir, global_step=0, writer=writer_test, seed=opt['seed'])
 
         # define the session and restore checkpoint if available
         session = Session(run_id, logdir, model, estimator, optimizers)
         session.restore_if_available()
         if session.epoch > 0:
             print(f"Restoring Session from epoch = {session.epoch} (best test "
-                  f"L_{opt.iw_test} = {session.best_elbo[0]:.3f} at step {session.best_elbo[1]}, "
+                  f"L_{opt['iw_test']} = {session.best_elbo[0]:.3f} at step {session.best_elbo[1]}, "
                   f"epoch = {session.best_elbo[2]})\n{logging_sep()}")
 
         # run
@@ -173,20 +176,20 @@ def run():
                 session.global_step += 1
 
             """reduce learning rate"""
-            if opt.lr_reduce_steps > 0:
-                reduce_lr(optimizers, session.epoch, epochs, opt.lr_reduce_steps, base_logger)
+            if opt['lr_reduce_steps'] > 0:
+                reduce_lr(optimizers, session.epoch, epochs, opt['lr_reduce_steps'], base_logger)
 
-            if session.epoch % opt.eval_freq == 0:
+            if session.epoch % opt['eval_freq'] == 0:
                 parameters_diagnostics = {'parameters': {'beta': config.get('beta', 1.), 'alpha': alpha}}
 
                 """Active Units Analysis"""
-                if opt.mc_au_analysis:
-                    summary = Diagnostic(latent_activations(model, loader_eval_train, opt.mc_au_analysis,
-                                                            max_samples=opt.npoints_au_analysis))
+                if opt['mc_au_analysis']:
+                    summary = Diagnostic(latent_activations(model, loader_eval_train, opt['mc_au_analysis'],
+                                                            max_samples=opt['npoints_au_analysis']))
                     summary.log(writer_train, session.global_step)
 
                 """Analyse Gradients"""
-                if opt.grad_samples > 0:
+                if opt['grad_samples'] > 0:
                     print(logging_sep())
                     analyse_gradients_and_log(opt, session.global_step, writer_train, train_logger, loader_train,
                                               model, estimator, config, exp_id, tqdm=tqdm)
@@ -196,14 +199,14 @@ def run():
                                                device=device, ref_summary=None, max_eval=1000, tqdm=tqdm)
 
                 """Eval on the train set and logging"""
-                if opt.only_train_set:
+                if opt['only_train_set']:
                     # if the test evaluation is performed on the test set, keep the summary from the evaluation
                     summary_train = summary_train_ess
                 else:
-                    # seed evaluation such that the subset of `opt.max_eval` data points remains the same
-                    with ManualSeed(seed=opt.seed):
+                    # seed evaluation such that the subset of `opt['max_eval']` data points remains the same
+                    with ManualSeed(seed=opt['seed']):
                         summary_train = evaluation(model, estimator_test, config_test, loader_eval_train, exp_id,
-                                                   device=device, ref_summary=None, max_eval=opt.max_eval, tqdm=tqdm)
+                                                   device=device, ref_summary=None, max_eval=opt['max_eval'], tqdm=tqdm)
 
                     summary_train['loss']['ess'] = summary_train_ess['loss']['ess']
 
@@ -215,7 +218,7 @@ def run():
 
                 """evaluation on the test set and logging"""
                 summary_test = evaluation(model, estimator_test, config_test, loader_eval_test, exp_id, device=device,
-                                          ref_summary=summary_train, max_eval=opt.max_eval, tqdm=tqdm)
+                                          ref_summary=summary_train, max_eval=opt['max_eval'], tqdm=tqdm)
 
                 # update best elbo and save model
                 session.best_elbo = save_model_and_update_best_elbo(model, summary_test, session.global_step,
@@ -229,7 +232,7 @@ def run():
                             exp_id=exp_id)
 
                 """sample model"""
-                with ManualSeed(seed=opt.seed):
+                with ManualSeed(seed=opt['seed']):
                     sample_prior_and_save_img("prior-sample", model, logdir, global_step=session.global_step,
                                               writer=writer_test)
 
@@ -239,13 +242,13 @@ def run():
 
         """final testing given the parameters from the best test score"""
         print(f"{logging_sep()}\nFinal validation with best test "
-              f"L_{opt.iw_test} = {session.best_elbo[0]:.3f} at step {session.best_elbo[1]}, epoch = {session.best_elbo[2]}\n{logging_sep()}")
+              f"L_{opt['iw_test']} = {session.best_elbo[0]:.3f} at step {session.best_elbo[1]}, epoch = {session.best_elbo[2]}\n{logging_sep()}")
 
         writer_valid = SummaryWriter(os.path.join(logdir, 'valid'))
-        loader_valid = DataLoader(dset_valid, batch_size=opt.test_bs, shuffle=True, num_workers=1)
+        loader_valid = DataLoader(dset_valid, batch_size=opt['test_bs'], shuffle=True, num_workers=1)
         config_valid = {'tau': 0, 'zgrads': False}
         Estimator_valid = VariationalInference
-        estimator_valid = Estimator_valid(mc=1, iw=opt.iw_valid, sequential_computation=opt.sequential_computation,
+        estimator_valid = Estimator_valid(mc=1, iw=opt['iw_valid'], sequential_computation=opt['sequential_computation'],
                                           **config_valid)
 
         # load best model and run over the test set
@@ -263,7 +266,7 @@ def run():
         log_summary(summary, global_step, epoch, logger=valid_logger, best=None, writer=writer_valid, exp_id=exp_id)
 
         # prior sampling
-        with ManualSeed(seed=opt.seed):
+        with ManualSeed(seed=opt['seed']):
             sample_prior_and_save_img("prior-sample", model, logdir, global_step=session.global_step,
                                       writer=writer_test)
 

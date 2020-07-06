@@ -13,8 +13,8 @@ from ovis.reporting.utils import get_outliers_boundaries
 def plot_statistics(df, opt, logdir):
     set_matplotlib_style()
 
-    param_name = {'b': "\mathbf{b}", 'tensor:b': "b", 'tensor:qlogits': "\phi"}.get(opt.key_filter, "\theta")
-    if opt.draw_individual:
+    param_name = {'b': "\mathbf{b}", 'tensor:b': "b", 'tensor:qlogits': "\phi"}.get(opt['key_filter'], "\theta")
+    if opt['draw_individual']:
         metrics = ['individual-snr', 'grads-dsnr', 'individual-var', 'individual-magnitude']
     else:
         metrics = ['grads-snr', 'grads-dsnr', 'grads-variance', 'grads-magnitude']

@@ -7,8 +7,8 @@ from typing import Iterable, Optional
 import torch
 from booster.utils import logging_sep
 
-BASE_ARGS_EXCEPTIONS = ['root', 'data_root', 'workers', 'silent', 'sequential_computation',
-                        'epochs', 'nsteps', 'valid_bs', 'test_bs']
+BASE_ARGS_EXCEPTIONS = ['root', 'data_root', 'exp', 'workers', 'silent', 'sequential_computation',
+                        'epochs', 'nsteps', 'valid_bs', 'test_bs', 'load']
 
 
 class ManualSeed():
