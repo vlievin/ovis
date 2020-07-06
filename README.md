@@ -1,4 +1,4 @@
-![Optimal Variance Control of the Score Function Gradient Estimator for Importance Weighted Bounds (a.k.a **OVIS**) credits: Thomas Jarrand](.images/ovis-banner.png)
+![Optimal Variance Control of the Score Function Gradient Estimator for Importance Weighted Bounds (a.k.a **OVIS**) credits: Thomas Jarrand](.assets/ovis-banner.png)
 
 Code for the *Optimal Variance Control of the Score Function Gradient Estimator for Importance Weighted Bounds* (a.k.a **OVIS** : Optimal Variance -- Importance Sampling).
 
@@ -12,8 +12,6 @@ conda activate ovis
 # use the instructions from https://pytorch.org/
 conda install pytorch=1.5.1 torchvision cudatoolkit=10.2 -c pytorch 
 pip install -r requirements.txt
-# potentially install Latex using Conda
-conda install -c conda-forge texlive-core
 ```
 
 ## Experiments
@@ -24,6 +22,9 @@ subprocesses and resuming experiments. The scripts `dbutils.py` provides a few u
 the experiment database.  `report.py` allows parsing an experiment directory and producing figures.
 
 ### Asymptotic Variance
+
+![Asymptotic Variance](.assets/asymptotic-gradients.png)
+![Distribution of the Asymptotic Gradients](.assets/asymptotic-gradients-dist.png)
 
 Anaysis of the gradients for a simple Gaussian model. Figure 1:
 
@@ -37,6 +38,8 @@ open reports/asymptotic-variance
 ```
 
 ### Gaussian Mixture Model
+
+![Training Summaries vs. K](.assets/gmm.png)
 
 Train a simple Gaussian Mixture model. Figure 2:
 
@@ -62,6 +65,7 @@ Run all experiments:
 # run the experiment
 python manager.py --exp sigmoid-belief-network
 ```
+![Training curves](.assets/figure3_left.png)
 
 Figure 3 (left, VIMCO + OVIS-IW):
 
@@ -82,6 +86,8 @@ open reports/sigmoid-belief-network-inc=iwbound
 
 Figure 3 (right, TVO + OVIS-IWR):
 
+![Training curves](.assets/figure3_right.png)
+
 ```bash
 # gather the data
 python report.py --exp=sigmoid-belief-network  \
@@ -99,6 +105,8 @@ open reports/sigmoid-belief-network-inc=iwrbound
 
 ### Gaussian VAE
 
+![Training summary vs. K](.assets/gaussian-vae.png)
+
 Train a 1-layer Gaussian VAE. Figure 4:
 
 ```bash
@@ -110,6 +118,17 @@ python report.py --exp=gaussian-vae  \
     --pivot_metrics=max:train:loss/L_k,last:train:loss/kl_q_p,mean:train:loss/ess
 # access the results
 open reports/gaussian-vae
+```
+
+### Computational Efficiency
+
+![Memory usage and epoch time](.assets/efficiency.png)
+
+Measure the memory usage and running time
+
+```bash
+# produce the figures
+python measure_efficiency.py
 ```
 
 ## Using and Extending OVIS

@@ -1,9 +1,9 @@
 import argparse
 
 
-def add_base_args(parser: argparse.PARSER, exp='sandbox'):
+def add_base_args(parser: argparse.PARSER, exp='sandbox', dataset='shapes'):
     """base experiments arguments use across all exps"""
-    parser.add_argument('--dataset', default='shapes',
+    parser.add_argument('--dataset', default=dataset,
                         help='dataset [shapes | binmnist | omniglot | fashion | gmm-toy | gaussian-toy]')
     parser.add_argument('--mini', action='store_true',
                         help='use a down-sampled version of the dataset')

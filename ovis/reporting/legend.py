@@ -27,7 +27,7 @@ class Legend():
         self.legend_infos = [(copy(handle), label) for handle, label in self.legend_infos]
         [handle.set_linestyle("-") for handle, label in self.legend_infos]
 
-    def draw(self, group=False, alpha=1, insert_labels=False):
+    def draw(self, group=False, alpha=1, **kwargs):
         legend_infos = {label: handle for handle, label in self.legend_infos}
         if len(legend_infos) == 0:
             return
@@ -124,9 +124,15 @@ class Legend():
         self.figure.subplots_adjust(top=1 - (legend_height + margin) / height)
 
         # draw the legend
-        legend = self.figure.legend(handles=all_handles, labels=all_labels, ncol=ncol, loc='lower center',
-                                    bbox_to_anchor=(0, 1 - (legend_height) / height, 1, 1), fancybox=False,
-                                    shadow=False, fontsize='medium' if ncol < 8 else 'x-small')
+        legend = self.figure.legend(handles=all_handles,
+                                    labels=all_labels,
+                                    ncol=ncol,
+                                    loc='lower center',
+                                    bbox_to_anchor=(0, 1 - (legend_height) / height, 1, 1),
+                                    fancybox=False,
+                                    shadow=False,
+                                    fontsize=kwargs.pop('fontsize', 'medium' if ncol < 8 else 'x-small'),
+                                    **kwargs)
 
         if alpha is not None:
             for l in legend.get_lines():

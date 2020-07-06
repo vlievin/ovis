@@ -36,8 +36,8 @@ from ovis.utils.utils import Header
 
 def main():
     parser = argparse.ArgumentParser()
-    add_base_args(parser, exp="efficiency")
-    add_iw_sweep_args(parser)
+    add_base_args(parser, exp="efficiency", dataset="binmnist")
+    add_iw_sweep_args(parser, min=5, max=1e3, steps=6)
     add_model_architecture_args(parser)
     parser.add_argument('--load', default='',
                         help='existing experiment path to load from')
@@ -48,7 +48,7 @@ def main():
 
     # estimators
     parser.add_argument('--estimators',
-                        default='reinforce,vimco-geometric,tvo-part2-config1,ovis-S1,ovis-S10,ovis-gamma1',
+                        default='ovis-S10,ovis-S1,vimco-arithmetic,ovis-gamma1,reinforce,tvo-part2-config1',
                         help='comma separated list of estimators')
     parser.add_argument('--bs', default=24, type=int,
                         help='batch size')
@@ -206,12 +206,12 @@ def main():
             legend.update(ax)
 
         update_labels(axes, METRIC_DISPLAY_NAME)
-        legend.draw(group=True)
+        legend.draw(group=True, fontsize='x-small')
         plt.savefig(os.path.join(logdir, "efficiency.png"))
         plt.close()
 
         with Header(f"Data [Logging Directory: {os.path.abspath(logdir)} ]"):
-            print(data.pivot_table(values=['max_memory', 'elapsed_time'], index=['estimator', 'iw'], aggfunc=np.mean))
+            print(data.pivot_table(values=['max_memory', 'elapsed_time'], index=['iw', 'estimator'], aggfunc=np.mean))
 
 
 if __name__ == '__main__':

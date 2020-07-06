@@ -163,3 +163,6 @@ ax.yaxis.set_major_locator(loc)
 plt.ylim([-92.5, -86.2])
 plt.savefig(os.path.join(root, f'figure3_{opt.figure}.png'), bbox_inches='tight')
 plt.close()
+
+
+print(f"Output = {os.path.abspath(root)}")
