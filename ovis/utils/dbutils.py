@@ -2,11 +2,12 @@ import json
 import os
 from collections import defaultdict
 from functools import partial
+import argparse
 
 from booster.utils import logging_sep
 from tinydb import TinyDB, Query
 
-from ovis.training.arguments import add_run_args
+from ovis.training.arguments import *
 from ovis.training.utils import get_hash_from_opt
 from ovis.utils.filelock import FileLock
 from ovis.utils.success import Success
@@ -106,7 +107,7 @@ def delete_experiments(logdir, pattern):
 
 
 def get_hash_from_experiments(parser, record):
-    db_opt = parser.parse_args(record['arg'].split(' '))
+    db_opt = vars(parser.parse_args(record['arg'].split(' ')))
     return get_hash_from_opt(db_opt)
 
 
@@ -129,7 +130,12 @@ def requeue_experiments(logdir, level=1):
 
     with FileLockedTinyDB(logdir) as db:
         query = db.query()
-        parser = add_run_args()
+        parser = argparse.ArgumentParser()
+        add_base_args(parser, exp='sandbox')
+        add_run_args(parser)
+        add_model_architecture_args(parser)
+        add_active_units_args(parser)
+        add_gradient_analysis_args(parser)
         get_hash = partial(get_hash_from_experiments, parser)
         status = defaultdict(lambda: 0)
         requed_status = defaultdict(lambda: 0)
