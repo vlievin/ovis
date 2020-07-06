@@ -29,8 +29,66 @@ def add_base_args(parser: argparse.PARSER, exp='sandbox'):
                         help='compute each iw sample sequentially during validation')
 
 
+def add_iw_sweep_args(parser: argparse.PARSER, min=5, max=1e2, steps=3):
+    """Arguments defining a sweep of the parameter `iw`"""
+    parser.add_argument('--iw_min', default=min, type=float,
+                        help='min umber of Importance-Weighted samples')
+    parser.add_argument('--iw_max', default=max, type=float,
+                        help='max number of Importance-Weighted samples')
+    parser.add_argument('--iw_steps', default=steps, type=int,
+                        help='number of Importance-Weighted samples samples')
+
+
+def add_active_units_args(parser: argparse.PARSER):
+    """Arguments for the `active units` analysis"""
+    parser.add_argument('--mc_au_analysis', default=0, type=int,
+                        help='number of Monte-Carlo samples used to estimate the number of active units (skip if zero)')
+    parser.add_argument('--npoints_au_analysis', default=1000, type=int,
+                        help='number of data points x')
+
+
+def add_gradient_analysis_args(parser: argparse.PARSER):
+    """Arguments for the gradient analysis"""
+    parser.add_argument('--grad_bs', default=10, type=int,
+                        help='gradients analysis batch size')
+    parser.add_argument('--grad_samples', default=100, type=int,
+                        help='number of MC samples used to evaluate the Variance and SNR of the gradients.')
+    parser.add_argument('--grad_key', default='inference_network', type=str,
+                        help='key matching the name of the parameters used for the gradients analysis')
+    parser.add_argument('--grad_epsilon', default=1e-15, type=float,
+                        help='Minimum variance value')
+
+
+def add_model_architecture_args(parser: argparse.PARSER):
+    """Arguments defining the model architecture"""
+    parser.add_argument('--model', default='vae',
+                        help='[vae, conv-vae, gmm, gaussian-toy, sbm, gaussian-vae]')
+    parser.add_argument('--hdim', default=64, type=int,
+                        help='number of hidden units for each layer')
+    parser.add_argument('--nlayers', default=3, type=int,
+                        help='number of hidden layers in each MLP')
+    parser.add_argument('--depth', default=3, type=int,
+                        help='number of stochastic layers when using hierarchical models')
+    parser.add_argument('--b_nlayers', default=1, type=int,
+                        help='number of MLP hidden layers for the neural baseline')
+    parser.add_argument('--normalization', default='none', type=str,
+                        help='normalization layer for the VAE model [none | layernorm | batchnorm]')
+    parser.add_argument('--dropout', default=0, type=float,
+                        help='dropout value')
+    parser.add_argument('--prior', default='normal',
+                        help='prior for the VAE model [normal, categorical, bernoulli]')
+    parser.add_argument('--N', default=32, type=int,
+                        help='number of latent variables for each stochastic layer')
+    parser.add_argument('--K', default=8, type=int,
+                        help='number of categories when using a categorical prior')
+    parser.add_argument('--kdim', default=0, type=int,
+                        help='dimension of the keys model for categorical prior')
+    parser.add_argument('--learn_prior', action='store_true',
+                        help='learn the prior parameters (VAE model)')
+
+
 def add_run_args(parser: argparse.PARSER):
-    """parse the arguments for the script `run.py`"""
+    """parse the remaining arguments for the script `run.py`"""
 
     # epochs, batch size, MC samples, lr
     parser.add_argument('--epochs', default=-1, type=int,
@@ -56,7 +114,7 @@ def add_run_args(parser: argparse.PARSER):
     parser.add_argument('--only_train_set', action='store_true',
                         help='only use the training dataset: useful to isolate the optimization behaviour.')
 
-    # estimator
+    # estimator & warmup
     parser.add_argument('--estimator', default='reinforce',
                         help='see estimators.config for the full list [pathwise-iwae, reinforce, reinforce-baseline, '
                              'ovis-S*, ovis-gamma*, tvo, vimco-arithmetic]')
@@ -85,45 +143,3 @@ def add_run_args(parser: argparse.PARSER):
     parser.add_argument('--iw_valid', default=100, type=int,
                         help='number of Importance-Weighted samples for validation')
     parser.add_argument('--iw_test', default=1000, type=int, help='number of Importance-Weighted samples for testing')
-
-    # active units analysis
-    parser.add_argument('--mc_au_analysis', default=0, type=int,
-                        help='number of Monte-Carlo samples used to estimate the number of active units (skip if zero)')
-    parser.add_argument('--npoints_au_analysis', default=1000, type=int,
-                        help='number of data points x')
-
-    # gradients analysis
-    parser.add_argument('--grad_bs', default=10, type=int,
-                        help='gradients analysis batch size')
-    parser.add_argument('--grad_samples', default=100, type=int,
-                        help='number of MC samples used to evaluate the Variance and SNR of the gradients.')
-    parser.add_argument('--grad_key', default='inference_network', type=str,
-                        help='key matching the name of the parameters used for the gradients analysis')
-    parser.add_argument('--grad_epsilon', default=1e-15, type=float,
-                        help='Minimum variance value')
-
-    # model architecture
-    parser.add_argument('--model', default='vae',
-                        help='[vae, conv-vae, gmm, gaussian-toy, sbm, gaussian-vae]')
-    parser.add_argument('--hdim', default=64, type=int,
-                        help='number of hidden units for each layer')
-    parser.add_argument('--nlayers', default=3, type=int,
-                        help='number of hidden layers in each MLP')
-    parser.add_argument('--depth', default=3, type=int,
-                        help='number of stochastic layers when using hierarchical models')
-    parser.add_argument('--b_nlayers', default=1, type=int,
-                        help='number of MLP hidden layers for the neural baseline')
-    parser.add_argument('--normalization', default='none', type=str,
-                        help='normalization layer for the VAE model [none | layernorm | batchnorm]')
-    parser.add_argument('--dropout', default=0, type=float,
-                        help='dropout value')
-    parser.add_argument('--prior', default='normal',
-                        help='prior for the VAE model [normal, categorical, bernoulli]')
-    parser.add_argument('--N', default=32, type=int,
-                        help='number of latent variables for each stochastic layer')
-    parser.add_argument('--K', default=8, type=int,
-                        help='number of categories when using a categorical prior')
-    parser.add_argument('--kdim', default=0, type=int,
-                        help='dimension of the keys model for categorical prior')
-    parser.add_argument('--learn_prior', action='store_true',
-                        help='learn the prior parameters (VAE model)')

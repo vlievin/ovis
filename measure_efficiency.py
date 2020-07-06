@@ -24,7 +24,7 @@ from ovis.reporting.parsing import format_estimator_name
 from ovis.reporting.plotting import PLOT_WIDTH, PLOT_HEIGHT, ESTIMATOR_STYLE, update_labels
 from ovis.reporting.style import DPI, MARKERS, METRIC_DISPLAY_NAME, set_matplotlib_style
 from ovis.reporting.utils import sort_estimator_keys
-from ovis.training.arguments import add_base_args
+from ovis.training.arguments import add_base_args, add_iw_sweep_args, add_model_architecture_args
 from ovis.training.initialization import init_logging_directory
 from ovis.training.initialization import init_model
 from ovis.training.logging import get_loggers
@@ -37,53 +37,21 @@ from ovis.utils.utils import Header
 def main():
     parser = argparse.ArgumentParser()
     add_base_args(parser, exp="efficiency")
+    add_iw_sweep_args(parser)
+    add_model_architecture_args(parser)
     parser.add_argument('--load', default='',
                         help='existing experiment path to load from')
-    parser.add_argument('--bs', default=24, type=int,
-                        help='batch size')
-
-    # estimator
-    parser.add_argument('--estimators',
-                        default='reinforce,vimco-geometric,tvo-part2-config1,ovis-S1,ovis-S10,ovis-gamma1',
-                        help='comma separated list of estimators')
-
-    # number of particles and number of runs
     parser.add_argument('--num_runs', default=3, type=int,
                         help='number of runs')
     parser.add_argument('--max_epoch_length', default=1e9, type=int,
                         help='maximum number of epochs per run')
-    parser.add_argument('--iw_min', default=5, type=int,
-                        help='minimum number of particles')
-    parser.add_argument('--iw_max', default=3000, type=int,
-                        help='maximum number of particles')
-    parser.add_argument('--iw_steps', default=5, type=int,
-                        help='number of intermediate particles values')
 
-    # model architecture
-    parser.add_argument('--model', default='sbm',
-                        help='[vae, conv-vae, gmm, gaussian-toy, sbm, gaussian-vae]')
-    parser.add_argument('--hdim', default=64, type=int,
-                        help='number of hidden units for each layer')
-    parser.add_argument('--nlayers', default=0, type=int,
-                        help='number of hidden layers in each MLP')
-    parser.add_argument('--depth', default=3, type=int,
-                        help='number of stochastic layers when using hierarchical models')
-    parser.add_argument('--b_nlayers', default=1, type=int,
-                        help='number of MLP hidden layers for the neural baseline')
-    parser.add_argument('--norm', default='none', type=str,
-                        help='normalization layer for the VAE model [none | layernorm | batchnorm]')
-    parser.add_argument('--dropout', default=0, type=float,
-                        help='dropout value')
-    parser.add_argument('--prior', default='normal',
-                        help='prior for the VAE model [normal, categorical, bernoulli]')
-    parser.add_argument('--N', default=200, type=int,
-                        help='number of latent variables for each stochastic layer')
-    parser.add_argument('--K', default=8, type=int,
-                        help='number of categories when using a categorical prior')
-    parser.add_argument('--kdim', default=0, type=int,
-                        help='dimension of the keys model for categorical prior')
-    parser.add_argument('--learn_prior', action='store_true',
-                        help='learn the prior parameters (VAE model)')
+    # estimators
+    parser.add_argument('--estimators',
+                        default='reinforce,vimco-geometric,tvo-part2-config1,ovis-S1,ovis-S10,ovis-gamma1',
+                        help='comma separated list of estimators')
+    parser.add_argument('--bs', default=24, type=int,
+                        help='batch size')
 
     opt = vars(parser.parse_args())
 

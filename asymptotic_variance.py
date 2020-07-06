@@ -11,7 +11,7 @@ from ovis.models import GaussianToyVAE
 from ovis.reporting.asymptotic import *
 from ovis.reporting.parsing import format_estimator_name
 from ovis.reporting.style import *
-from ovis.training.arguments import add_base_args
+from ovis.training.arguments import add_base_args, add_iw_sweep_args
 from ovis.training.evaluation import evaluate_minibatch_and_log
 from ovis.training.initialization import init_logging_directory
 from ovis.training.logging import get_loggers, log_grads_data
@@ -28,18 +28,13 @@ def init_estimator(estimator_id, iw):
 
 parser = argparse.ArgumentParser()
 add_base_args(parser, exp="asymptotic-variance")
+add_iw_sweep_args(parser)
 
 # estimator, perturbation level and number of particles
 parser.add_argument('--estimators', default='ovis-gamma0, pathwise-iwae',
                     help='accepts comma separated list')
 parser.add_argument('--epsilon', default='0.01', type=str,
                     help='scale of the noise added to the optimal parameters [accepts comma separated list]')
-parser.add_argument('--iw_min', default=5, type=float,
-                    help='min umber of Importance-Weighted samples')
-parser.add_argument('--iw_max', default=1e2, type=float,
-                    help='max number of Importance-Weighted samples')
-parser.add_argument('--iw_steps', default=3, type=int,
-                    help='number of Importance-Weighted samples samples')
 parser.add_argument('--iw_valid', default=1000, type=int,
                     help='number of iw samples for testing')
 

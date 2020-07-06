@@ -16,7 +16,7 @@ from torch.utils.tensorboard import SummaryWriter
 from ovis import get_datasets
 from ovis.analysis.active_units import latent_activations
 from ovis.estimators import VariationalInference
-from ovis.training.arguments import add_run_args, add_base_args
+from ovis.training.arguments import *
 from ovis.training.evaluation import analyse_gradients_and_log, evaluation
 from ovis.training.initialization import init_model, init_neural_baseline, init_main_estimator, init_test_estimator, \
     init_optimizers, init_logging_directory
@@ -49,6 +49,9 @@ def run():
     parser = argparse.ArgumentParser()
     add_base_args(parser, exp='sandbox')
     add_run_args(parser)
+    add_model_architecture_args(parser)
+    add_active_units_args(parser)
+    add_gradient_analysis_args(parser)
     opt = vars(parser.parse_args())
 
     # deterministic backend and silent mode
