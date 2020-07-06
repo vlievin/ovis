@@ -165,9 +165,9 @@ def main():
         # plotting
         set_matplotlib_style()
         keys = ['max_memory', 'elapsed_time']
-        legend_height = 0.3
+        legend_height = 0.5
         fig, axes = plt.subplots(nrows=1, ncols=len(keys),
-                                 figsize=(3 / 2 * PLOT_WIDTH, 1 * PLOT_HEIGHT * (1 + legend_height)),
+                                 figsize=(3 * PLOT_WIDTH, 1 * PLOT_HEIGHT * (1 + legend_height)),
                                  dpi=DPI)
         hue_order = list(data['estimator'].unique())
         sort_estimator_keys(hue_order)
@@ -206,7 +206,7 @@ def main():
             legend.update(ax)
 
         update_labels(axes, METRIC_DISPLAY_NAME)
-        legend.draw(group=True, fontsize='x-small')
+        legend.draw(group=True)
         plt.savefig(os.path.join(logdir, "efficiency.png"))
         plt.close()
 
