@@ -1,3 +1,6 @@
+import colorsys
+
+import matplotlib.colors as mplcol
 import numpy as np
 
 from .style import ESTIMATOR_ORDER
@@ -144,3 +147,19 @@ def update_labels(axes, metric_dict, agg_fns=dict()):
                     label = f"{agg_label}{label}"
 
             ax.set_ylabel(label)
+
+
+def lighten(color, prop):
+    # Get rgb tuple rep
+    rgb = mplcol.colorConverter.to_rgb(color)
+
+    # Convert to hls
+    h, l, s = colorsys.rgb_to_hls(*rgb)
+
+    # Desaturate the saturation channel
+    l *= prop
+
+    # Convert back to rgb
+    new_color = colorsys.hls_to_rgb(h, l, s)
+
+    return new_color

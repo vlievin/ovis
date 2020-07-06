@@ -8,7 +8,7 @@ from matplotlib.lines import Line2D
 
 from ovis.reporting.style import *
 from ovis.reporting.style import set_matplotlib_style
-from ovis.reporting.utils import smooth, update_labels
+from ovis.reporting.utils import smooth, update_labels, lighten
 from ovis.utils.utils import Header
 
 parser = argparse.ArgumentParser()
@@ -23,6 +23,7 @@ parser.add_argument('--metric', default='train:loss/L_k', help='metric to displa
 
 # plot config
 parser.add_argument('--desaturate', default=0.9, type=float, help='desaturate hue')
+parser.add_argument('--lighten', default=1.2, type=float, help='lighten hue')
 parser.add_argument('--alpha', default=0.8, type=float, help='opacity')
 parser.add_argument('--linewidth', default=1.2, type=float, help='line width')
 opt = parser.parse_args()
@@ -56,7 +57,7 @@ ax = plt.gca()
 hue_order = list(filtered_data['estimator'].unique())
 palette = [ESTIMATOR_STYLE[h_key]['color'] for h_key in hue_order]
 palette = [sns.desaturate(c, opt.desaturate) for c in palette]
-palette = [sns.desaturate(c, opt.desaturate) for c in palette]
+palette = [lighten(c, opt.lighten) for c in palette]
 
 # linestyles & markers
 style_order = list(sorted(filtered_data[opt.style_key].unique()))
