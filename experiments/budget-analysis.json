@@ -1,0 +1,39 @@
+{
+  "description": "Test the tradeoff with using samples to compute the bound or to compute the control variate using the Gaussian VAE.",
+  "args": [
+    "--estimator pathwise-iwae",
+    "--estimator ovis-gamma1 --alpha 0.7",
+    "--estimator ovis-S1 --alpha 0.7",
+    "--estimator ovis-S2 --alpha 0.7",
+    "--estimator ovis-S4 --alpha 0.7",
+    "--estimator ovis-S9 --alpha 0.7",
+    "--estimator ovis-S20 --alpha 0.7"
+  ],
+  "global": "--silent --deterministic --nsteps 4000000",
+  "parameters": {
+    "model":["gaussian-vae"],
+    "prior": ["normal"],
+    "N": [200],
+    "hdim" : [200],
+    "nlayers" :[2],
+    "depth" : [1],
+    "iw" : [50, 10, 5],
+    "seed":[1, 2, 3],
+    "dataset" : ["binmnist"],
+    "lr": [3e-4],
+    "lr_reduce_steps":[0],
+    "bs": [24],
+    "valid_bs": [10],
+    "test_bs": [10],
+    "grad_bs": [24],
+    "grad_samples" : [200],
+    "iw_test" : [5000],
+    "iw_valid" : [5000],
+    "eval_freq": [30],
+    "max_eval": [10000],
+    "grad_key" : ["inference_network"],
+    "workers": [2],
+    "mc_au_analysis": [1000],
+    "npoints_au_analysis": [1000]
+  }
+}
