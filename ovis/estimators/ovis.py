@@ -10,11 +10,17 @@ from .vimco import Vimco
 class OvisMonteCarlo(Vimco):
     """Sample based approximation of the Optimal control variate (eq 12)"""
 
-    def __init__(self, *args, auxiliary_samples=1, **kwargs):
-        super().__init__(*args, auxiliary_samples=auxiliary_samples, **kwargs)
+    def __init__(self, *args, auxiliary_samples=1, exclusive=False, **kwargs):
         # The `S` samples used to compute the control variate.
-        # The auxiliary samples are not use to learn the generative model, although it is straightforward to do so.
         assert auxiliary_samples > 0
+        if exclusive:
+            # Here the auxiliary samples are not use to learn the generative model.
+            super().__init__(*args, auxiliary_samples=auxiliary_samples, **kwargs)
+            self.inclusive_aux_samples = 0
+        else:
+            super().__init__(*args, auxiliary_samples=0, **kwargs)
+            self.inclusive_aux_samples = 1
+
 
     @torch.no_grad()
     def compute_control_variate(self, x: Tensor, alpha: float = 0, **data: Dict[str, Tensor]) -> Tensor:
