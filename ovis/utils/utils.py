@@ -84,6 +84,11 @@ def batch_reduce(x):
     return flatten(x).sum(1)
 
 
+def batch_average(x):
+    """return x.view(x.size(0), -1).sum(1)"""
+    return flatten(x).mean(1)
+
+
 class Header():
     def __init__(self, message):
         self.message = message

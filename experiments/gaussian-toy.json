@@ -5,9 +5,9 @@
     "--estimator tvo-S5-beta3",
     "--estimator ovis-gamma0",
     "--estimator ovis-gamma1",
-    "--estimator ovis-S1",
-    "--estimator ovis-S10",
-    "--estimator ovis-S50",
+    "--estimator ovis-S1-exclusive",
+    "--estimator ovis-S10-exclusive",
+    "--estimator ovis-S50-exclusive",
     "--estimator vimco-arithmetic",
     "--estimator vimco-geometric",
     "--estimator wake-wake"

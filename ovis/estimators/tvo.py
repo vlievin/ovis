@@ -1,5 +1,3 @@
-from booster import Diagnostic
-
 from .vi import *
 
 
@@ -39,23 +37,28 @@ class ThermoVariationalObjective(VariationalInference):
     The Thermodynamic Variational Inference https://arxiv.org/pdf/1907.00031.pdf / https://github.com/vmasrani/tvo
     """
 
-    def get_partition(self, log_beta_min, num_partition, partition_type, partition_id, device):
+    def __init__(self, **kwargs: Any):
+        assert not kwargs.get('sequential_computation',
+                              False), f"{type(self).__name__} is not Compatible with Sequential Computation"
+        super().__init__(**kwargs, reparameterization=False, detach_qlogits=False)
+
+    def get_partition(self, iw, log_beta_min, num_partition, partition_type, partition_id, device):
 
         if partition_id is not None:
             # map K to a partition accordingly to the figure 3. in the TVO paper
             if partition_id == 'config1':
                 # figure 3 in the TVO paper
-                if self.iw < 10:
+                if iw < 10:
                     beta_min = 5e-2
-                elif self.iw < 30:
+                elif iw < 30:
                     beta_min = 2e-1
                 else:
                     beta_min = 3e-1
             elif partition_id == 'config2':
                 # figure 6 in the TVO paper
-                if self.iw < 10:
+                if iw < 10:
                     beta_min = 0.01
-                elif self.iw < 30:
+                elif iw < 30:
                     beta_min = 0.02
                 else:
                     beta_min = 0.03
@@ -66,9 +69,16 @@ class ThermoVariationalObjective(VariationalInference):
 
         return build_partition(num_partition, partition_type, log_beta_min=log_beta_min, device=device)
 
-    def compute_loss(self, log_px_z: Tensor, log_pzs: List[Tensor], log_qzs: List[Tensor], integration: str = 'left',
-                     num_partition=2, partition_type='log', log_beta_min=-10, partition_id=None, **kwargs: Any) -> \
-            Dict[str, Tensor]:
+    def compute_tvo_loss(self, log_px_z: Tensor,
+                         log_pz: Tensor,
+                         log_qz: Tensor,
+                         log_wk: Tensor = None,
+                         integration: str = 'left',
+                         num_partition=2,
+                         partition_type='log',
+                         log_beta_min=-10,
+                         partition_id=None,
+                         **kwargs: Any) -> Tensor:
         """
         Computes the covariance gradient estimator for the TVO bound.
 
@@ -77,20 +87,22 @@ class ThermoVariationalObjective(VariationalInference):
          Gradient estimator, eq. 11:
          Nabla E_{pi_{beta_k]}}( f(x,z) )] = E_{pi_{beta_k]}}( Nabla f(x,z) )] + Cov( Nabla log tilde{pi}(z), f(z) )
 
-        :param log_px_z: log p(x | z) of shape [bs * mc * iw]
-        :param log_pzs: [log p(z_i | *) l=1..L], each of of shape [bs * mc * iw, N_i] (one value per stochastic layer)
-        :param log_qzs: [log q(z_i | *) l=1..L], each of of shape [bs * mc * iw, N_i] (one value per stochastic layer)
+        :param log_px_z: log p(x | z) of shape [bs, mc, iw]
+        :param log_pz: `log p(z) l=1..L]` of shape [bs, mc, iw, L]
+        :param log_qz: `log q(z|x) l=1..L]` of shape [bs, mc, iw, L]
+        :param log_wk: `log w_k` of shape [bs, mc, iw]
         :param integration: type of integral approximation (Riemann sum); left, right or trapz
         :param num_partition: partition size
         :param log_beta_min: log beta_1 in base 10
         :param partition_id: infer beta_1 based on the the number of particles K [None, config1, config2]
-        :return: dictionary with keys [tvo, *iw_data]
+        :return: loss]
         """
 
-        partition = self.get_partition(log_beta_min, num_partition, partition_type, partition_id, log_px_z.device)
-        iw_data = self.compute_iw_bound(log_px_z, log_pzs, log_qzs, detach_qlogits=False,
-                                        request=['log_px_z', 'log_pz', 'log_qz'], **kwargs)
-        log_wk, log_px_z, log_pz, log_qz = [iw_data[k] for k in ['log_wk', 'log_px_z', 'log_pz', 'log_qz']]
+        # build the partition
+        iw = log_wk.shape[2]
+        partition = self.get_partition(iw, log_beta_min, num_partition, partition_type, partition_id, log_px_z.device)
+
+        # log p(x,z)
         log_p = log_px_z + log_pz
 
         # compute log of weights w_s = p(x,z)/q(z|x) (between eq. 13 and 14)
@@ -108,10 +120,10 @@ class ThermoVariationalObjective(VariationalInference):
 
         # num_particles S for importance sampling as
         # described in subsection Expectations of Section 4
-        if self.iw == 1:
+        if iw == 1:
             correction = 1
         else:
-            correction = self.iw / (self.iw - 1)
+            correction = iw / (iw - 1)
 
         # compute covariance (eq. 12)
         # .detach() makes sure PyTorch does not differentiate f_lambda(z) term.
@@ -131,43 +143,33 @@ class ThermoVariationalObjective(VariationalInference):
             multiplier[1:] = partition[1:] - partition[:-1]
 
         # compute covariance gradient estimator (eq. 11 / appendix F)
-        tvo = torch.sum(multiplier * (cov_term + torch.sum(w_detached * log_wk.unsqueeze(-1), dim=2)), dim=2)
+        return torch.sum(multiplier * (cov_term + torch.sum(w_detached * log_wk.unsqueeze(-1), dim=2)), dim=2).mean()
 
-        for k in ['log_px_z', 'log_pz', 'log_qz']:
-            iw_data.pop(k)
-
-        return {'tvo': tvo, **iw_data}
-
-    def forward(self, model: nn.Module, x: Tensor, backward: bool = False, return_diagnostics: bool = True,
+    def forward(self,
+                model: nn.Module,
+                x: Tensor,
+                backward: bool = False,
+                return_diagnostics: bool = True,
                 **kwargs: Any) -> Tuple[
         Tensor, Diagnostic, Dict]:
-        # From VariationalInference estimator.
-        # Removed '.mean(1)'s and changed namings for TVO
 
-        if self.sequential_computation:
-            # warning: here only one `output` will be returned
-            output = self.sequential_evaluation(model, x, **kwargs)
-        else:
-            output = self.evaluate_model(model, x, **kwargs)
+        # update the `config` object with the kwargs
+        config = self.get_runtime_config(**kwargs)
 
-        log_px_z, log_pz, log_qz = [output[k] for k in ('log_px_z', 'log_pz', 'log_qz')]
-        tvo_data = self.compute_loss(log_px_z, log_pz, log_qz, **kwargs)
+        # forward pass, eval of the log probs and iw bound
+        log_probs, output = self.evaluate_model(model, x, **config)
+        iw_data = self.compute_iw_bound_with_data(**log_probs, **config)
 
-        # loss + L_K
-        loss = - tvo_data.get('tvo').mean(1)
+        # compute the TVO loss
+        loss = self.compute_tvo_loss(**log_probs, **iw_data, **config)
 
         # prepare diagnostics
         diagnostics = Diagnostic()
-
         if return_diagnostics:
-            diagnostics.update({
-                'loss': {'loss': loss,
-                         **self.base_loss_diagnostics(**tvo_data, **output)}
-            })
-
-            diagnostics.update(self.additional_diagnostics(output))
+            diagnostics = self.base_loss_diagnostics(**iw_data, **log_probs)
+            diagnostics.update(self.additional_diagnostics(**output))
 
         if backward:
-            loss.mean().backward()
+            loss.backward()
 
         return loss, diagnostics, output

@@ -1,9 +1,9 @@
 {
   "description": "Benchmarking models on the Gaussian Mixture Model from `Revisiting Reweighted Wake-Sleep",
   "args": [
-    "--estimator ovis-S1",
-    "--estimator ovis-S10",
-    "--estimator ovis-S50",
+    "--estimator ovis-S1-exclusive",
+    "--estimator ovis-S10-exclusive",
+    "--estimator ovis-S50-exclusive",
     "--estimator ovis-gamma1",
     "--estimator ovis-gamma0",
     "--estimator vimco-arithmetic",

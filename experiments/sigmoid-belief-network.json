@@ -3,15 +3,15 @@
   "args": [
     "--estimator tvo-part2-config1 --id iwrbound",
     "--estimator ovis-gamma1 --alpha_init 0.99 --warmup 1000000 --warmup_mode log --id iwrbound",
-    "--estimator ovis-S1 --alpha_init 0.99 --warmup 1000000 --warmup_mode log --id iwrbound",
-    "--estimator ovis-S10 --alpha_init 0.99 --warmup 1000000 --warmup_mode log --id iwrbound",
-    "--estimator ovis-S50 --alpha_init 0.99 --warmup 1000000 --warmup_mode log --id iwrbound",
+    "--estimator ovis-S1-exclusive --alpha_init 0.99 --warmup 1000000 --warmup_mode log --id iwrbound",
+    "--estimator ovis-S10-exclusive --alpha_init 0.99 --warmup 1000000 --warmup_mode log --id iwrbound",
+    "--estimator ovis-S50-exclusive --alpha_init 0.99 --warmup 1000000 --warmup_mode log --id iwrbound",
     "--estimator vimco-arithmetic --id iwbound",
     "--estimator ovis-gamma0 --id iwbound",
     "--estimator ovis-gamma1 --id iwbound",
-    "--estimator ovis-S1 --id iwbound",
-    "--estimator ovis-S10 --id iwbound",
-    "--estimator ovis-S50 --id iwbound"
+    "--estimator ovis-S1-exclusive --id iwbound",
+    "--estimator ovis-S10-exclusive --id iwbound",
+    "--estimator ovis-S50-exclusive --id iwbound"
   ],
   "global": "--silent --deterministic --nsteps 4000000",
   "parameters": {

@@ -55,9 +55,10 @@ def get_config(estimator_id):
 
             if "-S" in estimator_id:  # parse `-S` : number of auxiliary particles
                 # the original OVIS-MC used in the paper
-                auxiliary_samples = int(eval([s for s in estimator_id.split("-") if 'S' in s][0].replace("S", "")))
+                iw_aux = int(eval([s for s in estimator_id.split("-") if 'S' in s][0].replace("S", "")))
+                exclusive = "-exclusive" in estimator_id
                 Estimator = OvisMonteCarlo
-                config = {**reinforce_args, 'auxiliary_samples': auxiliary_samples}
+                config = {**reinforce_args, 'iw_aux': iw_aux, 'exclusive': exclusive}
 
             elif "-arithmetic" in estimator_id or "-geometric" in estimator_id:
                 # OVIS~ implementation using `log Z_{[-k]}` given by Vimco.

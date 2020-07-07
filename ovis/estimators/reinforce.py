@@ -1,5 +1,3 @@
-from booster import Diagnostic
-
 from .vi import *
 
 
@@ -24,11 +22,12 @@ class Reinforce(VariationalInference):
     """
 
     def __init__(self, baseline: Optional[nn.Module] = None, **kwargs: Any):
-        super().__init__(**kwargs)
+        assert not kwargs.get('sequential_computation',
+                              False), f"{type(self).__name__} is not Compatible with Sequential Computation"
+        super().__init__(**kwargs, reparameterization=False, detach_qlogits=True)
         self.baseline = baseline
-        self.detach_qlogits = True  # makes `L_k` differentiable only w.r.t `\theta` (givens no reparameterization)
-        self.control_loss_weight = 1. if baseline is not None else 0.
-        assert self.sequential_computation == False
+        control_loss_weight = 1. if baseline is not None else 0.
+        self.register_buffer('control_loss_weight', torch.tensor(control_loss_weight))
 
     def compute_control_variate(self, x: Tensor, **data: Dict[str, Any]) -> Union[float, Tensor]:
         """
@@ -47,31 +46,33 @@ class Reinforce(VariationalInference):
         """MSE between the score function and the control variate"""
         return (c_k - d_k.detach()).pow(2).mean(dim=(1, 2))
 
-    def forward(self, model: nn.Module, x: Tensor, backward: bool = False, debug: bool = False,
-                return_diagnostics: bool = True, **kwargs: Any) -> Tuple[
-        Tensor, Diagnostic, Dict]:
+    def forward(self,
+                model: nn.Module,
+                x: Tensor,
+                backward: bool = False,
+                return_diagnostics: bool = True,
+                **kwargs: Any) -> Tuple[Tensor, Diagnostic, Dict]:
 
-        bs = x.size(0)
-        output = self.evaluate_model(model, x, **kwargs)
-        log_px_z, log_pz, log_qz = [output[k] for k in ('log_px_z', 'log_pz', 'log_qz')]
-        output.update(**self.compute_iw_bound(log_px_z, log_pz, log_qz, detach_qlogits=self.detach_qlogits, **kwargs))
+        # update the `config` object with the `kwargs`
+        config = self.get_runtime_config(**kwargs)
+
+        # forward pass and eval of the log probs
+        log_probs, output = self.evaluate_model(model, x, **config)
+        iw_data = self.compute_iw_bound_with_data(**log_probs, **config)
 
         # unpack data
-        L_k, kl, log_wk = [output[k] for k in ('L_k', 'kl', 'log_wk')]
-
-        # reshape `log_qz` and exclude the auxiliary samples
-        log_qz = torch.cat([l.view(l.size(0), -1) for l in log_qz], 1)
-        log_qz = log_qz.view(bs, self.mc, self.iw + self.auxiliary_samples, -1)[:, :, :self.iw]
+        L_k, log_wk = [iw_data[k] for k in ('L_k', 'log_wk')]
+        log_qz = log_probs['log_qz']
 
         # compute the score function d_k = \log Z - v_k
         v_k = log_wk.softmax(2)
         d_k = L_k[:, :, None] - v_k
 
         # compute the control variate c_k
-        c_k = self.compute_control_variate(x, d_k=d_k, v_k=v_k, **output, **kwargs)
+        c_k = self.compute_control_variate(x, d_k=d_k, v_k=v_k, **log_probs, **iw_data, **config)
 
-        # compute the loss for the inference network
-        loss_phi = - ((d_k - c_k).unsqueeze(-1).detach() * log_qz).sum(dim=(2, 3)).mean(1)
+        # compute the loss for the inference network (sum over `iw` and `log q(z|x) groups`, avg. over `mc`)
+        loss_phi = - ((d_k - c_k).detach() * log_qz.sum(3)).sum(2).mean(1)
 
         # compute the loss for the generative model
         loss_theta = - L_k.mean(1)
@@ -81,24 +82,16 @@ class Reinforce(VariationalInference):
 
         # final loss
         loss = loss_theta + loss_phi + self.control_loss_weight * control_variate_loss
+        loss = loss.mean()
 
         # prepare diagnostics
         diagnostics = Diagnostic()
-
         if return_diagnostics:
-            diagnostics.update({
-                'loss': {
-                    'loss': loss,
-                    **self.base_loss_diagnostics(**output)
-                },
-                'reinforce': {
-                    'mse': control_variate_loss
-                }
-            })
-
-            diagnostics.update(self.additional_diagnostics(output))
+            diagnostics = self.base_loss_diagnostics(**iw_data, **log_probs)
+            diagnostics.update(self.additional_diagnostics(**output))
+            diagnostics.update({'reinforce': {'mse': control_variate_loss}})
 
         if backward:
-            loss.mean().backward()
+            loss.backward()
 
         return loss, diagnostics, output

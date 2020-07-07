@@ -8,7 +8,6 @@ from torch import nn, Tensor
 
 EPS = 1e-18
 
-
 class Estimator(nn.Module):
     def __init__(self,
                  mc: int = 1,
@@ -37,22 +36,20 @@ class Estimator(nn.Module):
             'sequential_computation': sequential_computation,
             **kwargs
         }
-        self.register_buffer('log_iw', torch.tensor(np.log(iw)))
-        self.register_buffer('log_mc', torch.tensor(np.log(mc)))
 
     def get_runtime_config(self, **kwargs):
         """update `self.config` with kwargs"""
         if len(kwargs):
             config = copy(self.config)
             config.update(**kwargs)
-            return self.config
+            return config
         else:
-            return self.config
+            return copy(self.config)
 
     @staticmethod
     def _expand_sample(x, mc, iw):
         bs, *dims = x.size()
-        x = x[:, None, None].repeat(1, mc, iw, *(1 for _ in dims))
+        x = x[:, None, None].expand(bs, mc, iw, *dims).contiguous()
         # flatten everything into the batch dimension
         return x.view(-1, *dims)
 

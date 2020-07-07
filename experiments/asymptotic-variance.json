@@ -3,9 +3,9 @@
   "script": "asymptotic_variance.py",
   "args": [
     "--estimator ovis-gamma0",
-    "--estimator ovis-S50",
-    "--estimator ovis-S10",
-    "--estimator ovis-S1",
+    "--estimator ovis-S50-exclusive",
+    "--estimator ovis-S10-exclusive",
+    "--estimator ovis-S1-exclusive",
     "--estimator pathwise-iwae",
     "--estimator vimco-geometric",
     "--estimator vimco-arithmetic"

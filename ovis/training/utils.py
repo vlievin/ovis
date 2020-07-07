@@ -27,10 +27,8 @@ def get_run_id(opt: Dict):
     base_id = "-".join(f"{opt[k]}" for k in ["dataset", "model", "estimator"])
     base_id += '-' + '-'.join(f'{k}{opt[k]}' for k in ['mc', 'iw', 'seed'])
     id_suffix = f"{opt['id']}-" if opt['id'] != "" else ""
-    exp_id = f"{id_suffix}{base_id}-{warmup_id}"
+    exp_id = f"{id_suffix}{base_id}{warmup_id}"
     run_id = f"{exp_id}-{hash}"
-
-    print(">>>>", run_id)
 
     return run_id, exp_id, hash
 
