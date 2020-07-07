@@ -3,7 +3,6 @@
 import argparse
 import json
 import os
-import sys
 import time
 
 import matplotlib.pyplot as plt
@@ -11,7 +10,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import torch
-from booster.utils import logging_sep, available_device
+from booster.utils import available_device
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 from torchvision.transforms import ToTensor
@@ -25,33 +24,35 @@ from ovis.reporting.plotting import PLOT_WIDTH, PLOT_HEIGHT, ESTIMATOR_STYLE, up
 from ovis.reporting.style import DPI, MARKERS, METRIC_DISPLAY_NAME, set_matplotlib_style
 from ovis.reporting.utils import sort_estimator_keys
 from ovis.training.arguments import add_base_args, add_iw_sweep_args, add_model_architecture_args
-from ovis.training.initialization import init_logging_directory
-from ovis.training.initialization import init_model
+from ovis.training.initialization import init_logging_directory, init_model
 from ovis.training.logging import get_loggers
 from ovis.training.ops import training_step
 from ovis.training.utils import get_hash_from_opt, preprocess
 from ovis.utils.success import Success
-from ovis.utils.utils import Header
+from ovis.utils.utils import Header, print_info
 
 
 def main():
     parser = argparse.ArgumentParser()
     add_base_args(parser, exp="efficiency", dataset="binmnist")
-    add_iw_sweep_args(parser, min=5, max=1e3, steps=6)
+    add_iw_sweep_args(parser, min=5, max=3e3, steps=10)
     add_model_architecture_args(parser)
     parser.add_argument('--load', default='',
                         help='existing experiment path to load from')
-    parser.add_argument('--num_runs', default=3, type=int,
+    parser.add_argument('--num_runs', default=5, type=int,
                         help='number of runs')
     parser.add_argument('--max_epoch_length', default=1e9, type=int,
                         help='maximum number of epochs per run')
 
     # estimators
     parser.add_argument('--estimators',
-                        default='ovis-S10,ovis-S1,vimco-arithmetic,ovis-gamma1,reinforce,tvo-part2-config1',
+                        default='vimco-arithmetic,ovis-gamma1,reinforce,tvo-part2-config1',
                         help='comma separated list of estimators')
     parser.add_argument('--bs', default=24, type=int,
                         help='batch size')
+    parser.add_argument('--filter',
+                        default='',
+                        help='filter estimator when plotting')
 
     opt = vars(parser.parse_args())
 
@@ -87,13 +88,7 @@ def main():
 
             # define logger
             base_logger, *_ = get_loggers(logdir, keys=[exp_id])
-            print(logging_sep("="))
-            base_logger.info(f"Run id: {run_id}")
-            base_logger.info(f"Logging directory: {logdir}")
-            base_logger.info(f"Torch version: {torch.__version__}")
-            base_logger.info(f"Python version: {sys.version.splitlines()[0]}")
-            base_logger.info(f"Device: {device}")
-            print(logging_sep("="))
+            print_info(logdir=logdir, device=device, run_id=run_id, logger=base_logger)
 
             # setting the random seed
             torch.manual_seed(opt['seed'])
@@ -107,6 +102,7 @@ def main():
             # model
             model, hyperparameters = init_model(opt, dset[0], loader)
             model.to(device)
+            model.train()
 
             # optimizer
             optimizer = Adam(model.parameters(), lr=1e-3)
@@ -133,7 +129,6 @@ def main():
                         start = time.time()
 
                         # training epoch
-                        model.train()
                         for step, batch in enumerate(loader):
                             x, y = preprocess(batch, device)
                             training_step(x, model, estimator, [optimizer], y=y, return_diagnostics=False, **config)
@@ -165,11 +160,12 @@ def main():
         # plotting
         set_matplotlib_style()
         keys = ['max_memory', 'elapsed_time']
-        legend_height = 0.5
         fig, axes = plt.subplots(nrows=1, ncols=len(keys),
                                  figsize=(2 * PLOT_WIDTH, 2 * PLOT_HEIGHT),
                                  dpi=DPI)
         hue_order = list(data['estimator'].unique())
+        if opt['filter'] != "":
+            hue_order = [e for e in hue_order if opt['filter'] not in e]
         sort_estimator_keys(hue_order)
 
         legend = Legend(fig)

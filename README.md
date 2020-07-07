@@ -70,9 +70,10 @@ Run all experiments:
 # run the experiment
 python manager.py --exp sigmoid-belief-network
 ```
-![Training curves](.assets/figure3_left.png)
 
 Figure 3 (left, VIMCO + OVIS-IW):
+
+![Training curves](.assets/figure3_left.png) 
 
 ```bash
 # gather the data
@@ -196,13 +197,13 @@ class SimpleModel(Template):
     def forward(self, x:Tensor, zgrads:bool=False, **kwargs):
         # q(z|x)
         qz = Bernoulli(logits=self.inference_network(x))
-        # z ~ q(z | x)
+        # z ~ q(z|x)
         z = qz.rsample() if zgrads else qz.sample()
         # p(x)
         pz = Bernoulli(logits=self.prior)
         # p(x|z)
         px = Bernoulli(logits=self.generative_model(z))
-        # store z, pz, qz as list for hierarchical models
+        # store z, pz, qz as lists (useful for hierarchical models)
         return {'px': px, 'z': [z], 'qz': [qz], 'pz': [pz]}
 
     def sample_from_prior(self, bs: int, **kwargs):
@@ -211,7 +212,7 @@ class SimpleModel(Template):
         px = Bernoulli(logits=self.generative_model(z))
         return {'px': px, 'z': [z], 'pz': [pz]}
 
-# generate x ~ Bernoulli(0.5) and compute a forward pass 
+# generate x ~ Bernoulli(0.5), initialize a simple VAE, forward pass, prior sampling
 x = Bernoulli(logits=zeros((1, 10,))).sample()
 model = SimpleModel(10, 10)
 output = model(x)

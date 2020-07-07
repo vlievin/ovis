@@ -11,6 +11,21 @@ BASE_ARGS_EXCEPTIONS = ['root', 'data_root', 'exp', 'workers', 'silent', 'sequen
                         'epochs', 'nsteps', 'valid_bs', 'test_bs', 'load']
 
 
+def print_info(logger=None, run_id=None, logdir=None, device=None):
+    print_fn = print if logger is None else logger.info
+
+    with Header(f"Info [{sys.argv[0]}]"):
+        if run_id is not None:
+            print_fn(f"Run id: {run_id}")
+        if logdir is not None:
+            print_fn(f"Logging directory: {logdir}")
+        if device is not None:
+            print_fn(f"Device: {device}")
+        print_fn(f"Pytorch version: {torch.__version__}")
+        print_fn(f"cuDNN version: {torch.backends.cudnn.version()}")
+        print_fn(f"Python version: {sys.version.splitlines()[0]}")
+
+
 class ManualSeed():
     """A simple class to execute a statement with a manual random seed without breaking the randomness.
     Another random seed is sampled and set when exiting the `with` statement. Usage:

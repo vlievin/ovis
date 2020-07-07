@@ -27,7 +27,7 @@ from ovis.training.schedule import Schedule
 from ovis.training.session import Session
 from ovis.training.utils import get_run_id, get_number_of_epochs, preprocess, reduce_lr
 from ovis.utils.success import Success
-from ovis.utils.utils import notqdm, ManualSeed
+from ovis.utils.utils import notqdm, ManualSeed, print_info
 
 
 def run():
@@ -81,13 +81,7 @@ def run():
 
         # define logger
         base_logger, train_logger, valid_logger, test_logger = get_loggers(logdir)
-        print(logging_sep("="))
-        base_logger.info(f"Run id: {run_id}")
-        base_logger.info(f"Logging directory: {logdir}")
-        base_logger.info(f"Torch version: {torch.__version__}")
-        base_logger.info(f"Python version: {sys.version.splitlines()[0]}")
-        base_logger.info(f"Device: {device}")
-        print(logging_sep("="))
+        print_info(logdir=logdir, device=device, run_id=run_id, logger=base_logger)
 
         # setting the random seed
         torch.manual_seed(opt['seed'])

@@ -1,5 +1,6 @@
 import argparse
 import json
+import sys
 
 import pandas as pd
 import torch
@@ -17,7 +18,7 @@ from ovis.training.initialization import init_logging_directory
 from ovis.training.logging import get_loggers, log_grads_data
 from ovis.training.utils import get_hash_from_opt
 from ovis.utils.success import Success
-from ovis.utils.utils import notqdm, ManualSeed
+from ovis.utils.utils import notqdm, ManualSeed, print_info
 
 
 def init_estimator(estimator_id, iw):
@@ -76,6 +77,9 @@ _exp_id = f"asymptotic-{opt['exp']}-{opt['seed']}"
 # defining the run directory
 logdir = init_logging_directory(opt, run_id)
 
+# device
+device = available_device()
+
 # save configuration
 with open(os.path.join(logdir, 'config.json'), 'w') as fp:
     fp.write(json.dumps(opt, default=lambda x: str(x), indent=4))
@@ -83,11 +87,9 @@ with open(os.path.join(logdir, 'config.json'), 'w') as fp:
 # wrap the training loop inside with `Success` to write the outcome of the run to a file
 with Success(logdir=logdir):
     # define logger
-    print(logging_sep("="))
+
     base_logger, *_ = get_loggers(logdir, keys=['base'])
-    base_logger.info(f"Run id: {run_id}")
-    base_logger.info(f"Logging directory: {logdir}")
-    base_logger.info(f"Torch version: {torch.__version__}")
+    print_info(logdir=logdir, device=device, run_id=run_id, logger=base_logger)
 
     # setting the random seed
     torch.manual_seed(opt['seed'])
@@ -101,8 +103,7 @@ with Success(logdir=logdir):
     Estimator, config_ref = get_config("pathwise-iwae")
     estimator_ref = Estimator(mc=1, iw=opt['iw_valid'], **config_ref)
 
-    # get device and move models
-    device = available_device()
+    # move models to device
     model.to(device)
     estimator_ref.to(device)
 
