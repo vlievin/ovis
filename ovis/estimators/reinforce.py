@@ -58,7 +58,7 @@ class Reinforce(VariationalInference):
 
         # forward pass and eval of the log probs
         log_probs, output = self.evaluate_model(model, x, **config)
-        iw_data = self.compute_iw_bound_with_data(**log_probs, **config)
+        iw_data = self.compute_log_weights_and_iw_bound(**log_probs, **config)
 
         # unpack data
         L_k, log_wk = [iw_data[k] for k in ('L_k', 'log_wk')]

@@ -35,22 +35,23 @@ class BaseWakeSleep(Vimco):
     def get_loss(self, model, **kwargs):
         raise NotImplementedError
 
-    def forward(self, model: nn.Module, x: Tensor, backward: bool = False, **kwargs: Any) -> Tuple[
-        Tensor, Diagnostic, Dict]:
+    def forward(self, model: nn.Module, x: Tensor, backward: bool = False, return_diagnostics: bool = True,
+                **kwargs: Any) -> Tuple[Tensor, Diagnostic, Dict]:
         # update the `config` object with the kwargs
         config = self.get_runtime_config(**kwargs)
 
         # forward pass and eval of the log probs
-        output = self.evaluate_model(model, x, **config)
-        log_px_z, log_pz, log_qz = [output[k] for k in ('log_px_z', 'log_pz', 'log_qz')]
-        iw_data = self.compute_iw_bound_with_data(log_px_z, log_pz, log_qz, **config)
+        log_probs, output = self.evaluate_model(model, x, **config)
+        iw_data = self.compute_log_weights_and_iw_bound(**log_probs, **config)
 
         # compute loss
-        loss = self.get_loss(model, **iw_data, **output)
+        loss = self.get_loss(model, **log_probs, **iw_data, **output)
 
         # prepare diagnostics
-        diagnostics = self.base_loss_diagnostics(**output, **iw_data)
-        diagnostics.update(self.additional_diagnostics(**output, **iw_data))
+        diagnostics = Diagnostic()
+        if return_diagnostics:
+            diagnostics = self.base_loss_diagnostics(**iw_data, **log_probs)
+            diagnostics.update(self.additional_diagnostics(**output))
 
         if backward:
             loss.backward()

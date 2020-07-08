@@ -22,9 +22,9 @@ class VariationalInference(Estimator):
                             freebits: Optional[float] = None,
                             **kwargs: Any) -> Tensor:
         """
-        Compute the log weights
+        Compute the log weights from the log probs `p(x|z)`, `p(z)` and `q(z|x)`:
 
-          * log w_k = log p(x,z) / q(z|x)
+          * log w_k = log p(x,z) - log q(z|x)
 
         :param log_px_z: log p(x | z) of shape [bs, mc, iw]
         :param log_pz: `log p(z) l=1..L]` of shape [bs, mc, iw, L]
@@ -61,7 +61,7 @@ class VariationalInference(Estimator):
                          alpha: float = 0,
                          **kwargs) -> Tensor:
         """
-        Compute the importance weighted bound for K = self.iw:
+        Compute the importance weighted bound for `K = log_wk.shape[2]`:
 
           * L_k = E_{q(z^1...z^K | x)} [ \log Z]
           * Z = 1/K \sum_{k=1..K} w_k
@@ -71,7 +71,7 @@ class VariationalInference(Estimator):
           * L_k^\alpha = E_{q(z^1...z^K | x)} [ 1/(1-\alpha) \log Z(alpha)]
           * Z(alpha) = 1/K \sum_{i=1..K} w_k^{1 - \alpha}
 
-        :param log_wk: log weights
+        :param log_wk: log weights `log w_k`
         :param alpha: Renyi Bound parameter (alpha=0 <=> Importance Weighted Bound)
         :param kwargs: additional params
         :return: L_k
@@ -80,9 +80,9 @@ class VariationalInference(Estimator):
         return L_k / (1. - alpha)
 
     @staticmethod
-    def compute_iw_bound_with_data(**kwargs) -> Dict[str, Tensor]:
+    def compute_log_weights_and_iw_bound(**kwargs) -> Dict[str, Tensor]:
         """
-        Compute the importance weighted bound for K = self.iw:
+        Compute the importance weighted bound for `K = log_pz.shape[2]`:
 
           * L_k = E_{q(z^1...z^K | x)} [ \log Z]
           * Z = 1/K \sum_{k=1..K} w_k
@@ -109,20 +109,7 @@ class VariationalInference(Estimator):
         # L_k^alpha (IWR bound, IW bound when alpha = 0)
         L_k = VariationalInference.compute_iw_bound(log_wk=log_wk, **kwargs)
 
-        # elbo
-        elbo = torch.mean(log_wk, dim=(1, 2))
-
-        # kl(q(z|x) || p(z|x)) = \log \hat{p} - L_1, \log \hat{p} = L_K,  accurate when K -> \inf
-        kl_q_p = L_k.mean(1) - elbo
-
-        # compute the effective sample size
-        ess = VariationalInference.effective_sample_size(log_wk)
-
-        return {'log_wk': log_wk,
-                'L_k': L_k,
-                'elbo': elbo,
-                'ess': ess,
-                'kl_q_p': kl_q_p}
+        return {'log_wk': log_wk, 'L_k': L_k}
 
     @staticmethod
     def cast_log(value: int, ref_tensor: Tensor):
@@ -279,7 +266,7 @@ class VariationalInference(Estimator):
         else:
             log_probs, output = self.evaluate_model(model, x, **config)
 
-        iw_data = self.compute_iw_bound_with_data(**log_probs, **config)
+        iw_data = self.compute_log_weights_and_iw_bound(**log_probs, **config)
 
         # compute the loss = - L_k  (backpropagation requires the reparametrization trick)
         L_k = iw_data.get('L_k').mean(1)  # 1/M \sum_m l_K[m] where M = mc
@@ -297,10 +284,32 @@ class VariationalInference(Estimator):
         return loss, diagnostics, output
 
     @staticmethod
-    def base_loss_diagnostics(**output) -> Diagnostic:
-        output.update(nll=- output['log_px_z'], kl=batch_average(output['log_px_z']) - output['elbo'])
-        keys = ['L_k', 'elbo', 'kl_q_p', 'ess', 'nll', 'kl']
-        return Diagnostic({'loss': {k: batch_average(v) for k, v in output.items() if k in keys}})
+    @torch.no_grad()
+    def base_loss_diagnostics(log_wk: Tensor = None,
+                              L_k: Tensor = None,
+                              log_px_z: Tensor = None,
+                              **kwargs) -> Diagnostic:
+
+        # ELBO decomposition
+        L_k = batch_average(L_k)
+        elbo = batch_average(log_wk)
+        nll = - batch_average(log_px_z)
+        kl = -elbo - nll
+
+        # kl(q(z|x) || p(z|x)) = \log \hat{p} - L_1, \log \hat{p} = L_K,  accurate when K -> \inf
+        kl_q_p = L_k - elbo
+
+        # effective sample size
+        ess = batch_average(VariationalInference.effective_sample_size(log_wk))
+
+        return Diagnostic({'loss': {
+            'L_k': L_k,
+            'elbo': elbo,
+            'kl_q_p': kl_q_p,
+            'nll': nll,
+            'kl': kl,
+            'ess': ess
+        }})
 
     @staticmethod
     @torch.no_grad()

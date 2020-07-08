@@ -1,8 +1,7 @@
 from .vi import *
 
 
-def build_partition(num_partitions, partition_type, log_beta_min=-10,
-                    device=None):
+def build_partition(num_partitions: int, partition_type: str, log_beta_min: Tensor = -torch.tensor(10.)):
     """Create a non-decreasing sequence of values between zero and one.
     See https://en.wikipedia.org/wiki/Partition_of_an_interval.
     Args:
@@ -13,20 +12,17 @@ def build_partition(num_partitions, partition_type, log_beta_min=-10,
         device: torch.device object (cpu by default)
     Returns: tensor of shape [num_partitions + 1]
     """
-    if device is None:
-        device = torch.device('cpu')
+
+    args = {'dtype': log_beta_min.dtype, 'device': log_beta_min.device}
     if num_partitions == 1:
-        partition = torch.tensor([0, 1], dtype=torch.float, device=device)
+        partition = torch.tensor([0, 1], **args)
     else:
         if partition_type == 'linear':
-            partition = torch.linspace(0, 1, steps=num_partitions + 1,
-                                       device=device)
+            partition = torch.linspace(0, 1, steps=num_partitions + 1, **args)
+
         elif partition_type == 'log':
-            partition = torch.zeros(num_partitions + 1, device=device,
-                                    dtype=torch.float)
-            partition[1:] = torch.logspace(
-                log_beta_min, 0, steps=num_partitions, device=device,
-                dtype=torch.float)
+            partition = torch.zeros(num_partitions + 1, **args)
+            partition[1:] = torch.logspace(log_beta_min, 0, steps=num_partitions, **args)
         else:
             raise ValueError(f"Unknown TVO partition type `{partition_type}`")
     return partition
@@ -42,7 +38,8 @@ class ThermoVariationalObjective(VariationalInference):
                               False), f"{type(self).__name__} is not Compatible with Sequential Computation"
         super().__init__(**kwargs, reparameterization=False, detach_qlogits=False)
 
-    def get_partition(self, iw, log_beta_min, num_partition, partition_type, partition_id, device):
+    def get_partition(self, iw, log_beta_min, num_partition, partition_type, partition_id, device='cpu',
+                      dtype=torch.float):
 
         if partition_id is not None:
             # map K to a partition accordingly to the figure 3. in the TVO paper
@@ -65,9 +62,9 @@ class ThermoVariationalObjective(VariationalInference):
             else:
                 raise ValueError(f"Unknown partition_name = `{partition_id}`")
 
-            log_beta_min = torch.tensor(beta_min, device=device).log10()
+            log_beta_min = torch.tensor(beta_min, device=device, dtype=dtype).log10()
 
-        return build_partition(num_partition, partition_type, log_beta_min=log_beta_min, device=device)
+        return build_partition(num_partition, partition_type, log_beta_min=log_beta_min)
 
     def compute_tvo_loss(self, log_px_z: Tensor,
                          log_pz: Tensor,
@@ -100,7 +97,9 @@ class ThermoVariationalObjective(VariationalInference):
 
         # build the partition
         iw = log_wk.shape[2]
-        partition = self.get_partition(iw, log_beta_min, num_partition, partition_type, partition_id, log_px_z.device)
+        log_beta_min = torch.tensor(log_beta_min, device=log_px_z.device, dtype=log_px_z.dtype)
+        partition = self.get_partition(iw, log_beta_min, num_partition, partition_type, partition_id,
+                                       device=log_px_z.device, dtype=log_px_z.dtype)
 
         # log p(x,z)
         log_p = log_px_z + log_pz
@@ -158,7 +157,7 @@ class ThermoVariationalObjective(VariationalInference):
 
         # forward pass, eval of the log probs and iw bound
         log_probs, output = self.evaluate_model(model, x, **config)
-        iw_data = self.compute_iw_bound_with_data(**log_probs, **config)
+        iw_data = self.compute_log_weights_and_iw_bound(**log_probs, **config)
 
         # compute the TVO loss
         loss = self.compute_tvo_loss(**log_probs, **iw_data, **config)

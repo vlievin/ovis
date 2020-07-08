@@ -48,18 +48,18 @@ class OvisMonteCarlo(Vimco):
         # compute the loss for the inference network (sum over `iw` and `log q(z|x) groups`, avg. over `mc`)
         loss_phi = - ((d_k - c_k).detach() * log_qz.sum(3)).sum(2).mean(1)
 
-        # compute the loss for the generative model and the `iw_data
+        # compute the loss for the generative model
         if exclusive:
+            # exclude the `iw_aux` samples
             L_k = self.compute_iw_bound(log_wk=log_wk, **config).mean(1)
         else:
+            # include all `iw` samples
             L_k = self.compute_iw_bound(log_wk=log_wk_all, **config).mean(1)
 
         loss_theta = - L_k
 
         # compute diagnostics
-        elbo = log_wk.mean(dim=(1, 2))
-        ess = self.effective_sample_size(log_wk)
-        iw_data = {'elbo': elbo, 'ess': ess, 'kl_q_p': L_k - elbo}
+        iw_data = {'log_wk': log_wk_all, 'L_k': L_k}
 
         # compute control variate and MSE
         control_variate_loss = self.compute_control_variate_loss(d_k, c_k)
@@ -80,16 +80,17 @@ class OvisMonteCarlo(Vimco):
 
         return loss, diagnostics, output
 
+    @staticmethod
     @torch.no_grad()
-    def compute_dk(self, log_wk: Tensor, alpha: float = 0, **kwargs):
+    def compute_dk(log_wk: Tensor, alpha: float = 0, **kwargs):
         # compute the score function d_k = \log Z - v_k
         v_k = log_wk.softmax(2)
-        L_k = self.compute_iw_bound(log_wk=log_wk, alpha=alpha, **kwargs)
+        L_k = OvisMonteCarlo.compute_iw_bound(log_wk=log_wk, alpha=alpha, **kwargs)
         return L_k[..., None] - v_k
 
+    @staticmethod
     @torch.no_grad()
-    def compute_control_variate(self,
-                                x: Tensor,
+    def compute_control_variate(x: Tensor,
                                 log_wk: Tensor = None,
                                 log_wk_aux: Tensor = None,
                                 **kwargs: Dict[str, Tensor]) -> Tensor:
@@ -112,7 +113,7 @@ class OvisMonteCarlo(Vimco):
         log_wk_hat = (1 - mask) * log_wk + mask * log_wk_aux
 
         # d_k (z^(s), z_{-k})
-        d_k_hat = self.compute_dk(log_wk_hat, **kwargs)
+        d_k_hat = OvisMonteCarlo.compute_dk(log_wk_hat, **kwargs)
 
         # 1/S \sum_s d_k (z^(s), z_{-k})
         d_k_hat = d_k_hat.diagonal(dim1=3, dim2=4)
