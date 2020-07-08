@@ -56,6 +56,50 @@ class VariationalInference(GradientEstimator):
         return loss, diagnostics, output
 
     @staticmethod
+    def evaluate_model(model: TemplateModel, x: Tensor, iw: int = None, mc: int = None, **kwargs: Any) -> Tuple[
+        Dict[str, Any], Dict[str, Any]]:
+        """
+        Perform a forward pass through the `model` given the observation `x` and return the log probabilities, all of
+        shape [bs, mc, iw, *]
+        :param model: VAE model
+        :param x: observation
+        :param mc: number of outer Monte-Carlo samples
+        :param iw: number of Importance Weighted samples
+        :param kwargs: parameters for the model
+        :return: ({'log_px_z' : log p(x|z), 'log_qz' : log q(z|x), 'log_pz': log p(z)}, model_output, )
+        """
+        bs, *dims = x.size()
+
+        # expand x as shape [bs * mc * iw, *dims]
+        x_expanded = GradientEstimator._expand_sample(x, mc, iw)
+
+        # forward pass
+        output = model(x_expanded, **kwargs)
+
+        # unpack the model's output
+        # the output must contain
+        # a. px = p(x|z): torch.distributions.Distribution instance
+        # b. z = latent sample z: List[Tensor]
+        # c. p(z) = prior: List[torch.distributions.Distribution]
+        # d. q(z | x) = approximate posterior: List[torch.distributions.Distribution]
+        # a,b,c are lists where each element represents a stochastic layer
+        px, z, qz, pz = [output[k] for k in ['px', 'z', 'qz', 'pz']]
+
+        # evaluate the log-densities given the observation `x` and the latent sample `z`
+        # i.e. compute: log p(x|z), log p(z) and log q(z|x)
+        # n.b. all log probabilities are of shape [bs * mc * iw,]
+        log_px_z = batch_reduce(px.log_prob(x_expanded))
+        log_pz = VariationalInference.eval_and_concat_log_probs(pz, z)
+        log_qz = VariationalInference.eval_and_concat_log_probs(qz, z)
+
+        # update the model's output with the log-densities
+        log_probs = {'log_px_z': log_px_z.view(bs, mc, iw),
+                     'log_pz': log_pz.view(bs, mc, iw, -1),
+                     'log_qz': log_qz.view(bs, mc, iw, -1)}
+
+        return log_probs, output
+
+    @staticmethod
     def compute_log_weights(log_px_z: Tensor = None,
                             log_pz: Tensor = None,
                             log_qz: Tensor = None,
@@ -190,50 +234,6 @@ class VariationalInference(GradientEstimator):
         return ess.mean(1)
 
     @staticmethod
-    def evaluate_model(model: TemplateModel, x: Tensor, iw: int = None, mc: int = None, **kwargs: Any) -> Tuple[
-        Dict[str, Any], Dict[str, Any]]:
-        """
-        Perform a forward pass through the `model` given the observation `x` and return the log probabilities, all of
-        shape [bs, mc, iw, *]
-        :param model: VAE model
-        :param x: observation
-        :param mc: number of outer Monte-Carlo samples
-        :param iw: number of Importance Weighted samples
-        :param kwargs: parameters for the model
-        :return: ({'log_px_z' : log p(x|z), 'log_qz' : log q(z|x), 'log_pz': log p(z)}, model_output, )
-        """
-        bs, *dims = x.size()
-
-        # expand x as shape [bs * mc * iw, *dims]
-        x_expanded = GradientEstimator._expand_sample(x, mc, iw)
-
-        # forward pass
-        output = model(x_expanded, **kwargs)
-
-        # unpack the model's output
-        # the output must contain
-        # a. px = p(x|z): torch.distributions.Distribution instance
-        # b. z = latent sample z: List[Tensor]
-        # c. p(z) = prior: List[torch.distributions.Distribution]
-        # d. q(z | x) = approximate posterior: List[torch.distributions.Distribution]
-        # a,b,c are lists where each element represents a stochastic layer
-        px, z, qz, pz = [output[k] for k in ['px', 'z', 'qz', 'pz']]
-
-        # evaluate the log-densities given the observation `x` and the latent sample `z`
-        # i.e. compute: log p(x|z), log p(z) and log q(z|x)
-        # n.b. all log probabilities are of shape [bs * mc * iw,]
-        log_px_z = batch_reduce(px.log_prob(x_expanded))
-        log_pz = VariationalInference.eval_and_concat_log_probs(pz, z)
-        log_qz = VariationalInference.eval_and_concat_log_probs(qz, z)
-
-        # update the model's output with the log-densities
-        log_probs = {'log_px_z': log_px_z.view(bs, mc, iw),
-                     'log_pz': log_pz.view(bs, mc, iw, -1),
-                     'log_qz': log_qz.view(bs, mc, iw, -1)}
-
-        return log_probs, output
-
-    @staticmethod
     def eval_and_concat_log_probs(pz: List[Distribution], z: List[Tensor]):
         """
         Evaluate the list of log probabilities and concatenate.
@@ -245,8 +245,8 @@ class VariationalInference(GradientEstimator):
         log_pzs = (batch_reduce(pz_l.log_prob(z_l)) for pz_l, z_l in zip(pz, z))
         return torch.cat([batch_reduce(x)[:, None] for x in log_pzs], 1)
 
-    def sequential_evaluation(self, model: TemplateModel, x: Tensor, mc: int = None, iw: int = None, **kwargs: Any) -> Tuple[
-        Dict[str, Any], Dict[str, Any]]:
+    def sequential_evaluation(self, model: TemplateModel, x: Tensor, mc: int = None, iw: int = None, **kwargs: Any) -> \
+            Tuple[Dict[str, Any], Dict[str, Any]]:
         """
         Same as `evaluate_model` however the processing of the importance weighted samples
         is performed sequentially instead of in parallel.
@@ -263,9 +263,9 @@ class VariationalInference(GradientEstimator):
         log_pz = None
         log_qz = None
         for i in range(max(1, iw)):
-            # evaluate batch
-            output_i = self.evaluate_model(model, x, mc, 1, **kwargs)
-            log_px_z_i, log_pz_i, log_qz_i = [output_i[k] for k in ['log_px_z', 'log_pz', 'log_qz']]
+            # evaluate mini-batch [bs, mc,]
+            log_probs_i, output_i = self.evaluate_model(model, x, mc, 1, **kwargs)
+            log_px_z_i, log_pz_i, log_qz_i = [log_probs_i[k] for k in ['log_px_z', 'log_pz', 'log_qz']]
 
             # append log probs
             if log_px_z is None:
@@ -314,7 +314,7 @@ class VariationalInference(GradientEstimator):
     @staticmethod
     @torch.no_grad()
     def additional_diagnostics(**output) -> Diagnostic:
-        """A function to append additional diagnostics from the model otuput"""
+        """A function to append additional diagnostics from the model output"""
         gmm = {}
         if 'posterior_mse' in output.keys():
             gmm['posterior_mse'] = output['posterior_mse']
@@ -337,6 +337,7 @@ class Pathwise(VariationalInference):
 
     def __init__(self, mc: int = 1, iw: int = 1, **kwargs):
         super().__init__(reparam=True, mc=mc, iw=iw, **kwargs)
+
 
 class PathwiseVAE(VariationalInference):
 

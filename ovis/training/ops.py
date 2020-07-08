@@ -26,6 +26,6 @@ def training_step(x, model, estimator, optimizers, **config):
 
 @torch.no_grad()
 @append_ellapsed_time
-def test_step(x, model, evaluator, **config):
-    loss, diagnostics, output = evaluator(model, x, backward=False, **config)
+def test_step(x, model, estimator, **config):
+    loss, diagnostics, output = estimator(model, x, backward=False, **config)
     return diagnostics
