@@ -1,16 +1,59 @@
 from torch.distributions import Distribution
 
 from .base import *
-from ..models import Template
+from ..models import TemplateModel
 from ..utils.utils import batch_reduce, batch_average
 
 
-class VariationalInference(Estimator):
+class VariationalInference(GradientEstimator):
     """
     Base class for Variational Inference using the Importance Weighted Bound (IWAE).
     Using this class to estimate the gradients requires the model to be compatible with the reparametrization trick.
     This class can be used independently to evaluate the bound L_k.
     """
+
+    def forward(self,
+                model: nn.Module,
+                x: Tensor, backward: bool = False,
+                return_diagnostics: bool = True,
+                **kwargs: Any) -> Tuple[Tensor, Diagnostic, Dict]:
+        """
+        Perform a forward pass through the VAE model, evaluate the Importance-Weighted bound and [optional] perform the backward pass.
+        See the method `compute_iw_bound` for further documentation.
+        :param model: VAE model
+        :param x: observation
+        :param backward: perform the backward pass by calling loss.backward()
+        :param kwargs: additional arguments for the model's forward pass and the method `compute_iw_bound`
+        :return: (loss : Tensor of shape [bs,],
+                  diagnostics: nested dictionary containing at least the keys {'loss':{'loss':..., 'elbo':...}}
+                  output: model's output + meta data)
+        """
+
+        # update the `config` object with the `kwargs`
+        config = self.get_runtime_config(**kwargs)
+
+        # forward pass and eval of the log probs
+        if config.get('sequential_computation', False):
+            log_probs, output = self.sequential_evaluation(model, x, **config)
+        else:
+            log_probs, output = self.evaluate_model(model, x, **config)
+
+        iw_data = self.compute_log_weights_and_iw_bound(**log_probs, **config)
+
+        # compute the loss = - L_k  (backpropagation requires the reparametrization trick)
+        L_k = iw_data.get('L_k').mean(1)  # 1/M \sum_m l_K[m] where M = mc
+        loss = - L_k.mean()
+
+        # prepare diagnostics
+        diagnostics = Diagnostic()
+        if return_diagnostics:
+            diagnostics = self.base_loss_diagnostics(**iw_data, **log_probs)
+            diagnostics.update(self.additional_diagnostics(**output))
+
+        if backward:
+            loss.backward()
+
+        return loss, diagnostics, output
 
     @staticmethod
     def compute_log_weights(log_px_z: Tensor = None,
@@ -147,7 +190,7 @@ class VariationalInference(Estimator):
         return ess.mean(1)
 
     @staticmethod
-    def evaluate_model(model: Template, x: Tensor, iw: int = None, mc: int = None, **kwargs: Any) -> Tuple[
+    def evaluate_model(model: TemplateModel, x: Tensor, iw: int = None, mc: int = None, **kwargs: Any) -> Tuple[
         Dict[str, Any], Dict[str, Any]]:
         """
         Perform a forward pass through the `model` given the observation `x` and return the log probabilities, all of
@@ -162,7 +205,7 @@ class VariationalInference(Estimator):
         bs, *dims = x.size()
 
         # expand x as shape [bs * mc * iw, *dims]
-        x_expanded = Estimator._expand_sample(x, mc, iw)
+        x_expanded = GradientEstimator._expand_sample(x, mc, iw)
 
         # forward pass
         output = model(x_expanded, **kwargs)
@@ -202,7 +245,7 @@ class VariationalInference(Estimator):
         log_pzs = (batch_reduce(pz_l.log_prob(z_l)) for pz_l, z_l in zip(pz, z))
         return torch.cat([batch_reduce(x)[:, None] for x in log_pzs], 1)
 
-    def sequential_evaluation(self, model: Template, x: Tensor, mc: int = None, iw: int = None, **kwargs: Any) -> Tuple[
+    def sequential_evaluation(self, model: TemplateModel, x: Tensor, mc: int = None, iw: int = None, **kwargs: Any) -> Tuple[
         Dict[str, Any], Dict[str, Any]]:
         """
         Same as `evaluate_model` however the processing of the importance weighted samples
@@ -239,49 +282,6 @@ class VariationalInference(Estimator):
                      'log_qz': log_qz}
 
         return log_probs, output_i
-
-    def forward(self,
-                model: nn.Module,
-                x: Tensor, backward: bool = False,
-                return_diagnostics: bool = True,
-                **kwargs: Any) -> Tuple[Tensor, Diagnostic, Dict]:
-        """
-        Perform a forward pass through the VAE model, evaluate the Importance-Weighted bound and [optional] perform the backward pass.
-        See the method `compute_iw_bound` for further documentation.
-        :param model: VAE model
-        :param x: observation
-        :param backward: perform the backward pass by calling loss.backward()
-        :param kwargs: additional arguments for the model's forward pass and the method `compute_iw_bound`
-        :return: (loss : Tensor of shape [bs,],
-                  diagnostics: nested dictionary containing at least the keys {'loss':{'loss':..., 'elbo':...}}
-                  output: model's output + meta data)
-        """
-
-        # update the `config` object with the `kwargs`
-        config = self.get_runtime_config(**kwargs)
-
-        # forward pass and eval of the log probs
-        if config.get('sequential_computation', False):
-            log_probs, output = self.sequential_evaluation(model, x, **config)
-        else:
-            log_probs, output = self.evaluate_model(model, x, **config)
-
-        iw_data = self.compute_log_weights_and_iw_bound(**log_probs, **config)
-
-        # compute the loss = - L_k  (backpropagation requires the reparametrization trick)
-        L_k = iw_data.get('L_k').mean(1)  # 1/M \sum_m l_K[m] where M = mc
-        loss = - L_k.mean()
-
-        # prepare diagnostics
-        diagnostics = Diagnostic()
-        if return_diagnostics:
-            diagnostics = self.base_loss_diagnostics(**iw_data, **log_probs)
-            diagnostics.update(self.additional_diagnostics(**output))
-
-        if backward:
-            loss.backward()
-
-        return loss, diagnostics, output
 
     @staticmethod
     @torch.no_grad()
@@ -333,13 +333,18 @@ class VariationalInference(Estimator):
         return Diagnostic({'gmm': gmm, 'loss': loss, 'gaussian_toy': gaussian_toy})
 
 
+class Pathwise(VariationalInference):
+
+    def __init__(self, mc: int = 1, iw: int = 1, **kwargs):
+        super().__init__(reparam=True, mc=mc, iw=iw, **kwargs)
+
 class PathwiseVAE(VariationalInference):
 
     def __init__(self, mc: int = 1, iw: int = 1, **kwargs):
-        super().__init__(mc=iw * mc, iw=1, **kwargs)
+        super().__init__(reparam=True, mc=iw * mc, iw=1, **kwargs)
 
 
 class PathwiseIWAE(VariationalInference):
 
     def __init__(self, mc: int = 1, iw: int = 1, **kwargs):
-        super().__init__(mc=1, iw=iw * mc, **kwargs)
+        super().__init__(reparam=True, mc=1, iw=iw * mc, **kwargs)

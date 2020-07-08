@@ -8,7 +8,7 @@ import torch
 from booster.utils import logging_sep
 
 BASE_ARGS_EXCEPTIONS = ['root', 'data_root', 'exp', 'workers', 'silent', 'sequential_computation',
-                        'epochs', 'nsteps', 'valid_bs', 'test_bs', 'load']
+                        'epochs', 'nsteps', 'valid_bs', 'test_bs', 'load', 'rf']
 
 
 def print_info(logger=None, run_id=None, logdir=None, device=None):

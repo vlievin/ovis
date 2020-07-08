@@ -19,7 +19,7 @@ def add_base_args(parser: argparse.PARSER, exp='sandbox', dataset='shapes'):
                         help='random seed')
     parser.add_argument('--workers', default=1, type=int,
                         help='number of dataloader workers')
-    parser.add_argument('--rm', action='store_true',
+    parser.add_argument('--rf', action='store_true',
                         help='delete the previous run')
     parser.add_argument('--silent', action='store_true',
                         help='silence tqdm')
@@ -124,6 +124,8 @@ def add_run_args(parser: argparse.PARSER):
                         help='number of `inner` Importance-Weighted samples')
     parser.add_argument('--beta', default=1.0, type=float,
                         help='Beta weight for the KL term (i.e. Beta-VAE)')
+    parser.add_argument('--tau', default=0, type=float,
+                        help='Temperature parameter if using the `Gumbel-Softmax` relaxation (0: `Straight-Through`)')
     parser.add_argument('--alpha', default=0, type=float,
                         help='alpha weight for the unormalized weights: w_k^alpha')
     parser.add_argument('--warmup', default=0, type=int,

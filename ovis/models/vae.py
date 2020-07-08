@@ -6,11 +6,11 @@ from torch.distributions import Distribution, Bernoulli
 
 from ovis.models.distributions import PseudoCategorical, PseudoBernoulli, NormalFromLogits
 from ovis.utils.utils import prod, flatten
-from .template import Template
+from .template import TemplateModel
 from .layers import MLP, ConvEncoder, ConvDecoder
 
 
-class BaseVAE(Template):
+class BaseVAE(TemplateModel):
     """
     A base VAE class with a Categorical, Gaussian or Bernoulli prior.
     The methods `encode` and `generate` are abstract.
@@ -119,7 +119,7 @@ class BaseVAE(Template):
         qlogits = self.get_logits(x)
         return self.prior_dist(logits=qlogits, tau=tau)
 
-    def forward(self, x, tau=0, zgrads=False, **kwargs):
+    def forward(self, x, tau=0, reparam=False, **kwargs):
         """
         Compute the posterior q(z|x), sample z~q(z|x) and compute p(x|z).
 
@@ -132,10 +132,7 @@ class BaseVAE(Template):
 
         qz = self.infer(x, tau=tau)
 
-        z = qz.rsample()
-
-        if not zgrads:
-            z = z.detach()
+        z = qz.rsample() if reparam else qz.sample()
 
         pz = self.prior_dist(logits=self.prior)
 

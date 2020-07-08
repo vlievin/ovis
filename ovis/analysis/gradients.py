@@ -7,11 +7,11 @@ from torch import Tensor
 from tqdm import tqdm
 
 from .utils import cosine, percentile, RunningMean, RunningVariance
-from ..estimators import Estimator
-from ..models import Template
+from ..estimators import GradientEstimator
+from ..models import TemplateModel
 
 
-def get_grads_from_tensor(model: Template, loss: Tensor, output: Dict[str, Tensor], tensor_id: str, mc: int, iw: int):
+def get_grads_from_tensor(model: TemplateModel, loss: Tensor, output: Dict[str, Tensor], tensor_id: str, mc: int, iw: int):
     """
     Compute the gradients given a `tensor` on which was called `tensor.retain_graph()`
     Assumes `tensor` to have `tensor.shape[0] == bs * iw * mc`
@@ -47,7 +47,7 @@ def get_grads_from_tensor(model: Template, loss: Tensor, output: Dict[str, Tenso
     return gradients.mean(0)
 
 
-def get_grads_from_parameters(model: Template, loss: Tensor, key_filter: str = ''):
+def get_grads_from_parameters(model: TemplateModel, loss: Tensor, key_filter: str = ''):
     """
     Return the gradients for the parameters matching the `key_filter`
 
@@ -67,8 +67,8 @@ def get_grads_from_parameters(model: Template, loss: Tensor, key_filter: str = '
     return torch.cat(grads, 0)
 
 
-def get_gradients_statistics(estimator: Estimator,
-                             model: Template,
+def get_gradients_statistics(estimator: GradientEstimator,
+                             model: TemplateModel,
                              x: Tensor,
                              mc_samples: int = 100,
                              key_filter: str = 'inference_network',
@@ -131,8 +131,8 @@ def get_gradients_statistics(estimator: Estimator,
             chuncks = 1
         else:
             bs = x.size(0)
-            mc = estimator.mc
-            iw = estimator.iw
+            mc = estimator.config['mc']
+            iw = estimator.config['iw']
             # infer number of chunks
             total_samples = bs * mc * iw
             chuncks = max(1, -(-total_samples // samples_per_batch))  # ceiling division

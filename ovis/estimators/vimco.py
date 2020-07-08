@@ -8,8 +8,8 @@ from .reinforce import Reinforce
 
 class Vimco(Reinforce):
     """
-    VIMCO: https://arxiv.org/abs/1602.06725
-    Inspired by https://github.com/vmasrani/tvo/blob/master/discrete_vae/losses.py
+    Variational inference for Monte Carlo objectives (VIMCO) [https://arxiv.org/abs/1602.06725]
+    Inspired by [https://github.com/vmasrani/tvo/blob/master/discrete_vae/losses.py]
     """
 
     def __init__(self, **kwargs):
@@ -67,3 +67,33 @@ class Vimco(Reinforce):
             c_k = c_k.to(_dtype)
 
         return c_k
+
+
+class VimcoArithmetic(Vimco):
+    """
+    Variational inference for Monte Carlo objectives (VIMCO) [https://arxiv.org/abs/1602.06725]
+    Inspired by [https://github.com/vmasrani/tvo/blob/master/discrete_vae/losses.py]
+
+    Arithmetic average:
+
+        * arithmetic: \hat{w}_{-k} = 1/K-1 \sum_{l \neq k} w_l
+    """
+
+    def __init__(self, **kwargs):
+        assert kwargs.pop('baseline', None) is None, f"Neural Baselines are not handled for `{type(self).__name__}`"
+        super().__init__(baseline=None, arithmetic=True, **kwargs)
+
+
+class VimcoGeometric(Vimco):
+    """
+    Variational inference for Monte Carlo objectives (VIMCO) [https://arxiv.org/abs/1602.06725]
+    Inspired by [https://github.com/vmasrani/tvo/blob/master/discrete_vae/losses.py]
+
+    Geometric average:
+
+        * geometric:  \hat{w}_{-k} = exp( 1/K-1 \sum_{l \neq k} log w_l )
+    """
+
+    def __init__(self, **kwargs):
+        assert kwargs.pop('baseline', None) is None, f"Neural Baselines are not handled for `{type(self).__name__}`"
+        super().__init__(baseline=None, arithmetic=False, **kwargs)

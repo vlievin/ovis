@@ -34,15 +34,15 @@ def read_and_report_asymptotic_experiment():
     parser.add_argument('--float_format', default=".2f", help='float format')
     parser.add_argument('--draw_individual', action='store_true',
                         help='draw SNR and Variance independently for each parameter.')
-    opt = parser.parse_args()
+    opt = vars(parser.parse_args())
 
     # get path to the experiment directory
-    path = os.path.join(opt.root, opt.exp)
+    path = os.path.join(opt['root'], opt['exp'])
     experiments = [e for e in os.listdir(path) if '.' != e[0]]
     assert len(experiments) > 0, "No experiment found."
 
     # prepare output directory
-    output_path = os.path.join(opt.output, opt.exp)
+    output_path = os.path.join(opt['output'], opt['exp'])
     if os.path.exists(output_path):
         rmtree(output_path)
     os.makedirs(output_path)
@@ -57,7 +57,7 @@ def read_and_report_asymptotic_experiment():
     configs = None
     for e in experiments:
         exp_dir = os.path.join(path, e)
-        if len(opt.filter) and opt.filter in e:
+        if len(opt['filter']) and opt['filter'] in e:
             print(f"-- Filtered:", e)
         elif "data.csv" not in os.listdir(exp_dir):
             print(f"-- not completed:", e)
@@ -90,7 +90,7 @@ def read_and_report_asymptotic_experiment():
     assert df is not None, "No experiment could be parsed."
 
     # infer global parameters from the individual configurations
-    opt.key_filter = infer_parameter(configs, "key_filter")
+    opt['key_filter'] = infer_parameter(configs, "key_filter")
 
     # format estimator names
     df['estimator'] = list(map(format_estimator_name, df['estimator'].values))

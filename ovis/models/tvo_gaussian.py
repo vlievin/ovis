@@ -2,7 +2,7 @@ from typing import *
 
 from torch import Tensor, nn
 
-from .template import Template
+from .template import TemplateModel
 from .tvo_sbm import GenerativeModel as DiscreteGenerativeModel
 from .tvo_sbm import InferenceNetwork as DiscreteInferenceNetwork
 from .tvo_sbm import init_mlp
@@ -321,7 +321,7 @@ class InferenceNetwork(DiscreteInferenceNetwork):
             return latent_dist.sample(sample_shape)
 
 
-class GaussianVAE(Template):
+class GaussianVAE(TemplateModel):
     """A wrapper for the official TVO model."""
 
     def __init__(self, xdim: Tuple[int] = tuple(),
@@ -347,13 +347,13 @@ class GaussianVAE(Template):
             train_obs_mean=x_mean.view(-1),
             **args)
 
-    def forward(self, x, zgrads=False, **kwargs):
+    def forward(self, x, reparam=False, **kwargs):
         x = x.view(x.size(0), -1)
 
         # compute the distribution q(z|x)
         qz = self.inference_network.get_latent_dist(x)
         # sample z ~ q(z|x)
-        z = self.inference_network.sample_from_latent_dist(qz, reparam=zgrads)
+        z = self.inference_network.sample_from_latent_dist(qz, reparam=reparam)
 
         # compute the distribution p(z)
         pz = self.generative_model.get_latent_dist()

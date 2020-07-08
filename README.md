@@ -148,8 +148,8 @@ The full example is available in `example.py`.
 #### Initialize a gradient estimator
 
 ```python
-from ovis.estimators.config import get_config
-Estimator, config = get_config("ovis-gamma1")
+from ovis.estimators.config import parse_estimator_id
+Estimator, config = parse_estimator_id("ovis-gamma1")
 estimator = Estimator(mc=1, iw=16, **config)
 ```
 
@@ -180,25 +180,25 @@ summary.update(grad_stats)
 summary.log(tensorboard_writer, global_step)
 ```
 
-#### Implemet your own `nn.Module` following the `Template` class (`ovis/models/template.py`):
+#### Implement your own `nn.Module` following the `TemplateModel` class (`ovis/models/template.py`):
 
 ```python
 from torch import nn, Tensor, zeros
 from torch.distributions import Bernoulli
-from ovis.models import Template
+from ovis.models import TemplateModel
 
-class SimpleModel(Template):
+class SimpleModel(TemplateModel):
     def __init__(self, xdim, zdim):
         super().__init__()
         self.inference_network = nn.Linear(xdim, zdim)
         self.generative_model = nn.Linear(zdim, xdim)
         self.register_buffer('prior', zeros((1, zdim,)))
 
-    def forward(self, x:Tensor, zgrads:bool=False, **kwargs):
+    def forward(self, x:Tensor, reparam:bool=False, **kwargs):
         # q(z|x)
         qz = Bernoulli(logits=self.inference_network(x))
         # z ~ q(z|x)
-        z = qz.rsample() if zgrads else qz.sample()
+        z = qz.rsample() if reparam else qz.sample()
         # p(x)
         pz = Bernoulli(logits=self.prior)
         # p(x|z)

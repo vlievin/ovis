@@ -13,14 +13,28 @@ def H(z, dim=-1):
     return torch.zeros_like(z).scatter_(dim, index, 1.0)
 
 
-class Template(nn.Module):
+class TemplateModel(nn.Module):
     """A template of VAE model, follow these guidelines to make your model compatible
     with the gradient estimators and the training loop"""
 
     def forward(self, x: Tensor,
-                zgrads: bool = True,
+                reparam: bool = True,
                 **kwargs) -> Dict[str, Union[Tensor, List[Tensor], List[Distribution], Distribution]]:
-        """perform a forward pass and return the latent samples `z` and the distribution `p(x|z)`, `p(z)`, `q(z|x)`"""
+        """
+        Perform a forward pass and return the latent samples `z` and the distribution `p(x|z)`, `p(z)`, `q(z|x)`.
+
+        `p(z)`, `q(z|x)` and `z` are returned as lists where each element represent a "group" of latent variables. This
+        is useful to group latent variables per layer in hierarchical models. So statistics can be access individually
+        for each group. In this repo, the `Freebits` are applied independently for each "group".
+
+        **warning**: The gradient estimators depends on the argument `reparam` that indicates if the reparameterization
+        has to be used.
+
+        :param x: observation
+        :param reparam: use reparameterization
+        :param kwargs: other arguments
+        :return: {'px': p(x|z), 'z': [z_i], 'pz': [p(z_i|*)], 'qz': [q(z_i|x,*)]}
+        """
 
         raise NotImplementedError
 
@@ -40,19 +54,15 @@ class Template(nn.Module):
         pz = PseudoCategorical(logits=plogits, **kwargs)
 
         # sample posterior
-        z = qz.rsample()
-
-        # detach `z` gradients to prevent the gradients to flow through z ~ q(z|x)
-        if not zgrads:
-            z = z.detach()
+        z = qz.rsample() if reparam else qz.sample()
 
         # p(x|z)
         decoder = nn.Linear(N * K, prod(dims))
         px_logits = decoder(flatten(z)).view(bs, *dims)
         px = Bernoulli(logits=px_logits)
 
-        # values from the stochastic layers (z, pz, qz) are returned
-        # as a list where each index correspond to one stochastic layer
+        # Values from the stochastic layers (z, pz, qz) are returned
+        # as a list where each index correspond to one group of latent variables
         return {'px': px,  # Distribution: p(x|z)
                 'z': [z],  # List[Tensor]: z ~ q(z|x)
                 'qz': [qz],  # List[Distribution]: q(z|x)

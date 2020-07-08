@@ -1,9 +1,9 @@
 import torch
 from torch import nn
 
-from .template import Template
-from .vae import BaseVAE
 from ovis.models.distributions import PseudoCategorical, NormalFromLoc
+from .template import TemplateModel
+from .vae import BaseVAE
 
 
 class GaussianMixture(BaseVAE):
@@ -27,7 +27,7 @@ class GaussianMixture(BaseVAE):
         :param hdim: hidden dimensions of the perceptrons
         :param kwargs:
         """
-        super(Template, self).__init__()
+        super(TemplateModel, self).__init__()
         act = nn.Tanh
         xdim = 1
         self.C = N
@@ -62,13 +62,10 @@ class GaussianMixture(BaseVAE):
     def get_logits(self, x):
         return self.phi(x.view(-1, 1)).view(-1, 1, self.C)
 
-    def forward(self, x, tau=0, zgrads=False, **kwargs):
+    def forward(self, x, tau=0, reparam=False, **kwargs):
         qz = self.infer(x, tau=tau)
 
-        z = qz.rsample()
-
-        if not zgrads:
-            z = z.detach()
+        z = qz.rsample() if reparam else qz.sample()
 
         pz = self.prior_dist(logits=self.log_theta)
 

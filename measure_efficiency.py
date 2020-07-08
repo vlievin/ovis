@@ -17,7 +17,7 @@ from torchvision.transforms import ToTensor
 from tqdm import tqdm
 
 from ovis.datasets import get_binmnist_datasets
-from ovis.estimators.config import get_config
+from ovis.estimators.config import parse_estimator_id
 from ovis.reporting.legend import Legend
 from ovis.reporting.parsing import format_estimator_name
 from ovis.reporting.plotting import PLOT_WIDTH, PLOT_HEIGHT, ESTIMATOR_STYLE, update_labels
@@ -114,7 +114,7 @@ def main():
             for e, estimator_id in enumerate(estimator_ids):
                 for i, iw in enumerate(iws):
                     # estimator
-                    Estimator, config = get_config(estimator_id)
+                    Estimator, config = parse_estimator_id(estimator_id)
                     estimator = Estimator(baseline=None, mc=1, iw=iw, **config)
                     estimator.to(device)
 
@@ -131,7 +131,7 @@ def main():
                         # training epoch
                         for step, batch in enumerate(loader):
                             x, y = preprocess(batch, device)
-                            training_step(x, model, estimator, [optimizer], y=y, return_diagnostics=False, **config)
+                            training_step(x, model, estimator, [optimizer], y=y, return_diagnostics=False)
                             pbar.update(1)
                             if step >= opt['max_epoch_length']:
                                 break

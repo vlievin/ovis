@@ -1,13 +1,12 @@
 import argparse
 import json
-import sys
 
 import pandas as pd
 import torch
 from booster.utils import logging_sep, available_device
 
 from ovis.analysis.gradients import get_gradients_statistics
-from ovis.estimators.config import get_config
+from ovis.estimators.config import parse_estimator_id
 from ovis.models import GaussianToyVAE
 from ovis.reporting.asymptotic import *
 from ovis.reporting.parsing import format_estimator_name
@@ -23,8 +22,8 @@ from ovis.utils.utils import notqdm, ManualSeed, print_info
 
 def init_estimator(estimator_id, iw):
     """initialize the gradient estimator based on the `estimator_id` and the number of particles `iw`"""
-    Estimator, config = get_config(estimator_id)
-    return Estimator(baseline=None, mc=1, iw=iw, **config), config
+    Estimator, config = parse_estimator_id(estimator_id)
+    return Estimator(baseline=None, mc=1, iw=iw, **config)
 
 
 parser = argparse.ArgumentParser()
@@ -100,7 +99,7 @@ with Success(logdir=logdir):
     model = GaussianToyVAE(xdim=(opt['D'],), npoints=opt['npoints'])
 
     # valid estimator (it is important that all models are evaluated using the same evaluator)
-    Estimator, config_ref = get_config("pathwise-iwae")
+    Estimator, config_ref = parse_estimator_id("pathwise-iwae")
     estimator_ref = Estimator(mc=1, iw=opt['iw_valid'], **config_ref)
 
     # move models to device
@@ -115,8 +114,7 @@ with Success(logdir=logdir):
 
     # evaluate model at initialization
     with ManualSeed(seed=opt['seed']):
-        diagnostics = evaluate_minibatch_and_log(estimator_ref, model, x, config_ref, base_logger,
-                                                 "Random Initialisation")
+        evaluate_minibatch_and_log(estimator_ref, model, x, base_logger, "Random Initialisation")
 
     grads_stats = []
     grads_data = []
@@ -132,21 +130,26 @@ with Success(logdir=logdir):
 
         # evaluate the model
         with ManualSeed(seed=opt['seed']):
-            diagnostics = evaluate_minibatch_and_log(estimator_ref, model, x, config_ref, base_logger,
-                                                     "Optimal parameters")
+            evaluate_minibatch_and_log(estimator_ref, model, x, base_logger, "Optimal parameters")
 
         # add perturbation to the weights
         model.perturbate_weights(epsilon)
 
         # evaluate model
         with ManualSeed(seed=opt['seed']):
-            diagnostics = evaluate_minibatch_and_log(estimator_ref, model, x, config_ref, base_logger,
-                                                     "After perturbation")
+            diagnostics = evaluate_minibatch_and_log(estimator_ref, model, x, base_logger, "After perturbation")
 
-        # define the gradients analysis arguments and the meta-data
-        meta = {'seed': opt['seed'], 'noise': epsilon, 'mc_samples': int(opt['mc_samples']),
-                **{k: v.mean().item() for k, v in diagnostics['loss'].items()}}
-        grad_args = {'mc_samples': int(opt['mc_samples']), **global_grad_args}
+        # define the gradients analysis arguments and store the meta-data
+        meta = {
+            'seed': opt['seed'],
+            'noise': epsilon,
+            'mc_samples': int(opt['mc_samples']),
+            **{k: v.mean().item() for k, v in diagnostics['loss'].items()}
+        }
+        grad_args = {
+            'mc_samples': int(opt['mc_samples']),
+            **global_grad_args
+        }
         idx = None
 
         for estimator_id in estimators:
@@ -155,13 +158,15 @@ with Success(logdir=logdir):
                 base_logger.info(f"{estimator_id} [K = {iw}]")
 
                 # create estimator
-                estimator, config = init_estimator(estimator_id, iw)
+                estimator = init_estimator(estimator_id, iw)
                 estimator.to(device)
+                parameters = {}
 
-                # evalute variance of the gradients
+                # evaluate the SNR and the Variance of the gradients
                 with ManualSeed(seed=opt['seed']):
                     analysis_data, grads_meta = get_gradients_statistics(estimator, model, x,
-                                                                         return_grads=True, **grad_args, **config)
+                                                                         return_grads=True,
+                                                                         **grad_args, **parameters)
 
                 # log grads info
                 log_grads_data(analysis_data, base_logger, estimator_id, iw)
@@ -194,8 +199,7 @@ with Success(logdir=logdir):
 
                 # return gradients for the first param
                 for g in grads[0, :]:
-                    grads_data += [
-                        {'param': 'all', 'grad': g.item(), **identifier}]
+                    grads_data += [{'param': 'all', 'grad': g.item(), **identifier}]
 
     # convert into DataFrames
     df = pd.DataFrame(grads_stats)

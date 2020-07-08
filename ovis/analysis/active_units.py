@@ -4,12 +4,12 @@ import torch
 from booster import Diagnostic
 from torch.utils.data import DataLoader
 
-from ..models import Template
+from ..models import TemplateModel
 from ..training.utils import preprocess
 
 
 @torch.no_grad()
-def latent_activations(model: Template,
+def latent_activations(model: TemplateModel,
                        loader: DataLoader,
                        mc_samples: int,
                        max_samples: Optional[int] = None,

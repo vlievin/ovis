@@ -25,6 +25,10 @@ class BaseDistribution(Distribution):
 
 
 class PseudoCategorical(BaseDistribution):
+    """
+    Categorical distribution when `tau=0`, else Gumbel-Softmax relaxation. This is not the Gumbel-Softmax distribution
+    because the `log_prob` is evaluated differently.
+    """
 
     def __init__(self, logits: Tensor, tau: float = 0, dim: int = -1):
         logits = logits - logits.logsumexp(dim=dim, keepdim=True)
@@ -60,13 +64,19 @@ class PseudoBernoulli(Bernoulli):
         self.tau = tau
         self.dim = dim
 
-    def rsample(self, **kwargs):
+    def sample(self, **kwargs):
         return super().sample(**kwargs)
+
+    def rsample(self, **kwargs):
+        raise NotImplementedError
 
 
 class NormalFromLogits(BaseDistribution):
+    """
+    Defines a Normal distribution from a `logits` tensors where `mu, log_std = logits.chunk(2)`
+    """
+
     def __init__(self, logits: Tensor, dim: int = -1, **kwargs: Any):
-        """hacking the Normal class so we can easily compute d p.log_prob(z) / d logits"""
         super().__init__(logits, dim=dim, **kwargs)
 
     @property
@@ -94,6 +104,10 @@ class NormalFromLogits(BaseDistribution):
 
 
 class NormalFromLoc(NormalFromLogits):
+    """
+    Defines a normal distribution from the location parameter only, the scale is assume to be 1 if not provided.
+    """
+
     def __init__(self, logits: Tensor, scale=None, dim: int = -1, **kwargs: Any):
         """hacking the Normal class so we can easily compute d p.log_prob(z) / d logits"""
         super(Distribution, self).__init__()

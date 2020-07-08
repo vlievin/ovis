@@ -4,7 +4,7 @@ import torch
 from torch import nn, Tensor
 from torch.distributions import Distribution
 
-from .template import Template
+from .template import TemplateModel
 from ..utils.utils import prod
 
 """
@@ -307,7 +307,7 @@ class GenerativeModel(nn.Module):
         return self.sample_latent_and_obs(num_samples)[1]
 
 
-class InferenceNetwork(Template):
+class InferenceNetwork(TemplateModel):
     def __init__(self, num_stochastic_layers=3, num_deterministic_layers=0,
                  latent_dim=200, obs_dim=784, train_obs_mean=None,
                  device=torch.device('cpu'), latent_dims=None, **kwargs):

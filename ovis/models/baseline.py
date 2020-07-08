@@ -18,7 +18,7 @@ class Baseline(nn.Module):
             layers += [nn.Linear(h, hdim, bias=bias)]
             if batch_norm:
                 layers += [nn.BatchNorm1d(hdim)]
-            layers += [nn.ELU()]
+            layers += [nn.Tanh()]
             h = hdim
         layers += [nn.Linear(h, 1, bias=bias)]
 

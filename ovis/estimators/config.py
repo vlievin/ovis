@@ -1,85 +1,65 @@
+from typing import *
+
 from .__init__ import *
 from ..utils.utils import parse_numbers
 
 
-def get_config(estimator_id):
+def parse_estimator_id(estimator_id) -> Tuple[GradientEstimator, Dict]:
     """
-    get the Estimator constructor and the estimator configuration from the estimator identifier.
+    Get the Estimator constructor and the estimator configuration from the estimator identifier.
     :param estimator_id: estimator identifier (e.g. `ovis-gamma1`)
     :return: Estimator, config
     """
-    if estimator_id == 'pathwise':
-        Estimator = VariationalInference
-        config = {'tau': 0, 'zgrads': True}
+    if estimator_id == 'Pathwise':
+        return Pathwise, {}
 
     elif estimator_id == 'pathwise-vae':
-        Estimator = PathwiseVAE
-        config = {'tau': 0, 'zgrads': True}
+        return PathwiseVAE, {}
 
     elif estimator_id == 'pathwise-iwae':
-        Estimator = PathwiseIWAE
-        config = {'tau': 0, 'zgrads': True}
+        return PathwiseIWAE, {}
 
-    elif estimator_id == 'gs':
-        Estimator = VariationalInference
-        config = {'tau': 0.5, 'zgrads': True}
+    elif 'wake-wake' == estimator_id:
+        return WakeWake, {}
 
-    elif estimator_id == 'st-gs':
-        Estimator = VariationalInference
-        config = {'tau': 0, 'zgrads': True}
+    elif 'wake-sleep' == estimator_id:
+        return WakeSleep, {}
 
-    elif 'wake-sleep' in estimator_id or 'wake-wake' in estimator_id:
-        Estimator = {'wake-sleep': WakeSleep, 'wake-wake': WakeWake}[estimator_id]
-        config = {'tau': 0, 'zgrads': False}
+    elif 'reinforce' in estimator_id:
+        return Reinforce, {}
 
-    elif any([e in estimator_id for e in ['reinforce', 'vimco', 'ovis']]):
-        reinforce_args = {'tau': 0, 'zgrads': False}
+    elif 'vimco-arithmetic' in estimator_id:
+        return VimcoArithmetic, {}
 
-        if 'reinforce' in estimator_id:
-            Estimator = Reinforce
-            config = reinforce_args
+    elif 'vimco-geometric' in estimator_id:
+        return VimcoGeometric, {}
 
-        elif 'vimco' in estimator_id:
 
-            if '-geometric' in estimator_id:
-                arithmetic = False
-            elif 'arithmetic' in estimator_id:
-                arithmetic = True
-            else:
-                raise ValueError(f"Estimator arg = {estimator_id} must contain `-arithmetic` or `-geometric`")
+    elif 'ovis' in estimator_id:
 
-            Estimator = Vimco
-            config = {**reinforce_args, 'arithmetic': arithmetic}
+        if "-S" in estimator_id:  # parse `-S` : number of auxiliary particles
+            # the original OVIS-MC used in the paper
+            iw_aux = int(eval([s for s in estimator_id.split("-") if 'S' in s][0].replace("S", "")))
+            exclusive = "-exclusive" in estimator_id
+            Estimator = OvisMonteCarlo
+            config = {'iw_aux': iw_aux, 'exclusive': exclusive}
 
-        elif 'ovis' in estimator_id:
+        elif "-arithmetic" in estimator_id or "-geometric" in estimator_id:
+            # OVIS~ implementation using `log Z_{[-k]}` given by Vimco.
+            assert "-gamma" in estimator_id
+            gamma = float(eval([s for s in estimator_id.split("-") if 'gamma' in s][0].replace("gamma", "")))
+            Estimator = OvisAsymptoticFromVimco
+            config = {'gamma': gamma, 'arithmetic': '-arithmetic' in estimator_id}
 
-            if "-S" in estimator_id:  # parse `-S` : number of auxiliary particles
-                # the original OVIS-MC used in the paper
-                iw_aux = int(eval([s for s in estimator_id.split("-") if 'S' in s][0].replace("S", "")))
-                exclusive = "-exclusive" in estimator_id
-                Estimator = OvisMonteCarlo
-                config = {**reinforce_args, 'iw_aux': iw_aux, 'exclusive': exclusive}
-
-            elif "-arithmetic" in estimator_id or "-geometric" in estimator_id:
-                # OVIS~ implementation using `log Z_{[-k]}` given by Vimco.
-                assert "-gamma" in estimator_id
-                gamma = float(eval([s for s in estimator_id.split("-") if 'gamma' in s][0].replace("gamma", "")))
-                Estimator = OvisAsymptoticFromVimco
-                config = {**reinforce_args, 'gamma': gamma, 'arithmetic': '-arithmetic' in estimator_id}
-
-            elif "-gamma" in estimator_id:  # parse `-gamma` : parameter of the unified asymptotic approximation
-                # the original OVIS~ used in the paper
-                gamma = float(eval([s for s in estimator_id.split("-") if 'gamma' in s][0].replace("gamma", "")))
-                Estimator = OvisAsymptotic
-                config = {**reinforce_args, 'gamma': gamma}
-
-            else:
-                raise ValueError(
-                    f"Ovis estimators should have either of the arguments `-S*` or `-gamma*`. (e.g. `ovis-gamma1`)")
+        elif "-gamma" in estimator_id:  # parse `-gamma` : parameter of the unified asymptotic approximation
+            # the original OVIS~ used in the paper
+            gamma = float(eval([s for s in estimator_id.split("-") if 'gamma' in s][0].replace("gamma", "")))
+            Estimator = OvisAsymptotic
+            config = {'gamma': gamma}
 
         else:
             raise ValueError(
-                f"Unknown reinforce-like estimator {estimator_id}, valid base identifiers are [reinforce, vimco, copt]")
+                f"Ovis estimators should have either of the arguments `-S*` or `-gamma*`. (e.g. `ovis-gamma1`)")
 
     elif 'tvo' in estimator_id:
         # argument for automatic partition
@@ -105,7 +85,7 @@ def get_config(estimator_id):
 
         # define config and Estimator
         Estimator = ThermoVariationalObjective
-        config = {'tau': 0, 'zgrads': False, 'num_partition': num_partition, 'integration': integration,
+        config = {'num_partition': num_partition, 'integration': integration,
                   'partition_id': partition_id, 'log_beta_min': log_beta_min}
 
     else:

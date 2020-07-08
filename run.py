@@ -2,9 +2,7 @@ import json
 import json
 import os
 import pickle
-import sys
 
-import argparse
 import numpy as np
 import torch
 from booster import Aggregator, Diagnostic
@@ -92,12 +90,14 @@ def run():
         base_logger.info(f"Dataset size: train = {len(dset_train)}, valid = {len(dset_valid)}, test = {len(dset_test)}")
 
         # training dataloader
-        loader_train = DataLoader(dset_train, batch_size=opt['bs'], shuffle=True, num_workers=opt['workers'], pin_memory=True)
+        loader_train = DataLoader(dset_train, batch_size=opt['bs'], shuffle=True, num_workers=opt['workers'],
+                                  pin_memory=True)
 
         # evaluation loaders
         loader_eval_train = DataLoader(dset_train, batch_size=opt['test_bs'], shuffle=True, num_workers=1,
                                        pin_memory=False)
-        loader_eval_test = DataLoader(dset_test, batch_size=opt['test_bs'], shuffle=True, num_workers=1, pin_memory=False)
+        loader_eval_test = DataLoader(dset_test, batch_size=opt['test_bs'], shuffle=True, num_workers=1,
+                                      pin_memory=False)
 
         # get a sample to evaluate the input shape
         x = dset_train[0]
@@ -121,10 +121,10 @@ def run():
         baseline = init_neural_baseline(opt, x) if '-baseline' in opt['estimator'] else None
 
         # training estimator
-        estimator, config = init_main_estimator(opt, baseline=baseline)
+        estimator = init_main_estimator(opt, baseline=baseline)
 
         # test estimator (it is important that all models are evaluated using the same evaluator)
-        estimator_test, estimator_test_ess, config_test = init_test_estimator(opt)
+        estimator_test, estimator_test_ess = init_test_estimator(opt)
 
         # move models to device
         model.to(device)
@@ -133,9 +133,20 @@ def run():
         # define the optimizer for the model's parameters and the training estimator's parameters if any (baseline)
         optimizers = init_optimizers(opt, model, estimator)
 
+        # parameters
+        parameters = {
+            'alpha': opt['alpha'],
+            'beta': opt['beta'],
+            'tau': opt['tau'],
+            'freebits': opt['freebits']
+        }
+        # filters NaNs values from the parameters (otherwise Tensorboard logging throws an error)
+        parameters = {k: v for k, v in parameters.items() if v is not None}
+
         # Rényi warmup
         if opt['warmup'] > 0:
-            scheduler = Schedule(opt['warmup'], opt['alpha_init'], opt['alpha'], offset=opt['warmup_offset'], mode=opt['warmup_mode'])
+            scheduler = Schedule(opt['warmup'], opt['alpha_init'], opt['alpha'], offset=opt['warmup_offset'],
+                                 mode=opt['warmup_mode'])
         else:
             scheduler = lambda x: opt['alpha']
 
@@ -167,9 +178,9 @@ def run():
             [o.zero_grad() for o in optimizers]
             model.train()
             for batch in tqdm(loader_train, desc=f"[training] {exp_id}"):
-                alpha = scheduler(session.global_step)
+                parameters['alpha'] = scheduler(session.global_step)
                 x, y = preprocess(batch, device)
-                training_step(x, model, estimator, optimizers, y=y, return_diagnostics=False, alpha=alpha, **config)
+                training_step(x, model, estimator, optimizers, y=y, return_diagnostics=False, **parameters)
                 session.global_step += 1
 
             """reduce learning rate"""
@@ -177,7 +188,7 @@ def run():
                 reduce_lr(optimizers, session.epoch, epochs, opt['lr_reduce_steps'], base_logger)
 
             if session.epoch % opt['eval_freq'] == 0:
-                parameters_diagnostics = {'parameters': {'beta': config.get('beta', 1.), 'alpha': alpha}}
+                parameters_diagnostics = {'parameters': parameters}
 
                 """Active Units Analysis"""
                 if opt['mc_au_analysis']:
@@ -189,10 +200,10 @@ def run():
                 if opt['grad_samples'] > 0:
                     print(logging_sep())
                     analyse_gradients_and_log(opt, session.global_step, writer_train, train_logger, loader_train,
-                                              model, estimator, config, exp_id, tqdm=tqdm)
+                                              model, estimator, parameters, exp_id, tqdm=tqdm)
 
                 """Estimate the ESS"""
-                summary_train_ess = evaluation(model, estimator_test_ess, config_test, loader_eval_train, exp_id,
+                summary_train_ess = evaluation(model, estimator_test_ess, loader_eval_train, exp_id,
                                                device=device, ref_summary=None, max_eval=1000, tqdm=tqdm)
 
                 """Eval on the train set and logging"""
@@ -202,7 +213,7 @@ def run():
                 else:
                     # seed evaluation such that the subset of `opt['max_eval']` data points remains the same
                     with ManualSeed(seed=opt['seed']):
-                        summary_train = evaluation(model, estimator_test, config_test, loader_eval_train, exp_id,
+                        summary_train = evaluation(model, estimator_test, loader_eval_train, exp_id,
                                                    device=device, ref_summary=None, max_eval=opt['max_eval'], tqdm=tqdm)
 
                     summary_train['loss']['ess'] = summary_train_ess['loss']['ess']
@@ -214,7 +225,7 @@ def run():
                             exp_id=exp_id)
 
                 """evaluation on the test set and logging"""
-                summary_test = evaluation(model, estimator_test, config_test, loader_eval_test, exp_id, device=device,
+                summary_test = evaluation(model, estimator_test, loader_eval_test, exp_id, device=device,
                                           ref_summary=summary_train, max_eval=opt['max_eval'], tqdm=tqdm)
 
                 # update best elbo and save model
@@ -243,10 +254,9 @@ def run():
 
         writer_valid = SummaryWriter(os.path.join(logdir, 'valid'))
         loader_valid = DataLoader(dset_valid, batch_size=opt['test_bs'], shuffle=True, num_workers=1)
-        config_valid = {'tau': 0, 'zgrads': False}
         Estimator_valid = VariationalInference
-        estimator_valid = Estimator_valid(mc=1, iw=opt['iw_valid'], sequential_computation=opt['sequential_computation'],
-                                          **config_valid)
+        estimator_valid = Estimator_valid(mc=1, iw=opt['iw_valid'],
+                                          sequential_computation=opt['sequential_computation'])
 
         # load best model and run over the test set
         load_model(model, logdir)
@@ -255,7 +265,7 @@ def run():
         with torch.no_grad():
             for batch in tqdm(loader_valid, desc=f"[final evaluation] {exp_id}"):
                 x, y = preprocess(batch, device)
-                diagnostics = test_step(x, model, estimator_valid, y=y, **config_valid)
+                diagnostics = test_step(x, model, estimator_valid, y=y)
                 agg.update(diagnostics)
             summary = agg.data.to('cpu')
 

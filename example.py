@@ -1,8 +1,8 @@
 from torch import nn, Tensor, zeros
 
 # gradient estimator
-from ovis.estimators.config import get_config
-Estimator, config = get_config("ovis-gamma1")
+from ovis.estimators.config import parse_estimator_id
+Estimator, config = parse_estimator_id("ovis-gamma1")
 estimator = Estimator(iw=16, **config)
 
 # dataset: sample x ~ Bernoulli(0.5)
@@ -10,8 +10,8 @@ from torch.distributions import Bernoulli
 dset = Bernoulli(logits=zeros((1000, 10))).sample()
 
 # define a simple Bernoulli VAE
-from ovis.models import Template
-class SimpleModel(Template):
+from ovis.models import TemplateModel
+class SimpleModel(TemplateModel):
     def __init__(self, xdim, zdim):
         super().__init__()
         self.inference_network = nn.Linear(xdim, zdim)

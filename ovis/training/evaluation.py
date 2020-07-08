@@ -1,5 +1,5 @@
 import torch
-from booster import Diagnostic, Aggregator
+from booster import Aggregator
 from booster.utils import logging_sep
 from tqdm import tqdm
 
@@ -9,7 +9,7 @@ from ovis.training.utils import preprocess
 from ovis.utils.utils import ManualSeed
 
 
-def analyse_gradients_and_log(opt, global_step, writer_train, train_logger, loader_train, model, estimator, config,
+def analyse_gradients_and_log(opt, global_step, writer_train, train_logger, loader_train, model, estimator, parameters,
                               exp_id, tqdm=tqdm):
     """
     Analyse of the gradients (SNR, variance, DSNR) and log to Tensorboard and the Logger
@@ -20,7 +20,7 @@ def analyse_gradients_and_log(opt, global_step, writer_train, train_logger, load
     :param loader_train: pytorch dataloader
     :param model: nn.Module
     :param estimator: gradient estimator
-    :param config: configuration dictionary for the gradient estimator
+    :param parameters: parameters for the gradient estimator
     :param exp_id: experiment identifier
     :param tqdm: tqdm callable (for customization)
     :return: None
@@ -41,11 +41,11 @@ def analyse_gradients_and_log(opt, global_step, writer_train, train_logger, load
 
     # gradients analysis for the training estimator
     with ManualSeed(seed=opt['seed']):
-        grad_data, _ = get_gradients_statistics(estimator, model, x, tqdm=tqdm, **grad_args, **config)
+        grad_data, _ = get_gradients_statistics(estimator, model, x, tqdm=tqdm, **grad_args, **parameters)
 
     # log the gradient analysis
     with torch.no_grad():
-        grad_data.log(writer_train, global_step) # Tensorboard logging
+        grad_data.log(writer_train, global_step)  # Tensorboard logging
         train_logger.info(f"{exp_id} | grads | "
                           f"snr = {grad_data.get('grads', {}).get('snr', 0.):.3E}, "
                           f"variance = {grad_data.get('grads', {}).get('variance', 0.):.3E}, "
@@ -54,14 +54,14 @@ def analyse_gradients_and_log(opt, global_step, writer_train, train_logger, load
 
 
 @torch.no_grad()
-def evaluation(model, estimator, config, loader, exp_id, device='cpu', ref_summary=None, max_eval=None, tqdm=tqdm):
+def evaluation(model, estimator, loader, exp_id, device='cpu', ref_summary=None, max_eval=None, tqdm=tqdm):
     """evaluation epoch to estimate the marginal log-likelihood: L_K \approx log \hat{p(x)}, K -> \infty"""
     k = 0
     model.eval()
     agg = Aggregator()
     for batch in tqdm(loader, desc=f"[evaluation] {exp_id}"):
         x, y = preprocess(batch, device)
-        diagnostics = test_step(x, model, estimator, y=y, **config)
+        diagnostics = test_step(x, model, estimator, y=y)
         agg.update(diagnostics)
         k += x.size(0)
         if max_eval is not None and k >= max_eval:
@@ -77,12 +77,12 @@ def evaluation(model, estimator, config, loader, exp_id, device='cpu', ref_summa
     return summary
 
 
-def evaluate_minibatch_and_log(estimator, model, x, config, base_logger, desc):
+def evaluate_minibatch_and_log(estimator, model, x, base_logger, desc, **parameters):
     """Evaluate the model using the estimator on a mini-batch of data and log to the Logger"""
     print(logging_sep())
-    loss, diagnostics, output = estimator(model, x, backward=False, **config)
+    loss, diagnostics, output = estimator(model, x, backward=False, **parameters)
     base_logger.info(
-        f"{desc} | L_{estimator.iw} = {diagnostics['loss']['elbo'].mean().item():.6f}, "
+        f"{desc} | L_{estimator.config['iw']} = {diagnostics['loss']['elbo'].mean().item():.6f}, "
         f"KL = {diagnostics['loss']['kl'].mean().item():.6f}, "
         f"NLL = {diagnostics['loss']['nll'].mean().item():.6f}, "
         f"ESS = {diagnostics['loss']['ess'].mean().item():.6f}")

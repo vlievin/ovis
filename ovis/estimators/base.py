@@ -8,11 +8,11 @@ from torch import nn, Tensor
 
 EPS = 1e-18
 
-class Estimator(nn.Module):
+class GradientEstimator(nn.Module):
     def __init__(self,
                  mc: int = 1,
                  iw: int = 1,
-                 pathwise: bool = False,
+                 reparam: bool = True,
                  sequential_computation: bool = False,
                  freebits: Optional[float] = None,
                  **kwargs: Any):
@@ -21,7 +21,7 @@ class Estimator(nn.Module):
         :param mc: number of Monte Carlo samples: i.e. `\hat{L_1} = 1/M \sum_m \log p(x, z_m) / q(z_m | x)`
         :param iw: number of Importance-weighted samples: i.e. `L_K = \log 1/K p(x, z_k) / q(z_k | x) `
         :param sequential_computation: compute each iw sample sequentially (save memory during evaluation)
-        :param pathwise: use the reparameterization (allows gradients through `z ~ q(z|x)`)
+        :param reparam: use the reparameterization (allows gradients through `z ~ q(z|x)`)
         :param freebits: [https://arxiv.org/abs/1606.04934]
         :param kwargs: additional keyword arguments
         """
@@ -32,7 +32,7 @@ class Estimator(nn.Module):
             'mc': mc,
             'iw': iw,
             'freebits': freebits,
-            'pathwise': pathwise,
+            'reparam': reparam,
             'sequential_computation': sequential_computation,
             **kwargs
         }

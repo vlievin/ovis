@@ -4,7 +4,7 @@ import torch
 from torch import nn
 
 from ovis.models.distributions import NormalFromLoc, Normal
-from .template import Template
+from .template import TemplateModel
 
 
 class SafeSeed():
@@ -26,7 +26,7 @@ class SafeSeed():
         self.exit_seed = int(torch.randint(1, sys.maxsize, (1,)).item())
 
 
-class GaussianToyVAE(Template):
+class GaussianToyVAE(TemplateModel):
     """
     A simple Gaussian VAE model as defined in
     `Tighter Variational Bounds are Not Necessarily Better` [https://arxiv.org/abs/1802.04537]
@@ -104,14 +104,12 @@ class GaussianToyVAE(Template):
         qlogits = x @ self.A + b
         return self.prior_dist(logits=qlogits, scale=self.q_scale)
 
-    def forward(self, x, tau=0, zgrads=False, **kwargs):
-
+    def forward(self, x, tau=0, reparam=False, **kwargs):
         # q(z | x) = N(z | Ax+b, 2/3 I)
         qz = self.infer(x, tau=tau)
-        z = qz.rsample()
 
-        if not zgrads:
-            z = z.detach()
+        # s ~ q(z|x)
+        z = qz.rsample() if reparam else qz.sample()
 
         # p(z) = N(z | mu, I)
         pz = self.prior_dist(logits=self.mu)

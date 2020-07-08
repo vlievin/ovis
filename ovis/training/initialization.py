@@ -1,16 +1,18 @@
 import os
 from shutil import rmtree
+from typing import *
 
 import torch
 from torch.optim import SGD, Adam, Adamax, RMSprop
 
-from ovis import VAE, ConvVAE, GaussianToyVAE, GaussianMixture, SigmoidBeliefNetwork, GaussianVAE, Baseline, \
+from ovis import TemplateModel, VAE, ConvVAE, GaussianToyVAE, GaussianMixture, SigmoidBeliefNetwork, GaussianVAE, Baseline, \
     VariationalInference
-from ovis.estimators.config import get_config
+from ovis.estimators import GradientEstimator
+from ovis.estimators.config import parse_estimator_id
 from .utils import get_dataset_mean
 
 
-def init_model(opt, x, loader=None):
+def init_model(opt, x, loader=None) -> Tuple[TemplateModel, Dict]:
     hyperparams = {
         **{k: opt[k] for k in
            ['N', 'K', 'hdim', 'kdim', 'nlayers', 'depth', 'learn_prior', 'prior', 'normalization', 'dropout']},
@@ -37,26 +39,23 @@ def init_model(opt, x, loader=None):
     return model, hyperparams
 
 
-def init_neural_baseline(opt, x):
+def init_neural_baseline(opt, x) -> Baseline:
     """define the neural baseline"""
     return Baseline(x.shape, opt['b_nlayers'], opt['hdim'])
 
 
-def init_main_estimator(opt, baseline=None, iw=None, mc=None):
+def init_main_estimator(opt, baseline=None, iw=None, mc=None) -> GradientEstimator:
     """initialize the training estimator and its configuration dict"""
-    Estimator, config = get_config(opt['estimator'])
-    estimator = Estimator(baseline=baseline,
-                          mc=opt['mc'] if mc is None else mc,
-                          iw=opt['iw'] if iw is None else iw,
-                          freebits=opt['freebits'], **config)
+    Estimator_cls, config = parse_estimator_id(opt['estimator'])
+    estimator = Estimator_cls(baseline=baseline,
+                              mc=opt['mc'] if mc is None else mc,
+                              iw=opt['iw'] if iw is None else iw,
+                              **config)
 
-    # additional arguments
-    config.update({'beta': opt.get('beta', 1)})
-
-    return estimator, config
+    return estimator
 
 
-def init_test_estimator(opt):
+def init_test_estimator(opt) -> Tuple[GradientEstimator, GradientEstimator]:
     """
     Initialize the 2 validation estimators.
     * a. estimator_valid: used to compute L_K_valid
@@ -64,17 +63,16 @@ def init_test_estimator(opt):
 
     The two estimators are used toe estimate KL(q||p) = log \hat{p(x)} - L_K_train considering log \hat{p(x)} = L_K_valid
     """
-    Estimator = VariationalInference
-    config = {'tau': 0, 'zgrads': False}
 
-    # the main test estimator with K = opt.iw_test
-    estimator = Estimator(mc=1, iw=opt['iw_test'], sequential_computation=opt['sequential_computation'])
-    estimator_ess = Estimator(mc=1, iw=opt['iw'], sequential_computation=opt['sequential_computation'])
+    # the main test estimator with `K = opt.iw_test`
+    estimator = VariationalInference(mc=1, iw=opt['iw_test'], sequential_computation=opt['sequential_computation'])
+    # test estimator with `K = opt.iw` to estimate the training ESS
+    estimator_ess = VariationalInference(mc=1, iw=opt['iw'], sequential_computation=opt['sequential_computation'])
 
-    return estimator, estimator_ess, config
+    return estimator, estimator_ess
 
 
-def init_optimizers(opt, model, estimator):
+def init_optimizers(opt, model, estimator) -> List[torch.optim.Optimizer]:
     """Initialize estimators both for the model's parameters and the baselines/estimator's parameters"""
     optimizers = []
     _OPT = {'sgd': SGD, 'adam': Adam, 'adamax': Adamax, 'rmsprop': RMSprop}[opt['optimizer']]
@@ -85,12 +83,12 @@ def init_optimizers(opt, model, estimator):
     return optimizers
 
 
-def init_logging_directory(opt, run_id):
+def init_logging_directory(opt, run_id) -> str:
     """initialize the directory where will be saved the config, model's parameters and tensorboard logs"""
     logdir = os.path.join(opt['root'], opt['exp'])
     logdir = os.path.join(logdir, run_id)
     if os.path.exists(logdir):
-        if opt['rm']:
+        if opt['rf']:
             rmtree(logdir)
             os.makedirs(logdir)
     else:

@@ -1,4 +1,4 @@
-from .template import Template
+from .template import TemplateModel
 from .vae import VAE, ConvVAE
 from .gaussian_mixture import GaussianMixture
 from .gaussian_toy import GaussianToyVAE
