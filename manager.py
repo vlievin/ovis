@@ -29,6 +29,12 @@ def run_manager():
     python manager.py --exp gaussian-mixture-model --max_gpus 4 --processes 2
     ```
 
+    Check the experiment status using `dbutils.py` (see `python dbutils.py --help` for details about requeuing exps):
+
+    ```bash
+    python dbutils.py --exp gaussian-mixture-model --check
+    ```
+
     Troubleshooting: If the `FileLockedTinyDB` exits without properly removing the `.lock` file, you may need to delete
     it manually using `--purge_lock`. This must be used carefully as it may alter ongoing database transactions.
     """

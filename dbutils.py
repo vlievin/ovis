@@ -1,5 +1,3 @@
-import argparse
-
 from ovis.utils.dbutils import *
 from ovis.utils.manager import get_abs_paths
 from ovis.utils.utils import Header
@@ -19,11 +17,16 @@ parser.add_argument('--find', default='',
                     help='show results from query. '
                          'Examples: --find "query.queued == True", --find "query.arg.search(\'(?=.*ovis)\')"')
 parser.add_argument('--check', action='store_true',
-                    help='check potential failed experiments')
+                    help='check experiments status')
 parser.add_argument('--requeue', action='store_true',
                     help='requeue experiment according to ´--requeue_level´')
 parser.add_argument('--requeue_level', default=1, type=int,
-                    help='Requeue level {0: nothing, 1: keyboard_interrupt, 2: failed, 3: not completed}')
+                    help='Requeue level {0: only check, '
+                         '1: keyboard_interrupt, '
+                         '2: failed, '
+                         '100: requeue `running` (without `success` file), '
+                         '200: requeue `not_found` (run exp directory was not found), '
+                         '10000: all runs, including successful ones}')
 opt = parser.parse_args()
 
 # get absolute path to logging directories
