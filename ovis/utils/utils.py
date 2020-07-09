@@ -98,11 +98,14 @@ def cast_tensor(value: Number, ref_tensor: torch.Tensor, **kwargs: Any):
 
 
 class Header():
-    def __init__(self, message: str):
+    def __init__(self, message: str = None):
         self.message = message
 
     def __enter__(self):
-        print(f"{logging_sep('=')}\n{self.message}\n{logging_sep('-')}")
+        if self.message is not None:
+            print(f"{logging_sep('=')}\n{self.message}\n{logging_sep('-')}")
+        else:
+            print(logging_sep('='))
 
     def __exit__(self, *args):
         print(f"{logging_sep('=')}")
