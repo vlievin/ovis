@@ -2,7 +2,7 @@ from torch.distributions import Distribution
 
 from .base import *
 from ..models import TemplateModel
-from ..utils.utils import batch_reduce, batch_average
+from ..utils.utils import batch_reduce, batch_average, cast_tensor
 
 
 class VariationalInference(GradientEstimator):
@@ -163,7 +163,7 @@ class VariationalInference(GradientEstimator):
         :param kwargs: additional params
         :return: L_k
         """
-        L_k = log_wk.logsumexp(dim=-1) - VariationalInference.cast_log(log_wk.shape[-1], log_wk)
+        L_k = log_wk.logsumexp(dim=-1) - cast_tensor(log_wk.shape[-1], log_wk).log()
         return L_k / (1. - alpha)
 
     @staticmethod
@@ -197,11 +197,6 @@ class VariationalInference(GradientEstimator):
         L_k = VariationalInference.compute_iw_bound(log_wk=log_wk, **kwargs)
 
         return {'log_wk': log_wk, 'L_k': L_k}
-
-    @staticmethod
-    def cast_log(value: int, ref_tensor: Tensor):
-        """cast `value` to `ref_tensor` dtype and return the `log(value)`"""
-        return torch.tensor(value, device=ref_tensor.device, dtype=ref_tensor.dtype, requires_grad=False).log()
 
     @staticmethod
     def apply_freebits(kls: Tensor, value: float):

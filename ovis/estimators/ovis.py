@@ -83,8 +83,8 @@ class OvisMonteCarlo(Vimco):
     @staticmethod
     @torch.no_grad()
     def compute_dk(log_wk: Tensor, alpha: float = 0, **kwargs):
-        # compute the score function d_k = \log Z - v_k
-        v_k = log_wk.softmax(2)
+        """compute the score function `d_k = \log Z - v_k`"""
+        v_k = log_wk.softmax(-1)
         L_k = OvisMonteCarlo.compute_iw_bound(log_wk=log_wk, alpha=alpha, **kwargs)
         return L_k[..., None] - v_k
 
@@ -103,11 +103,11 @@ class OvisMonteCarlo(Vimco):
         :return: control variate
         """
 
-        M, K, S = log_wk.shape[1], log_wk.shape[2], log_wk_aux.shape[2]
+        M, K, S = *log_wk.shape[1:3], log_wk_aux.shape[2]
         log_wk = log_wk.view(-1, M, 1, 1, K).expand(-1, M, S, K, K)
         log_wk_aux = log_wk_aux.view(-1, M, S, 1, 1).expand(-1, M, S, K, K)
 
-        # for each s, log w_k(z^(s), z_{-k})
+        # for each s, make a tensor `log w_k(z^(s), z_{-k})` with `z_{-k}` on the diagonal
         mask = torch.eye(K, device=log_wk.device)
         mask = mask.view(1, 1, 1, K, K)
         log_wk_hat = (1 - mask) * log_wk + mask * log_wk_aux
@@ -116,8 +116,7 @@ class OvisMonteCarlo(Vimco):
         d_k_hat = OvisMonteCarlo.compute_dk(log_wk_hat, **kwargs)
 
         # 1/S \sum_s d_k (z^(s), z_{-k})
-        d_k_hat = d_k_hat.diagonal(dim1=3, dim2=4)
-        return d_k_hat.mean(2)
+        return d_k_hat.diagonal(dim1=3, dim2=4).mean(2)
 
 
 class OvisAsymptotic(Vimco):
@@ -149,7 +148,7 @@ class OvisAsymptotic(Vimco):
         one_minus_v_k = (1 - v_k).clamp(min=torch.finfo(v_k.dtype).eps)
 
         # log (1 - 1/K)
-        log_1_m_uniform = self.cast_log(1 - 1 / v_k.shape[2], v_k)
+        log_1_m_uniform = cast_tensor(1 - 1 / v_k.shape[2], v_k).log()
 
         # c_k = L_k - (L_k - L_[-k]) - gamma v_k + (1-gamma) log(1 - 1/K)
         logZ_diff = log_1_m_uniform - one_minus_v_k.log()

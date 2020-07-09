@@ -98,14 +98,6 @@ def drop_exceptions_from_args(args, exceptions=BASE_ARGS_EXCEPTIONS):
     return args
 
 
-def format_estimator_name(name):
-    """add special rules to format the estimator name"""
-    if 'tvo' in name:
-        return 'tvo'
-    else:
-        return name
-
-
 def merge_args(data, args):
     """merge two args `X` and `Y` into `X-Y`"""
     a, b = args.replace(" ", "").split(",")

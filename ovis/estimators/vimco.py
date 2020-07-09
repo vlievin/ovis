@@ -4,6 +4,7 @@ import torch
 from torch import Tensor
 
 from .reinforce import Reinforce
+from ..utils.utils import cast_tensor
 
 
 class Vimco(Reinforce):
@@ -54,14 +55,14 @@ class Vimco(Reinforce):
             max, idx = _log_wk.max(dim=3, keepdim=True)
 
             sum_exp = torch.sum(mask * torch.exp(_log_wk - max), dim=3)
-            log_wk_hat = max.squeeze(3) + torch.log(sum_exp) - self.cast_log(iw - 1, log_wk)
+            log_wk_hat = max.squeeze(3) + torch.log(sum_exp) - cast_tensor(iw - 1, log_wk).log()
 
         else:  # geometric: \hat{w}_{-k} = exp( 1/K-1 \sum_{l \neq k} log w_l )
             log_wk_hat = (torch.sum(log_wk, dim=2, keepdim=True) - log_wk) / (iw - 1)
 
         #  c_k = log 1/k \sum_{l \neq k} w_l + \hat{w}_{-k}
         log_wk_samples = log_wk.unsqueeze(-1) + torch.diag_embed(log_wk_hat - log_wk)
-        c_k = torch.logsumexp(log_wk_samples, dim=2) - self.cast_log(iw, log_wk)
+        c_k = torch.logsumexp(log_wk_samples, dim=2) - cast_tensor(iw, log_wk).log()
 
         if use_double:
             c_k = c_k.to(_dtype)
