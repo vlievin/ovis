@@ -15,7 +15,7 @@ class Success():
     sigterm = "SIGTERM."
 
     def failure(exception):
-        return f"{Success.failure_base} Exception : \n{exception}\n\n{exception.__traceback__}"
+        return f"{Success.failure_base} Exception : \n{exception}\n\n{traceback.format_exc()}"
 
     def __init__(self, logdir=None):
         signal.signal(signal.SIGTERM, lambda *args: self.__exit__(*Success.sigterm_handler(*args)))
