@@ -30,7 +30,9 @@ def build_partition(num_partitions: int, partition_type: str, log_beta_min: Tens
 
 class ThermoVariationalObjective(VariationalInference):
     """
-    The Thermodynamic Variational Inference https://arxiv.org/pdf/1907.00031.pdf / https://github.com/vmasrani/tvo
+    The Thermodynamic Variational Objective (TVO):
+        * paper: [https://arxiv.org/pdf/1907.00031.pdf]
+        * original code: [https://github.com/vmasrani/tvo]
     """
 
     def __init__(self, **kwargs: Any):
@@ -38,7 +40,8 @@ class ThermoVariationalObjective(VariationalInference):
                               False), f"{type(self).__name__} is not Compatible with Sequential Computation"
         super().__init__(**kwargs, reparameterization=False, detach_qlogits=False)
 
-    def get_partition(self, iw, log_beta_min, num_partition, partition_type, partition_id, device='cpu',
+    @staticmethod
+    def get_partition(iw, log_beta_min, num_partition, partition_type, partition_id, device='cpu',
                       dtype=torch.float):
 
         if partition_id is not None:
@@ -95,14 +98,16 @@ class ThermoVariationalObjective(VariationalInference):
         :return: loss]
         """
 
-        # build the partition
+        # infer `iw`, and compute log probs, all of shape [bs, mc, iw]
         iw = log_wk.shape[2]
-        log_beta_min = torch.tensor(log_beta_min, device=log_px_z.device, dtype=log_px_z.dtype)
+        log_pz = log_pz.sum(3)
+        log_qz = log_qz.sum(3)
+        log_p = log_px_z + log_pz
+
+        # build the partition
+        log_beta_min = cast_tensor(log_beta_min, ref_tensor=log_px_z)
         partition = self.get_partition(iw, log_beta_min, num_partition, partition_type, partition_id,
                                        device=log_px_z.device, dtype=log_px_z.dtype)
-
-        # log p(x,z)
-        log_p = log_px_z + log_pz
 
         # compute log of weights w_s = p(x,z)/q(z|x) (between eq. 13 and 14)
         heated_log_wk = log_wk[..., None] * partition[None, None, None, :]
@@ -142,7 +147,7 @@ class ThermoVariationalObjective(VariationalInference):
             multiplier[1:] = partition[1:] - partition[:-1]
 
         # compute covariance gradient estimator (eq. 11 / appendix F)
-        return torch.sum(multiplier * (cov_term + torch.sum(w_detached * log_wk.unsqueeze(-1), dim=2)), dim=2).mean()
+        return - torch.sum(multiplier * (cov_term + torch.sum(w_detached * log_wk.unsqueeze(-1), dim=2)), dim=2).mean()
 
     def forward(self,
                 model: nn.Module,
