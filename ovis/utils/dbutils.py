@@ -2,7 +2,6 @@ import json
 import os
 from collections import defaultdict
 from functools import partial
-import argparse
 
 from booster.utils import logging_sep
 from tinydb import TinyDB, Query
@@ -118,7 +117,8 @@ def requeue_experiments(logdir, level=1):
     * 0: do not requeue
     * 1: requeue `aborted_by_user` (keyboard_interrupt or sigterm)
     * 2: requeue `failed``
-    * 100: requeue `running`
+    * 100: requeue `running` (without `success` file)
+    * 200: requeue `no_found` (run exp directory was not found)
     * 10000: all including `success`
     """
 
@@ -138,7 +138,7 @@ def requeue_experiments(logdir, level=1):
         add_gradient_analysis_args(parser)
         get_hash = partial(get_hash_from_experiments, parser)
         status = defaultdict(lambda: 0)
-        requed_status = defaultdict(lambda: 0)
+        requeued_status = defaultdict(lambda: 0)
 
         # count queued records
         status['queued'] = db.count(query.queued == True)
@@ -158,32 +158,37 @@ def requeue_experiments(logdir, level=1):
                         if Success.aborted_by_user == message:
                             status['aborted_by_user'] += 1
                             if level >= 1:
-                                requed_status['aborted_by_user'] += 1
+                                requeued_status['aborted_by_user'] += 1
                                 requeue(to_be_requeued, db_hashes[exp_hash], exp)
 
                         elif Success.success == message:
                             if level >= 10000:
-                                requed_status['success'] += 1
+                                requeued_status['success'] += 1
                                 requeue(to_be_requeued, db_hashes[exp_hash], exp)
                             status['success'] += 1
 
                         elif Success.failure_base in message:
                             status['failed'] += 1
                             if level >= 2:
-                                requed_status['failed'] += 1
+                                requeued_status['failed'] += 1
                                 requeue(to_be_requeued, db_hashes[exp_hash], exp)
                         else:
                             raise ValueError(f"Couldn't handle the success message `{message}`")
                     else:
                         status['running'] += 1
                         if level >= 100:
-                            requed_status['running'] += 1
+                            requeued_status['running'] += 1
                             requeue(to_be_requeued, db_hashes[exp_hash], exp)
+                else:
+                    status['not_found'] += 1
+                    if level >= 200:
+                        requeued_status['not_found'] += 1
+                        requeue(to_be_requeued, db_hashes[exp_hash], exp)
 
         # requeue the stored experiments
         db.write_back(to_be_requeued)
 
         # print status
-        status['queued'] += sum([v for k, v in requed_status.items() if k != 'queued'])
+        status['queued'] += sum([v for k, v in requeued_status.items() if k != 'queued'])
         for k, v in status.items():
-            print(f"  [{k}] {v - requed_status[k]} experiments (Requeud: {requed_status[k]})")
+            print(f"  [{k}] {v - requeued_status[k]} experiments (Requeud: {requeued_status[k]})")
