@@ -1,7 +1,7 @@
 {
   "description": "Training a 1 layer VAE with non-linnear connections and Gaussian prior on a toy dataset.",
   "args": [
-    "--estimator gs",
+    "--estimator pathwise-iwae --tau 0.5",
     "--estimator tvo-part5-config2",
     "--estimator tvo-part2-config1",
     "--estimator ovis-gamma1 --alpha_init 0.01 --warmup 100000"
