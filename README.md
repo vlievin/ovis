@@ -159,15 +159,16 @@ estimator = Estimator(mc=1, iw=16, **config)
 from ovis.analysis.gradients import get_gradients_statistics
 from booster import Aggregator
 agg = Aggregator()
+parameters = {'alpha': 0.9, 'beta': 1}
 for x in loader:
     global_step += 1
-    loss, diagnostics, output = estimator(model, x, backward=False, **config)
+    loss, diagnostics, output = estimator(model, x, backward=False, **parameters)
     loss.mean().backward()
     optimizer.step()
     optimizer.zero_grad()
     agg.update(diagnostics)
     # update parameters
-    update_fn(config)
+    update_fn(parameters)
     
 # epoch summary
 summary = agg.data.to('cpu')
