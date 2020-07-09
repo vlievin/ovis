@@ -188,7 +188,10 @@ def requeue_experiments(logdir, level=1):
         # requeue the stored experiments
         db.write_back(to_be_requeued)
 
+        def requeue_message(n):
+            return f" -->  requeued: {n}" if n > 0 else ""
+
         # print status
         status['queued'] += sum([v for k, v in requeued_status.items() if k != 'queued'])
         for k, v in status.items():
-            print(f"  [{k}] {v - requeued_status[k]} experiments (Requeud: {requeued_status[k]})")
+            print(f"  [{k}] {v - requeued_status[k]} experiments {requeue_message(requeued_status[k])}")
