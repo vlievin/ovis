@@ -9,7 +9,6 @@ from ovis.analysis.gradients import get_gradients_statistics
 from ovis.estimators.config import parse_estimator_id
 from ovis.models import GaussianToyVAE
 from ovis.reporting.asymptotic import *
-from ovis.reporting.parsing import format_estimator_name
 from ovis.reporting.style import *
 from ovis.training.arguments import add_base_args, add_iw_sweep_args
 from ovis.training.evaluation import evaluate_minibatch_and_log

@@ -4,12 +4,12 @@ from shutil import rmtree
 
 from booster.utils import logging_sep
 
-from ovis.reporting.parsing import format_estimator_name, read_experiments, \
+from ovis.reporting.parsing import read_experiments, \
     extract_global_attributes_and_join_into_logs, aggregate_metrics, parse_keys_headers_metrics, build_pivot_table, \
     exponential_moving_average, downsample, parse_ylims
 from ovis.reporting.plotting import pivot_plot, basic_curves_plot, detailed_curves_plot
 from ovis.reporting.style import *
-from ovis.reporting.style import LOG_PLOT_RULES, METRIC_DISPLAY_NAME
+from ovis.reporting.style import LOG_PLOT_RULES, METRIC_DISPLAY_NAME, format_estimator_name
 from ovis.training.logging import get_loggers
 
 

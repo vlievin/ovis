@@ -19,9 +19,8 @@ from tqdm import tqdm
 from ovis.datasets import get_binmnist_datasets
 from ovis.estimators.config import parse_estimator_id
 from ovis.reporting.legend import Legend
-from ovis.reporting.parsing import format_estimator_name
 from ovis.reporting.plotting import PLOT_WIDTH, PLOT_HEIGHT, ESTIMATOR_STYLE, update_labels
-from ovis.reporting.style import DPI, MARKERS, METRIC_DISPLAY_NAME, set_matplotlib_style
+from ovis.reporting.style import DPI, MARKERS, METRIC_DISPLAY_NAME, set_matplotlib_style, format_estimator_name
 from ovis.reporting.utils import sort_estimator_keys
 from ovis.training.arguments import add_base_args, add_iw_sweep_args, add_model_architecture_args
 from ovis.training.initialization import init_logging_directory, init_model

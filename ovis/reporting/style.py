@@ -181,3 +181,13 @@ METRIC_DISPLAY_NAME = {
     'elapsed_time': r'epoch time (s.)'
 
 }
+
+
+def format_estimator_name(name):
+    """add special rules to format the estimator name"""
+    name = name.replace("-exclusive", "")
+
+    if 'tvo' in name:
+        return 'tvo'
+    else:
+        return name
