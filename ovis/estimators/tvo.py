@@ -38,7 +38,7 @@ class ThermoVariationalObjective(VariationalInference):
     def __init__(self, **kwargs: Any):
         assert not kwargs.get('sequential_computation',
                               False), f"{type(self).__name__} is not Compatible with Sequential Computation"
-        super().__init__(**kwargs, reparameterization=False, detach_qlogits=False)
+        super().__init__(**kwargs, reparam=False, detach_qlogits=False)
 
     @staticmethod
     def get_partition(iw, log_beta_min, num_partition, partition_type, partition_id, device='cpu',
