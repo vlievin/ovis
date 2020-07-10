@@ -35,7 +35,7 @@ exps_root, logdir, _ = get_abs_paths(opt.root, opt.exp, None)
 with FileLockedTinyDB(logdir) as db:
     with Header(message=None):
         query = Query()
-        queued = db.count(query.queue == True)
+        queued = db.count(query.queued == True)
         print(f"[Experiments] Queued = {queued}, Total = {len(db)}, path = {logdir}")
 
 if opt.show_all:
