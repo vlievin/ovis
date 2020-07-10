@@ -16,7 +16,7 @@ conda activate ovis
 # use the instructions from https://pytorch.org/
 conda install pytorch=1.5.1 torchvision cudatoolkit=10.2 -c pytorch 
 pip install -r requirements.txt
-# [Optional] Install Latex for the figures
+# [Optional] Install Latex (used for the figures)
 ```
 
 ## Experiments
@@ -24,7 +24,18 @@ pip install -r requirements.txt
 All experiments are managed through the script `manager.py` which implement a mutli-threaded queue system based on
 `TinyDB` and a `filelock` protection. See `python manager.py --help` for more information about the number of 
 subprocesses and resuming experiments. The scripts `dbutils.py` provides a few utilities to inspect and clean 
-the experiment database.  `report.py` allows parsing an experiment directory and producing figures.
+the experiment database.  `report.py` allows parsing an experiment directory and producing figures. Usage:
+
+```bash
+# begins an experiment with 2 processes per GPU (max. 2 GPUs)
+python manager.py --exp exp_id --processes n_procs_per_gpu --max_gpus 2
+# show the experiment status [queued, aborted, failed, running, success] 
+python dbutils.py --exp exp_id --check
+# requeue aborted experiments
+python dbutils.py --exp exp_id --requeue --requeue_level 1
+# generate plots
+python report.py --exp exp_id --metrics train:loss/L_k,train:grads/snr --pivot_metrics train:loss/L_k,train:grads/snr 
+```
 
 ### Asymptotic Variance
 

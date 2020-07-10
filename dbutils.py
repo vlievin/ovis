@@ -22,10 +22,9 @@ parser.add_argument('--requeue', action='store_true',
                     help='requeue experiment according to ´--requeue_level´')
 parser.add_argument('--requeue_level', default=1, type=int,
                     help='Requeue level {0: only check, '
-                         '1: keyboard_interrupt, '
+                         '1: aborted_by_user (sigterm, keyboard_interrupt), not_found (no exp file was found)'
                          '2: failed, '
                          '100: requeue `running` (without `success` file), '
-                         '200: requeue `not_found` (run exp directory was not found), '
                          '10000: all runs, including successful ones}')
 opt = parser.parse_args()
 

@@ -66,7 +66,7 @@ def run_manager():
     parser.add_argument('--max_jobs', default=-1, type=int,
                         help='maximum jobs per thread (stop after `max_jobs` jobs)')
     parser.add_argument('--requeue_level', default=1, type=int,
-                        help='[db] Requeue level {0: nothing, 1: aborted_by_user, 2: failed, 100: not completed, 200: not found}')
+                        help='[db] Requeue level {0: nothing, 1: aborted_by_user/not_found, 2: failed, 100: not completed}')
     parser.add_argument('--purge_lock', action='store_true',
                         help='purge the `.lock` file [use only if the `.lock` file has not been properly removed].')
     opt = parser.parse_args()

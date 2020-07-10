@@ -115,10 +115,9 @@ def requeue_experiments(logdir, level=1):
     check queued==False records, find there corresponding experiment folder and
     requeue (i.e. set record.queue==True) based on the `level`value. Levels:
     * 0: do not requeue
-    * 1: requeue `aborted_by_user` (keyboard_interrupt or sigterm)
+    * 1: requeue `aborted_by_user` (keyboard_interrupt or sigterm) and `not_found` (no match in experiments dir)
     * 2: requeue `failed``
     * 100: requeue `running` (without `success` file)
-    * 200: requeue `no_found` (run exp directory was not found)
     * 10000: all including `success`
     """
 
@@ -126,7 +125,13 @@ def requeue_experiments(logdir, level=1):
         """set record to `queued` flag to True, append record to the ´to_be_requeued´ queue and delete the ´success´ file"""
         record['queued'] = True
         queue += [record]
-        os.remove(os.path.join(logdir, exp, Success.file))
+        if exp is not None:
+            success_file = os.path.join(logdir, exp, Success.file)
+            if os.path.exists(success_file):
+                os.remove(success_file)
+
+    def remove_exp_from_queue(db_hashes_queue, exp_hash):
+        db_hashes_queue.pop(db_hashes_queue.index(exp_hash))
 
     with FileLockedTinyDB(logdir) as db:
         query = db.query()
@@ -145,6 +150,7 @@ def requeue_experiments(logdir, level=1):
         # retrieve all non-queued records from the db and get the run_id hash
         db_hashes = {get_hash(record): record for record in db.search(query.queued == False)}
         db_hashes_set = set(db_hashes.keys())
+        db_hashes_queue = list(db_hashes_set)
         # iterate through experiments files and store the experiments that have been interrupted
         to_be_requeued = []
         for exp in [e for e in os.listdir(logdir) if e[0] != '.']:
@@ -152,6 +158,7 @@ def requeue_experiments(logdir, level=1):
                 exp_config = json.load(f)
                 exp_hash = exp_config['hash']
                 if exp_hash in db_hashes_set:
+                    remove_exp_from_queue(db_hashes_queue, exp_hash)
                     if Success.file in os.listdir(os.path.join(logdir, exp)):
                         message = open(os.path.join(logdir, exp, Success.file), 'r').read()
 
@@ -179,11 +186,13 @@ def requeue_experiments(logdir, level=1):
                         if level >= 100:
                             requeued_status['running'] += 1
                             requeue(to_be_requeued, db_hashes[exp_hash], exp)
-                else:
-                    status['not_found'] += 1
-                    if level >= 200:
-                        requeued_status['not_found'] += 1
-                        requeue(to_be_requeued, db_hashes[exp_hash], exp)
+
+        # process remaining exps in the queue
+        for exp_hash in db_hashes_queue:
+            status['not_found'] += 1
+            if level >= 1:
+                requeued_status['not_found'] += 1
+                requeue(to_be_requeued, db_hashes[exp_hash], None)
 
         # requeue the stored experiments
         db.write_back(to_be_requeued)
