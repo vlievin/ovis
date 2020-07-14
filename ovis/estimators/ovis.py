@@ -5,9 +5,11 @@ from .vimco import Vimco
 class OvisMonteCarlo(Vimco):
     """Sample based approximation of the Optimal control variate (eq 12)"""
 
-    def __init__(self, iw_aux=1, exclusive=False, **kwargs):
+    def __init__(self, iw_aux=1, exclusive=False, iw: int = None, **kwargs):
+        if isinstance(iw_aux, float):
+            iw_aux = max(1, int(iw_aux * iw))
         assert iw_aux > 0  # The `S` samples used to compute the control variate.
-        super().__init__(iw_aux=iw_aux, exclusive=exclusive, **kwargs)
+        super().__init__(iw=iw, iw_aux=iw_aux, exclusive=exclusive, **kwargs)
 
     def forward(self,
                 model: nn.Module,

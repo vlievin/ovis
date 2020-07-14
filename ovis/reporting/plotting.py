@@ -9,8 +9,7 @@ import seaborn as sns
 from matplotlib.lines import Line2D
 from tqdm import tqdm
 
-from ovis.reporting.style import ESTIMATOR_STYLE, PLOT_WIDTH, PLOT_HEIGHT, STEP_FORMAT, ESTIMATOR_ORDER, \
-    DPI, PLOT_TOTAL_WIDTH
+from ovis.reporting.style import ESTIMATOR_STYLE, PLOT_WIDTH, PLOT_HEIGHT, STEP_FORMAT, DPI, PLOT_TOTAL_WIDTH
 from ovis.reporting.style import MARKERS, DASH_STYLES, LINE_STYLES
 from ovis.reporting.utils import plot_cis, set_log_scale, update_labels
 from .legend import Legend
@@ -44,7 +43,8 @@ def basic_curves_plot(logs, path, metrics, main_key, style_key=None, ylims=dict(
         ax = axes[u, v]
 
         if main_key == 'estimator':
-            palette = [ESTIMATOR_STYLE[h_key]['color'] for h_key in hue_order]
+            palette = [ESTIMATOR_STYLE.get(h_key, {'color': sns.color_palette()[k]})['color'] for k, h_key in
+                       enumerate(hue_order)]
         else:
             palette = sns.color_palette()
 
@@ -237,7 +237,7 @@ def pivot_plot(data, path, metrics, category_key, hue_key, x_key, style_key=None
                     sub_data = cat_data[cat_data[hue_key] == h_key]
 
                     # retrieve `style` from known `ESTIMATOR_STYLE` if available
-                    if hue_key == 'estimator':
+                    if hue_key == 'estimator' and hue_key in ESTIMATOR_STYLE.keys():
                         style = copy(ESTIMATOR_STYLE[h_key])
                         style.pop('linestyle')
                     else:

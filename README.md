@@ -67,7 +67,8 @@ python report.py --exp=gaussian-mixture-model \
     --keys=dataset,estimator,iw \
     --metrics=test:gmm/posterior_mse,test:gmm/prior_mse,train:grads/variance,train:grads/snr \
     --detailed_metrics=test:gmm/posterior_mse,test:gmm/prior_mse,train:loss/ess,train:grads/variance,train:grads/snr \
-    --pivot_metrics=min:test:gmm/posterior_mse,min:test:gmm/prior_mse,mean:train:grads/snr 
+    --pivot_metrics=min:test:gmm/posterior_mse,min:test:gmm/prior_mse,mean:train:grads/snr \
+    --ylims=train:loss/ess:0:21
 # access the results
 open reports/gaussian-mixture-model
 ```
@@ -131,7 +132,7 @@ Train a 1-layer Gaussian VAE. Figure 4:
 python report.py --exp=gaussian-vae  \
     --keys=dataset,estimator,iw  \
     --metrics=test:loss/L_k,train:loss/L_k,train:loss/kl_q_p,train:grads/snr \
-    --detailed_metrics=train:loss/L_k,train:loss/kl_q_p \
+    --detailed_metrics=train:loss/L_k,train:loss/kl_q_p,train:grads/snr  \
     --pivot_metrics=max:train:loss/L_k,last:train:loss/kl_q_p,mean:train:loss/ess
 # access the results
 open reports/gaussian-vae
@@ -143,6 +144,21 @@ open reports/gaussian-vae
 
 ```bash
 python measure_efficiency.py
+```
+
+### Budget Analysis
+
+```bash
+# run the experiment
+python manager.py --exp budget-analysis
+# produce the figures
+python report.py --exp=budget-analysis  \
+    --keys=dataset,estimator,iw \
+    --metrics=test:loss/L_k,train:loss/L_k,train:loss/kl_q_p,train:grads/snr  \
+    --detailed_metrics=train:loss/L_k,train:loss/kl_q_p  \
+    --pivot_metrics=max:train:loss/L_k,last:train:loss/kl_q_p,mean:train:loss/ess
+# access the results
+open reports/budget-analysis
 ```
 
 ## Using and Extending OVIS

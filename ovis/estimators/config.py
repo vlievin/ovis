@@ -38,8 +38,9 @@ def parse_estimator_id(estimator_id) -> Tuple[GradientEstimator, Dict]:
     elif 'ovis' in estimator_id:
 
         if "-S" in estimator_id:  # parse `-S` : number of auxiliary particles
-            # the original OVIS-MC used in the paper
-            iw_aux = int(eval([s for s in estimator_id.split("-") if 'S' in s][0].replace("S", "")))
+            # the original OVIS-MC (using exclusive == True)used in the paper
+            # using a `float` value for S will be translated into using S = int(S * iw)
+            iw_aux = float(eval([s for s in estimator_id.split("-") if 'S' in s][0].replace("S", "")))
             exclusive = "-exclusive" in estimator_id
             Estimator = OvisMonteCarlo
             config = {'iw_aux': iw_aux, 'exclusive': exclusive}
