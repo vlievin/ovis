@@ -34,8 +34,8 @@ from ovis.utils.utils import Header, print_info
 def main():
     parser = argparse.ArgumentParser()
     add_base_args(parser, exp="efficiency", dataset="binmnist")
-    add_iw_sweep_args(parser, min=5, max=3e3, steps=10)
-    add_model_architecture_args(parser)
+    add_iw_sweep_args(parser, min=10, max=5e3, steps=10)
+    add_model_architecture_args(parser, model='sbm', depth=1, nlayers=0, N=200)
     parser.add_argument('--load', default='',
                         help='existing experiment path to load from')
     parser.add_argument('--num_runs', default=5, type=int,

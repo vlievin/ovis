@@ -59,15 +59,15 @@ def add_gradient_analysis_args(parser: argparse.PARSER):
                         help='Minimum variance value')
 
 
-def add_model_architecture_args(parser: argparse.PARSER):
+def add_model_architecture_args(parser: argparse.PARSER, model='vae', nlayers=3, depth=3, N=32):
     """Arguments defining the model architecture"""
-    parser.add_argument('--model', default='vae',
+    parser.add_argument('--model', default=model,
                         help='[vae, conv-vae, gmm, gaussian-toy, sbm, gaussian-vae]')
     parser.add_argument('--hdim', default=64, type=int,
                         help='number of hidden units for each layer')
-    parser.add_argument('--nlayers', default=3, type=int,
+    parser.add_argument('--nlayers', default=nlayers, type=int,
                         help='number of hidden layers in each MLP')
-    parser.add_argument('--depth', default=3, type=int,
+    parser.add_argument('--depth', default=depth, type=int,
                         help='number of stochastic layers when using hierarchical models')
     parser.add_argument('--b_nlayers', default=1, type=int,
                         help='number of MLP hidden layers for the neural baseline')
@@ -77,7 +77,7 @@ def add_model_architecture_args(parser: argparse.PARSER):
                         help='dropout value')
     parser.add_argument('--prior', default='normal',
                         help='prior for the VAE model [normal, categorical, bernoulli]')
-    parser.add_argument('--N', default=32, type=int,
+    parser.add_argument('--N', default=N, type=int,
                         help='number of latent variables for each stochastic layer')
     parser.add_argument('--K', default=8, type=int,
                         help='number of categories when using a categorical prior')
