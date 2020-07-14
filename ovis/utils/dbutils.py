@@ -110,6 +110,8 @@ def get_hash_from_experiments(parser, record):
     return get_hash_from_opt(db_opt)
 
 
+
+
 def requeue_experiments(logdir, level=1):
     """
     check queued==False records, find there corresponding experiment folder and
@@ -202,5 +204,6 @@ def requeue_experiments(logdir, level=1):
 
         # print status
         status['queued'] += sum([v for k, v in requeued_status.items() if k != 'queued'])
+        assert status['queued'] == db.count(query.queued == True) # safety check
         for k, v in status.items():
             print(f"  [{k}] {v - requeued_status[k]} experiments {requeue_message(requeued_status[k])}")

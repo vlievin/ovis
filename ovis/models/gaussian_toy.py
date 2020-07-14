@@ -5,25 +5,7 @@ from torch import nn
 
 from ovis.models.distributions import NormalFromLoc, Normal
 from .template import TemplateModel
-
-
-class SafeSeed():
-    """
-    A small class to execute code with a gicen random seed without breaking the randomness
-    """
-
-    def __init__(self, seed):
-        # seed to for the enter during the enter
-        self.seed = seed
-
-        # seed to set for the exit
-        self.exit_seed = int(torch.randint(1, sys.maxsize, (1,)).item())
-
-    def __enter__(self):
-        torch.manual_seed(self.seed)
-
-    def __exit__(self, type, value, traceback):
-        self.exit_seed = int(torch.randint(1, sys.maxsize, (1,)).item())
+from ..utils.utils import ManualSeed
 
 
 class GaussianToyVAE(TemplateModel):
@@ -62,7 +44,7 @@ class GaussianToyVAE(TemplateModel):
 
     def sample_mu_true(self):
         """get the optimal paramter \mu^{true} given the model true seed"""
-        with SafeSeed(self.true_model_seed):
+        with ManualSeed(self.true_model_seed):
             mu_true = Normal(loc=torch.zeros((self.D,)), scale=torch.ones((self.D,))).sample()
 
         return mu_true
@@ -70,7 +52,7 @@ class GaussianToyVAE(TemplateModel):
     def sample_dset(self):
         """sample the data set given \mu^{true}, the number of dset data points and the model random seed"""
         mu = self.sample_mu_true()
-        with SafeSeed(self.true_model_seed):
+        with ManualSeed(self.true_model_seed):
             dset = self.sample_from_prior(self.npoints, mu=mu)['px'].sample()
 
         return dset
