@@ -94,7 +94,7 @@ python report.py --exp=sigmoid-belief-network  \
     --keys=dataset,estimator,iw  \
     --metrics=test:loss/L_k,train:loss/L_k,train:loss/kl_q_p,train:grads/snr \
     --detailed_metrics=test:loss/L_k,train:loss/L_k,train:loss/kl_q_p,train:loss/kl,train:loss/ess,train:active_units/au,train:grads/snr \
-    --pivot_metrics=max:test:loss/L_k,max:train:loss/L_k,last:test:loss/kl_q_p,last:train:loss/ess \
+    --pivot_metrics=max:test:loss/L_k,max:train:loss/L_k,last:train:loss/kl_q_p,last:train:loss/ess \
     --ylims=test:loss/L_k:-94:-88,train:loss/L_k:-93:-86
 # produce the figure
 python report_figure3.py --figure left
@@ -113,7 +113,7 @@ python report.py --exp=sigmoid-belief-network  \
     --keys=dataset,estimator,iw  \
     --metrics=test:loss/L_k,train:loss/L_k,train:loss/kl_q_p,train:grads/snr \
     --detailed_metrics=test:loss/L_k,train:loss/L_k,train:loss/kl_q_p,train:loss/kl,train:loss/ess,train:active_units/au,train:grads/snr \
-    --pivot_metrics=max:test:loss/L_k,max:train:loss/L_k,last:test:loss/kl_q_p,last:train:loss/ess \
+    --pivot_metrics=max:test:loss/L_k,max:train:loss/L_k,last:train:loss/kl_q_p,last:train:loss/ess \
     --ylims=test:loss/L_k:-94:-88,train:loss/L_k:-93:-86
 # produce the figure
 python report_figure3.py --figure right
