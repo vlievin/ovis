@@ -18,6 +18,8 @@ parser.add_argument('--find', default='',
                          'Examples: --find "query.queued == True", --find "query.arg.search(\'(?=.*ovis)\')"')
 parser.add_argument('--check', action='store_true',
                     help='check experiments status')
+parser.add_argument('--error_messages', action='store_true',
+                    help='display error messages')
 parser.add_argument('--requeue', action='store_true',
                     help='requeue experiment according to ´--requeue_level´')
 parser.add_argument('--requeue_level', default=1, type=int,
@@ -58,6 +60,10 @@ if len(opt.delete) > 0:
 if opt.check:
     with Header(f"Status"):
         requeue_experiments(logdir, level=0)
+
+if opt.error_messages:
+    with Header(f"Error Messages"):
+        requeue_experiments(logdir, level=0, display_mode='messages')
 
 if opt.requeue:
     with Header(f"Requeuing"):

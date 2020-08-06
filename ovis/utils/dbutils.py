@@ -110,9 +110,7 @@ def get_hash_from_experiments(parser, record):
     return get_hash_from_opt(db_opt)
 
 
-
-
-def requeue_experiments(logdir, level=1):
+def requeue_experiments(logdir, level=1, display_mode='status'):
     """
     check queued==False records, find there corresponding experiment folder and
     requeue (i.e. set record.queue==True) based on the `level`value. Levels:
@@ -153,6 +151,7 @@ def requeue_experiments(logdir, level=1):
         db_hashes = {get_hash(record): record for record in db.search(query.queued == False)}
         db_hashes_set = set(db_hashes.keys())
         db_hashes_queue = list(db_hashes_set)
+        messages = []
         # iterate through experiments files and store the experiments that have been interrupted
         to_be_requeued = []
         for exp in [e for e in os.listdir(logdir) if e[0] != '.']:
@@ -165,24 +164,34 @@ def requeue_experiments(logdir, level=1):
                         message = open(os.path.join(logdir, exp, Success.file), 'r').read()
 
                         if Success.aborted_by_user == message:
-                            status['aborted_by_user'] += 1
+                            status_id = 'aborted_by_user'
+                            status[status_id] += 1
                             if level >= 1:
-                                requeued_status['aborted_by_user'] += 1
+                                requeued_status[status_id] += 1
                                 requeue(to_be_requeued, db_hashes[exp_hash], exp)
 
                         elif Success.success == message:
+                            status_id = 'success'
                             if level >= 10000:
-                                requeued_status['success'] += 1
+                                requeued_status[status_id] += 1
                                 requeue(to_be_requeued, db_hashes[exp_hash], exp)
-                            status['success'] += 1
+                            status[status_id] += 1
 
                         elif Success.failure_base in message:
-                            status['failed'] += 1
+                            status_id = 'failed'
+                            status[status_id] += 1
                             if level >= 2:
-                                requeued_status['failed'] += 1
+                                requeued_status[status_id] += 1
                                 requeue(to_be_requeued, db_hashes[exp_hash], exp)
                         else:
-                            raise ValueError(f"Couldn't handle the success message `{message}`")
+                            status_id = 'unknown'
+                            status[status_id] += 1
+                            if level >= 100:
+                                requeued_status[status_id] += 1
+                                requeue(to_be_requeued, db_hashes[exp_hash], exp)
+
+                        # store messages
+                        messages += [{'status': status_id, 'exp': exp, 'message': message}]
                     else:
                         status['running'] += 1
                         if level >= 100:
@@ -199,11 +208,20 @@ def requeue_experiments(logdir, level=1):
         # requeue the stored experiments
         db.write_back(to_be_requeued)
 
-        def requeue_message(n):
-            return f" -->  requeued: {n}" if n > 0 else ""
+        if display_mode == 'status':  # print status
+            def requeue_message(n):
+                return f" -->  requeued: {n}" if n > 0 else ""
 
-        # print status
-        status['queued'] += sum([v for k, v in requeued_status.items() if k != 'queued'])
-        assert status['queued'] == db.count(query.queued == True) # safety check
-        for k, v in status.items():
-            print(f"  [{k}] {v - requeued_status[k]} experiments {requeue_message(requeued_status[k])}")
+            status['queued'] += sum([v for k, v in requeued_status.items() if k != 'queued'])
+            assert status['queued'] == db.count(query.queued == True)  # safety check
+            for k, v in status.items():
+                print(f"  [{k}] {v - requeued_status[k]} experiments {requeue_message(requeued_status[k])}")
+
+        elif display_mode == 'messages':  # print error messages
+            for data in messages:
+                if data['status'] in ['failed', 'unknown']:
+                    print(f"[{data['status']}] id = {data['exp']}\n{data['message']}")
+                    print(logging_sep("-"))
+
+        else:
+            raise ValueError(f"Unknown display mode = `{display_mode}`.")
