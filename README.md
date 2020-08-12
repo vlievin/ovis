@@ -8,6 +8,19 @@ Code for the *Optimal Variance Control of the Score Function Gradient Estimator 
 
 This paper introduces novel results for the score function gradient estimator of the importance weighted variational bound (IWAE). We prove that in the limit of large $K$ (number of importance samples) one can choose the control variate such that the Signal-to-Noise ratio (SNR) of the estimator grows as $\sqrt{K}$. This is in contrast to the standard pathwise gradient estimator where the SNR decreases as $1/\sqrt{K}$. Based on our theoretical findings we develop a novel control variate that extends on VIMCO. Empirically, for the training of both continuous and discrete generative models, the proposed method yields superior variance reduction, resulting in an SNR for IWAE that increases with $K$ without relying on the reparameterization trick. The novel estimator is competitive with state-of-the-art reparameterization-free gradient estimators such as Reweighted Wake-Sleep (RWS) and the thermodynamic variational objective (TVO) when training generative models.
 
+## Citation
+
+```
+@misc{livin2020optimal,
+    title={Optimal Variance Control of the Score Function Gradient Estimator for Importance Weighted Bounds},
+    author={Valentin Liévin and Andrea Dittadi and Anders Christensen and Ole Winther},
+    year={2020},
+    eprint={2008.01998},
+    archivePrefix={arXiv},
+    primaryClass={stat.ML}
+}
+```
+
 ## Requirements
 
 ```bash
@@ -94,7 +107,7 @@ python report.py --exp=sigmoid-belief-network  \
     --keys=dataset,estimator,iw  \
     --metrics=test:loss/L_k,train:loss/L_k,train:loss/kl_q_p,train:grads/snr \
     --detailed_metrics=test:loss/L_k,train:loss/L_k,train:loss/kl_q_p,train:loss/kl,train:loss/ess,train:active_units/au,train:grads/snr \
-    --pivot_metrics=max:test:loss/L_k,max:train:loss/L_k,last:test:loss/kl_q_p,last:train:loss/ess \
+    --pivot_metrics=max:test:loss/L_k,max:train:loss/L_k,last:train:loss/kl_q_p,last:train:loss/ess \
     --ylims=test:loss/L_k:-94:-88,train:loss/L_k:-93:-86
 # produce the figure
 python report_figure3.py --figure left
@@ -113,7 +126,7 @@ python report.py --exp=sigmoid-belief-network  \
     --keys=dataset,estimator,iw  \
     --metrics=test:loss/L_k,train:loss/L_k,train:loss/kl_q_p,train:grads/snr \
     --detailed_metrics=test:loss/L_k,train:loss/L_k,train:loss/kl_q_p,train:loss/kl,train:loss/ess,train:active_units/au,train:grads/snr \
-    --pivot_metrics=max:test:loss/L_k,max:train:loss/L_k,last:test:loss/kl_q_p,last:train:loss/ess \
+    --pivot_metrics=max:test:loss/L_k,max:train:loss/L_k,last:train:loss/kl_q_p,last:train:loss/ess \
     --ylims=test:loss/L_k:-94:-88,train:loss/L_k:-93:-86
 # produce the figure
 python report_figure3.py --figure right
