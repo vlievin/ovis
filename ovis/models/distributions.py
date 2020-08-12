@@ -3,13 +3,16 @@ from typing import *
 import torch
 from torch import Tensor
 from torch.distributions import Distribution, Normal, Bernoulli
+from torch.distributions import constraints
 from torch.nn.functional import gumbel_softmax, log_softmax
 
 
 class BaseDistribution(Distribution):
     """A base class wrapper of torch.Distributions that takes a single tensor `logits` as parameter"""
 
-    def __init__(self, logits: Tensor, tau: float = 0, dim: int = -1):
+    arg_constraints = {'logits': constraints.real}
+
+    def __init__(self, logits: Tensor, tau: float = 0, dim: int = -1, **kwargs):
         self.logits = logits
         self.tau = tau
         self.dim = dim
@@ -30,7 +33,7 @@ class PseudoCategorical(BaseDistribution):
     because the `log_prob` is evaluated differently.
     """
 
-    def __init__(self, logits: Tensor, tau: float = 0, dim: int = -1):
+    def __init__(self, logits: Tensor, tau: float = 0, dim: int = -1, **kwargs):
         logits = logits - logits.logsumexp(dim=dim, keepdim=True)
         super().__init__(logits, tau=tau, dim=dim)
 
@@ -46,7 +49,8 @@ class PseudoCategorical(BaseDistribution):
         return gumbel_softmax(self.logits, tau=tau, hard=hard, dim=self.dim)
 
     def sample(self):
-        return self.rsample().detach()
+        with torch.no_grad():
+            return self.rsample()
 
     def entropy(self):
         return - (self.logits * self.logits.exp()).sum(dim=self.dim)
@@ -58,7 +62,7 @@ class PseudoCategorical(BaseDistribution):
 
 class PseudoBernoulli(Bernoulli):
 
-    def __init__(self, logits: Tensor, tau: float = 0, dim: int = -1):
+    def __init__(self, logits: Tensor, tau: float = 0, dim: int = -1, **kwargs):
         super().__init__(logits=logits)
         assert tau == 0, 'Not implemented for tau > 0'
         self.tau = tau
@@ -84,7 +88,7 @@ class NormalFromLogits(BaseDistribution):
         # logits are of dimension (*, N, K,) with K = 2
         mu, log_std = self.logits.chunk(2, dim=self.dim)
         scale = log_std.exp()
-        return mu, scale
+        return mu.squeeze(self.dim), scale.squeeze(self.dim)
 
     @property
     def _torch_normal(self):

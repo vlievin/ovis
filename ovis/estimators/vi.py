@@ -56,8 +56,12 @@ class VariationalInference(GradientEstimator):
         return loss, diagnostics, output
 
     @staticmethod
-    def evaluate_model(model: TemplateModel, x: Tensor, iw: int = None, mc: int = None, **kwargs: Any) -> Tuple[
-        Dict[str, Any], Dict[str, Any]]:
+    def evaluate_model(model: TemplateModel,
+                       x: Tensor,
+                       iw: int = None,
+                       mc: int = None,
+                       detach_qlogits: bool = False,
+                       **kwargs: Any) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """
         Perform a forward pass through the `model` given the observation `x` and return the log probabilities, all of
         shape [bs, mc, iw, *]
@@ -65,6 +69,7 @@ class VariationalInference(GradientEstimator):
         :param x: observation
         :param mc: number of outer Monte-Carlo samples
         :param iw: number of Importance Weighted samples
+        :param detach_qlogits: detach the logits of `q(z|x)`. gradients can still be probapagated through the reparameterization
         :param kwargs: parameters for the model
         :return: ({'log_px_z' : log p(x|z), 'log_qz' : log q(z|x), 'log_pz': log p(z)}, model_output, )
         """
@@ -85,6 +90,10 @@ class VariationalInference(GradientEstimator):
         # a,b,c are lists where each element represents a stochastic layer
         px, z, qz, pz = [output[k] for k in ['px', 'z', 'qz', 'pz']]
 
+        # detach the logits of q(z|x)
+        if detach_qlogits:
+            qz = [qz_l.__class__(logits=qz_l.logits.detach(), **kwargs) for qz_l in qz]
+
         # evaluate the log-densities given the observation `x` and the latent sample `z`
         # i.e. compute: log p(x|z), log p(z) and log q(z|x)
         # n.b. all log probabilities are of shape [bs * mc * iw,]
@@ -103,7 +112,7 @@ class VariationalInference(GradientEstimator):
     def compute_log_weights(log_px_z: Tensor = None,
                             log_pz: Tensor = None,
                             log_qz: Tensor = None,
-                            detach_qlogits: bool = False,
+                            no_phi_grads: bool = False,
                             beta: float = 1.0,
                             alpha: float = 0,
                             freebits: Optional[float] = None,
@@ -116,7 +125,7 @@ class VariationalInference(GradientEstimator):
         :param log_px_z: log p(x | z) of shape [bs, mc, iw]
         :param log_pz: `log p(z) l=1..L]` of shape [bs, mc, iw, L]
         :param log_qz: `log q(z|x) l=1..L]` of shape [bs, mc, iw, L]
-        :param detach_qlogits: detach `log q(z|x)` to prevent getting gradients through `phi`
+        :param no_phi_grads: detach `log q(z|x)` to prevent getting gradients through `phi`
         :param beta: weight for the KL term (i.e. Beta-VAE [https://pdfs.semanticscholar.org/a902/26c41b79f8b06007609f39f82757073641e2.pdf])
         :param alpha: parameter of the IWR bound
         :params freebits: number of freebits applied to each layer
@@ -124,7 +133,7 @@ class VariationalInference(GradientEstimator):
         """
 
         # detach log q(z^k | x) in case L_k should only be differentiable with regards to `theta`.
-        if detach_qlogits:
+        if no_phi_grads:
             log_qz = log_qz.detach()
 
         # kl = E[log q(z^k|x) - log p(z^k)]
@@ -183,7 +192,7 @@ class VariationalInference(GradientEstimator):
         :param log_px_z: log p(x | z) of shape [bs, mc, iw]
         :param log_pz: `log p(z) l=1..L]` of shape [bs, mc, iw, L]
         :param log_qz: `log q(z|x) l=1..L]` of shape [bs, mc, iw, L]
-        :param detach_qlogits: detach `log q(z|x)` to prevent getting gradients through `phi`
+        :param no_phi_grads: detach `log q(z|x)` to prevent getting gradients through `phi`
         :param beta: weight for the KL term (i.e. Beta-VAE [https://pdfs.semanticscholar.org/a902/26c41b79f8b06007609f39f82757073641e2.pdf])
         :param alpha: parameter of the IWR bound
         :params freebits: number of freebits applied to each layer
@@ -344,3 +353,73 @@ class PathwiseIWAE(VariationalInference):
 
     def __init__(self, mc: int = 1, iw: int = 1, **kwargs):
         super().__init__(reparam=True, mc=1, iw=iw * mc, **kwargs)
+
+
+class StickingTheLanding(Pathwise):
+    """
+    Implemetation of "Sticking the Landing: Simple, Lower-Variance Gradient Estimators for Variational Inference" [https://arxiv.org/abs/1703.0919]
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(detach_qlogits=True, **kwargs)
+
+
+class DoublyReparameterized(Pathwise):
+    """
+    Implemetation of "Doubly Reparameterized Gradient Estimators for Monte Carlo Objectives" [https://arxiv.org/pdf/1810.04152.pdf]
+    Following the implementation from N. Siddharth [https://github.com/iffsid/DReG-PyTorch/blob/master/model.py]
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(detach_qlogits=True, **kwargs)
+
+    def forward(self,
+                model: nn.Module,
+                x: Tensor, backward: bool = False,
+                return_diagnostics: bool = True,
+                **kwargs: Any) -> Tuple[Tensor, Diagnostic, Dict]:
+        """
+        Perform a forward pass through the VAE model, evaluate the Importance-Weighted bound and [optional] perform the backward pass.
+        See the method `compute_iw_bound` for further documentation.
+        :param model: VAE model
+        :param x: observation
+        :param backward: perform the backward pass by calling loss.backward()
+        :param kwargs: additional arguments for the model's forward pass and the method `compute_iw_bound`
+        :return: (loss : Tensor of shape [bs,],
+                  diagnostics: nested dictionary containing at least the keys {'loss':{'loss':..., 'elbo':...}}
+                  output: model's output + meta data)
+        """
+
+        # update the `config` object with the `kwargs`
+        config = self.get_runtime_config(**kwargs)
+
+        # forward pass and eval of the log probs
+        if config.get('sequential_computation', False):
+            log_probs, output = self.sequential_evaluation(model, x, **config)
+        else:
+            log_probs, output = self.evaluate_model(model, x, **config)
+
+        iw_data = self.compute_log_weights_and_iw_bound(**log_probs, **config)
+
+        # compute the loss
+        log_wk = iw_data.get('log_wk')
+        z = output.get('z')
+
+        # see: https://github.com/iffsid/DReG-PyTorch/blob/master/model.py
+        with torch.no_grad():
+            reweight = torch.exp(log_wk - torch.logsumexp(log_wk, 2, keepdim=True))
+            for zz in z:
+                zz.register_hook(lambda grad: reweight.view(-1).unsqueeze(-1) * grad)
+
+        loss = - (reweight * log_wk).sum(2).mean(dim=(1, 0))
+
+        # prepare diagnostics
+        diagnostics = Diagnostic()
+        if return_diagnostics:
+            diagnostics = self.base_loss_diagnostics(**iw_data, **log_probs)
+            diagnostics.update(self.additional_diagnostics(**output))
+
+        if backward:
+            loss.backward()
+
+        return loss, diagnostics, output

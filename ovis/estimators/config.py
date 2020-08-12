@@ -19,6 +19,12 @@ def parse_estimator_id(estimator_id) -> Tuple[GradientEstimator, Dict]:
     elif estimator_id == 'pathwise-iwae':
         return PathwiseIWAE, {}
 
+    elif estimator_id == 'stl':
+        return StickingTheLanding, {}
+
+    elif estimator_id == 'dreg':
+        return DoublyReparameterized, {}
+
     elif 'wake-wake' == estimator_id:
         return WakeWake, {}
 

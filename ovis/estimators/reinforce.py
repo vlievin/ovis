@@ -24,7 +24,7 @@ class Reinforce(VariationalInference):
     def __init__(self, baseline: Optional[nn.Module] = None, **kwargs: Any):
         assert not kwargs.get('sequential_computation',
                               False), f"{type(self).__name__} is not Compatible with Sequential Computation"
-        super().__init__(**kwargs, reparam=False, detach_qlogits=True)
+        super().__init__(**kwargs, reparam=False, no_phi_grads=True)
         self.baseline = baseline
         control_loss_weight = 1. if baseline is not None else 0.
         self.register_buffer('control_loss_weight', torch.tensor(control_loss_weight))
