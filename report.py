@@ -184,7 +184,7 @@ def report():
             if len(metrics['detailed_metrics']):
                 logger.info(f"|- Generating detailed plots for aux. key = {aux_key}")
                 _path = os.path.join(output_path,
-                                     f"{level}{cat_key}={cat}-detailed-plot-hue={main_key}-style={aux_key}.png")
+                                     f"{level}-{cat_key}={cat}-detailed-plot-hue={main_key}-style={aux_key}.png")
                 detailed_curves_plot(cat_logs, _path, metrics['detailed_metrics'], main_key, aux_key,
                                      style_key=third_key, ylims=ylims, **meta)
 

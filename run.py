@@ -111,7 +111,7 @@ def run():
         pickle.dump(hyperparameters, open(os.path.join(logdir, "hyperparameters.pkl"), "wb"))
 
         print(logging_sep("="))
-        print(f"Parameters (N = {sum(p.numel() for p in model.parameters()):.3E})")
+        base_logger.info(f"Parameters (N = {sum(p.numel() for p in model.parameters()):.3E})")
         print(logging_sep())
         for k, v in model.named_parameters():
             base_logger.info(f"{k} : N = {v.numel()}, mean = {v.mean().item():.3f}, std = {v.std().item():.3f}")

@@ -83,7 +83,7 @@ Run all experiments:
 python manager.py --exp sigmoid-belief-network
 ```
 
-Figure 3 (left, VIMCO + OVIS-IW):
+Figure 3 (left, VIMCO + OVIS-IW), 3 seeds:
 
 ![Training curves](.assets/figure3_left.png) 
 
@@ -102,14 +102,14 @@ python report_figure3.py --figure left
 open reports/sigmoid-belief-network-inc=iwbound
 ```
 
-Figure 3 (right, TVO + OVIS-IWR):
+Figure 3 (right, TVO + OVIS-IWR), 3 seeds:
 
 ![Training curves](.assets/figure3_right.png)
 
 ```bash
 # gather the data
 python report.py --exp=sigmoid-belief-network  \
-    --include=iwrbound,tvo \
+    --include=iwrbound \
     --keys=dataset,estimator,iw  \
     --metrics=test:loss/L_k,train:loss/L_k,train:loss/kl_q_p,train:grads/snr \
     --detailed_metrics=test:loss/L_k,train:loss/L_k,train:loss/kl_q_p,train:loss/kl,train:loss/ess,train:active_units/au,train:grads/snr \
@@ -136,29 +136,6 @@ python report.py --exp=gaussian-vae  \
     --pivot_metrics=max:train:loss/L_k,last:train:loss/kl_q_p,mean:train:loss/ess
 # access the results
 open reports/gaussian-vae
-```
-
-### Computational Efficiency
-
-![Memory usage and epoch time](.assets/efficiency.png)
-
-```bash
-python measure_efficiency.py
-```
-
-### Budget Analysis
-
-```bash
-# run the experiment
-python manager.py --exp budget-analysis
-# produce the figures
-python report.py --exp=budget-analysis  \
-    --keys=dataset,estimator,iw \
-    --metrics=test:loss/L_k,train:loss/L_k,train:loss/kl_q_p,train:grads/snr  \
-    --detailed_metrics=train:loss/L_k,train:loss/kl_q_p  \
-    --pivot_metrics=max:train:loss/L_k,last:train:loss/kl_q_p,mean:train:loss/ess
-# access the results
-open reports/budget-analysis
 ```
 
 ## Using and Extending OVIS
@@ -260,3 +237,81 @@ output = model.sample_from_prior(1)
 * Reparameterization-based:
     * VAE
     * IWAE
+    * IWAE-STL (Sticking the Landing)
+    * IWAE-DReG (Doubly Reparameterized Gradient Estimators for Monte Carlo Objectives)
+    
+    
+## Additional Results
+
+### Binarized MNIST, Fashion MNIST and Omniglot
+
+Training the Sigmoid Belief Network on Binarized MNIST, Fashion MNIST and Omniglot. The hyperparameters are identical for all experiments.
+With and Without Rényi warmup.
+
+```bash
+python report.py --exp=sigmoid-belief-network  \
+   --keys=dataset,estimator,iw,warmup  \
+   --metrics=test:loss/L_k,train:loss/L_k,train:loss/kl_q_p,train:grads/snr  \
+   --detailed_metrics=test:loss/L_k,train:loss/L_k,train:loss/kl_q_p,train:loss/kl,train:loss/ess,train:active_units/au,train:grads/snr  \
+   --pivot_metrics=max:test:loss/L_k,max:train:loss/L_k,last:train:loss/kl_q_p,last:train:loss/ess,last:train:active_units/au \
+   --downsample 50 \
+   --include tvo,vimco,ovis-gamma1
+```
+
+![Training a Sigmoid Belief Network](.assets/sbm-all-pivot.png)
+
+
+### Budget Analysis
+
+In this experiment, we compare the asymptotic OVIS (gamma=1) with the sample based control OVIS-MC. By contrast with 
+the previous experiments, the total particle budget remains equals to `K`. 
+The `K` particles are used to estimate the gradient of the generative model, 
+`K-S` particles are used to evaluate the score based estimate of the gradient of the inference network and `S` particles 
+are used to estimate the control variate. In the following plots, the identifier `ovis-Sy` indicates that `S = yK`. 
+See experiment `.json` file for more details.
+
+#### Gaussian VAE
+
+```bash
+# run the experiment
+python manager.py --exp budget-analysis
+# produce the figures
+python report.py --exp=budget-analysis  \
+    --keys=dataset,estimator,iw \
+    --metrics=test:loss/L_k,train:loss/L_k,train:loss/kl_q_p,train:grads/snr  \
+    --detailed_metrics=train:loss/L_k,train:loss/kl_q_p  \
+    --pivot_metrics=max:train:loss/L_k,last:train:loss/kl_q_p,mean:train:loss/ess
+# access the results
+open reports/budget-analysis
+```
+
+![budget analysis for a Gaussian VAE](.assets/budget-gaussian-vae.png)
+
+#### Sigmoid Belief Network
+
+```bash
+# run the experiment
+python manager.py --exp budget-analysis-sbm
+# produce the figures
+python report.py --exp=budget-analysis-sbm  \
+    --keys=dataset,estimator,iw \
+    --metrics=test:loss/L_k,train:loss/L_k,train:loss/kl_q_p,train:grads/snr  \
+    --detailed_metrics=train:loss/L_k,train:loss/kl_q_p  \
+    --pivot_metrics=max:train:loss/L_k,last:train:loss/kl_q_p,mean:train:loss/ess
+# access the results
+open reports/budget-analysis-sbm
+```
+
+![budget analysis for a Sigmoid Belief Network](.assets/budget-sbm.png)
+
+
+### Computational Efficiency
+
+Checking the memory usage of the different estimators given different particles budgets.
+
+```bash
+python measure_efficiency.py
+```
+
+![Memory usage and epoch time](.assets/efficiency.png)
+

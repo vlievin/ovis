@@ -1,6 +1,7 @@
 import matplotlib
 import matplotlib.pyplot as plt
 import seaborn as sns
+
 from ..utils.utils import Header
 
 DPI = 200
@@ -46,6 +47,12 @@ def set_matplotlib_style():
                     rc={"lines.linewidth": 1.2, "lines.markersize": 12, 'text.latex.preamble': r"\usepackage{amsmath}"})
 
 
+DATASET_DISPLAY_NAME = {
+    'binmnist': 'Binarized MNIST',
+    'fashion': 'Binarized Fashion MNIST',
+    'omniglot': 'Omniglot',
+}
+
 ESTIMATOR_STYLE = {
     'ovis-gamma1': {'color': "#E6C445", 'marker': ">", 'linestyle': "-"},
     'ovis-gamma1-arithmetic': {'color': "#B07BF9", 'marker': 4, 'linestyle': "-"},
@@ -55,6 +62,11 @@ ESTIMATOR_STYLE = {
     'ovis-S10': {'color': "#D15C2A", 'marker': "^", 'linestyle': "-"},
     'ovis-S50': {'color': "#954026", 'marker': "^", 'linestyle': "-"},
     'ovis-S100': {'color': "#954026", 'marker': "^", 'linestyle': "-"},
+    'ovis-S0.1': {'color': "#F2CBBB", 'marker': "^", 'linestyle': ":"},
+    'ovis-S0.2': {'color': "#E39878", 'marker': "^", 'linestyle': ":"},
+    'ovis-S0.3': {'color': "#DA7144", 'marker': "^", 'linestyle': ":"},
+    'ovis-S0.5': {'color': "#99431E", 'marker': "^", 'linestyle': ":"},
+    'ovis-S0.7': {'color': "#512315", 'marker': "^", 'linestyle': ":"},
     'ovis': {'color': "#954026", 'marker': "^", 'linestyle': "-"},
     'reinforce': {'color': "#7A9396", 'marker': "o", 'linestyle': "-"},
     'vimco-arithmetic': {'color': "#6CAD8E", 'marker': "h", 'linestyle': "-"},
@@ -64,6 +76,8 @@ ESTIMATOR_STYLE = {
     'wake-sleep': {'color': "#7091d4", 'marker': "x", 'linestyle': "-"},
     'pathwise-iwae': {'color': "#968FA1", 'marker': "s", 'linestyle': "-"},
     'pathwise-vae': {'color': "#554c5e", 'marker': "d", 'linestyle': "-"},
+    'stl': {'color': "#c075d9", 'marker': 2, 'linestyle': "-"},
+    'dreg': {'color': "#bd2f82", 'marker': 3, 'linestyle': "-"},
     'gs': {'color': "#968FA1", 'marker': "*", 'linestyle': "-"}
 }
 
@@ -77,6 +91,12 @@ ESTIMATOR_ORDER = [
     'ovis-S50',
     'ovis-S10',
     'ovis-S1',
+    'ovis-S0.1',
+    'ovis-S0.1',
+    'ovis-S0.2',
+    'ovis-S0.3',
+    'ovis-S0.5',
+    'ovis-S0.7',
     'tvo',
     'wake-wake',
     'wake-sleep',
@@ -85,6 +105,8 @@ ESTIMATOR_ORDER = [
     'vimco-geometric',
     'reinforce',
     'pathwise-iwae',
+    'stl',
+    'dreg',
     'pathwise-vae',
     'gs'
 ]
@@ -99,6 +121,11 @@ ESTIMATOR_GROUPS = {
     'ovis-S50': 1,
     'ovis-S10': 1,
     'ovis-S1': 1,
+    'ovis-S0.1': 1,
+    'ovis-S0.2': 1,
+    'ovis-S0.3': 1,
+    'ovis-S0.5': 1,
+    'ovis-S0.7': 1,
     'wake-wake': 2,
     'wake-sleep': 2,
     'tvo': 2,
@@ -106,6 +133,8 @@ ESTIMATOR_GROUPS = {
     'vimco-geometric': 3,
     'reinforce': 3,
     'pathwise-iwae': 4,
+    'stl': 4,
+    'dreg': 4,
     'pathwise-vae': 4,
     'gs': 4
 }
@@ -118,6 +147,11 @@ ESTIMATOR_DISPLAY_NAME = {
     'ovis-S1': r"$\operatorname{OVIS}_{\operatorname{MC}}\ (S=1)$",
     'ovis-S10': r"$\operatorname{OVIS}_{\operatorname{MC}}\ (S=10)$",
     'ovis-S50': r"$\operatorname{OVIS}_{\operatorname{MC}}\ (S=50)$",
+    'ovis-S0.1': r"$\operatorname{OVIS}_{\operatorname{MC}}\ (S=0.1K')$",
+    'ovis-S0.2': r"$\operatorname{OVIS}_{\operatorname{MC}}\ (S=0.2K')$",
+    'ovis-S0.3': r"$\operatorname{OVIS}_{\operatorname{MC}}\ (S=0.3K')$",
+    'ovis-S0.5': r"$\operatorname{OVIS}_{\operatorname{MC}}\ (S=0.5K')$",
+    'ovis-S0.7': r"$\operatorname{OVIS}_{\operatorname{MC}}\ (S=0.7K')$",
     'ovis': r"$\operatorname{OVIS}_{\operatorname{MC}}$",
     'ovis-S100': r"$\operatorname{OVIS}_{\operatorname{MC}}\ (S=100)$",
     'reinforce': r"$\operatorname{REINFORCE}$",
@@ -128,6 +162,8 @@ ESTIMATOR_DISPLAY_NAME = {
     'wake-wake': r"$\operatorname{RWS}$",
     'wake-sleep': r"$\operatorname{RWS}(\operatorname{WS})$",
     'pathwise-iwae': r"$\operatorname{pathwise}\ (\operatorname{IWAE})$",
+    'stl': r"$\operatorname{pathwise}\ (\operatorname{IWAE-STL})$",
+    'dreg': r"$\operatorname{pathwise}\ (\operatorname{IWAE-DReG})$",
     'pathwise-vae': r"$\operatorname{pathwise}\ (\operatorname{VAE})$",
     'gs': r"$\operatorname{Concrete})$"
 }

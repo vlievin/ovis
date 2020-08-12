@@ -1,7 +1,6 @@
 import argparse
 import os
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from matplotlib.lines import Line2D
@@ -16,6 +15,8 @@ parser.add_argument('--figure', default='left', help='[left, right]')
 parser.add_argument('--root', default='reports/', help='experiment directory')
 parser.add_argument('--exp', default='', type=str,
                     help='experiment id [default use the exp name specified in the Readme.md]')
+parser.add_argument('--dataset', default='binmnist', type=str,
+                    help='dataset id')
 
 # keys
 parser.add_argument('--style_key', default='iw', help='style key')
@@ -23,8 +24,8 @@ parser.add_argument('--metric', default='train:loss/L_k', help='metric to displa
 
 # plot config
 parser.add_argument('--desaturate', default=0.9, type=float, help='desaturate hue')
-parser.add_argument('--lighten', default=1.2, type=float, help='lighten hue')
-parser.add_argument('--alpha', default=0.8, type=float, help='opacity')
+parser.add_argument('--lighten', default=1., type=float, help='lighten hue')
+parser.add_argument('--alpha', default=0.9, type=float, help='opacity')
 parser.add_argument('--linewidth', default=1.2, type=float, help='line width')
 opt = parser.parse_args()
 
@@ -44,7 +45,7 @@ else:
 
 # read data
 data = pd.read_csv(os.path.join(root, 'curves.csv'))
-filtered_data = data
+filtered_data = data[data['dataset'] == opt.dataset]
 filtered_data = filtered_data[filtered_data['_key'] == opt.metric]
 
 print(data)
@@ -92,7 +93,7 @@ update_labels(np.array(ax), METRIC_DISPLAY_NAME, agg_fns=dict())
 
 if opt.figure == 'left':
     infos = [(Line2D([0], [0], color="black", linewidth=3, linestyle=''), r"$\operatorname{OVIS}_{\operatorname{MC}}$")]
-    for estimator, name in zip(["ovis-S50", "ovis-S10"], [r"$S=50, \alpha=0$", r"$S=10, \alpha=0$"]):
+    for estimator, name in zip(["ovis-S50", "ovis-S10", "ovis-S1"], [r"$S=50, \alpha=0$", r"$S=10, \alpha=0$", r"$S=1, \alpha=0$"]):
         color = ESTIMATOR_STYLE[estimator]['color']
         patch = Line2D([0], [0], color=color, linewidth=3, linestyle='-')
         label = name
@@ -121,14 +122,14 @@ if opt.figure == 'left':
 elif opt.figure == 'right':
     infos = [(Line2D([0], [0], color=color, linewidth=3, linestyle=''), r"$\operatorname{OVIS}_{\operatorname{MC}}$")]
     for estimator, name in zip(["ovis-S50", "ovis-S10", "ovis-S1"],
-                               [r"$S=50, \alpha \geq 0$", r"$S=10, \alpha \geq 0$", r"$S=1, \alpha=\geq 0$"]):
+                               [r"$S=50, \alpha \geq 0$", r"$S=10, \alpha \geq 0$", r"$S=1, \alpha \geq 0$"]):
         color = ESTIMATOR_STYLE[estimator]['color']
         patch = Line2D([0], [0], color=color, linewidth=3, linestyle='-')
         label = name
         infos += [(patch, label)]
 
     infos += [(Line2D([0], [0], color=color, linewidth=3, linestyle=''), r"$\operatorname{OVIS}_{\boldsymbol{\sim}}$")]
-    for estimator, name in zip(["ovis-gamma1"], [r"$\gamma=1, \alpha \geq 0$"]):
+    for estimator, name in zip(["ovis-gamma0", "ovis-gamma1"], [r"$\gamma=0, \alpha \geq 0$", r"$\gamma=1, \alpha \geq 0$"]):
         color = ESTIMATOR_STYLE[estimator]['color']
         patch = Line2D([0], [0], color=color, linewidth=3, linestyle='-')
         label = name
@@ -156,7 +157,7 @@ ax.set_position([box.x0, box.y0, box.width * 0.9, box.height])
 
 # Put a legend to the right of the current axis
 lines, labels = zip(*infos)
-ax.legend(lines, labels, loc='center left', bbox_to_anchor=(1, 0.5), fontsize='x-small', fancybox=False, shadow=False)
+ax.legend(lines, labels, loc='center left', bbox_to_anchor=(1, 0.5), fontsize='xx-small', fancybox=False, shadow=False)
 ax.xaxis.set_major_formatter(matplotlib.ticker.StrMethodFormatter(STEP_FORMAT))
 loc = matplotlib.ticker.MultipleLocator(base=1.0)
 ax.yaxis.set_major_locator(loc)
@@ -164,6 +165,5 @@ ax.yaxis.set_major_locator(loc)
 plt.ylim([-92.5, -86.2])
 plt.savefig(os.path.join(root, f'figure3_{opt.figure}.png'), bbox_inches='tight')
 plt.close()
-
 
 print(f"Output = {os.path.abspath(root)}")

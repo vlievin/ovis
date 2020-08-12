@@ -53,7 +53,7 @@ class Legend():
                     style_labels = [f"K={l}" for l in style_labels]
                 if special_key == 'warmup':
                     _f = lambda l: eval(l) if isinstance(l, str) else l
-                    style_labels = ["warmup" if _f(l) > 0 else "no warmup" for l in style_labels]
+                    style_labels = [r"$\operatorname{with}\ \alpha\ \operatorname{warmup}$" if _f(l) > 0 else r"$\operatorname{without}\ \alpha\ \operatorname{warmup}$" for l in style_labels]
                 if special_key == 'alpha_init':
                     style_labels = [r"$\alpha_{\operatorname{init}}=" + f"{l}$" for l in style_labels]
                 if special_key == 'alpha':
