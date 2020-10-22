@@ -168,6 +168,7 @@ The full example is available in `example.py`.
 from ovis.estimators.config import parse_estimator_id
 Estimator, config = parse_estimator_id("ovis-gamma1")
 estimator = Estimator(mc=1, iw=16, **config)
+loss, diagnostics, output = estimator(model, x)
 ```
 
 #### Train your model and analyse the gradients
