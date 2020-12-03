@@ -1,8 +1,6 @@
 ![Optimal Variance Control of the Score Function Gradient Estimator for Importance Weighted Bounds (a.k.a **OVIS**) credits: Thomas Jarrand](.assets/ovis-banner.png)
 
-Code for the *Optimal Variance Control of the Score Function Gradient Estimator for Importance Weighted Bounds* (a.k.a **OVIS** : Optimal Variance -- Importance Sampling).
-
-**[Warning]** Refactoring in progress, minor adjustments are being made.
+Code for the *Optimal Variance Control of the Score Function Gradient Estimator for Importance Weighted Bounds* (a.k.a **OVIS** : Optimal Variance -- Importance Sampling). Arxiv Preprint: [2008.01998](https://arxiv.org/abs/2008.01998).
 
 ## Abstract 
 
@@ -32,6 +30,22 @@ pip install -r requirements.txt
 # [Optional] Install Latex (used for the figures)
 ```
 
+## Available Gradient Estimators
+
+* Reparameterization-free:
+    * Reinforce
+    * Reinforce + Neural Baseline
+    * Vimco
+    * Reweighted Wake-Sleep
+    * TVO
+    * OVIS
+
+* Reparameterization-based:
+    * VAE
+    * IWAE
+    * IWAE-STL (Sticking the Landing)
+    * IWAE-DReG (Doubly Reparameterized Gradient Estimators for Monte Carlo Objectives)
+
 ## Experiments
 
 All experiments are managed through the script `manager.py` which implement a mutli-threaded queue system based on
@@ -59,9 +73,9 @@ Anaysis of the gradients for a simple Gaussian model. Figure 1:
 
 ```bash
 # run the experiment
-python manager.py --exp asymptotic-analysis
+python manager.py --exp asymptotic-variance
 # produce the figures
-python report_asymptotic_variance --exp asymptotic-analysis
+python report_asymptotic_variance --exp asymptotic-variance
 # access the results
 open reports/asymptotic-variance
 ```
@@ -237,30 +251,16 @@ model = SimpleModel(10, 10)
 output = model(x)
 output = model.sample_from_prior(1)
 ```
-
-### Available Gradient Estimators
-
-* Reparameterization-free:
-    * Reinforce
-    * Reinforce + Neural Baseline
-    * Vimco
-    * Reweighted Wake-Sleep
-    * TVO
-    * OVIS
-
-* Reparameterization-based:
-    * VAE
-    * IWAE
-    * IWAE-STL (Sticking the Landing)
-    * IWAE-DReG (Doubly Reparameterized Gradient Estimators for Monte Carlo Objectives)
     
     
 ## Additional Results
 
 ### Binarized MNIST, Fashion MNIST and Omniglot
 
-Training the Sigmoid Belief Network on Binarized MNIST, Fashion MNIST and Omniglot. The hyperparameters are identical for all experiments.
+Fitting the Binarized MNIST, Fashion MNIST and Omniglot datasets. The hyperparameters are identical for all experiments.
 With and Without Rényi warmup.
+
+#### Sigmoid Belief Network
 
 ```bash
 python report.py --exp=sigmoid-belief-network  \
@@ -273,6 +273,19 @@ python report.py --exp=sigmoid-belief-network  \
 ```
 
 ![Training a Sigmoid Belief Network](.assets/sbm-all-pivot.png)
+
+#### Gaussian VAE
+
+```bash
+python report.py --exp=gaussian-vae \
+   --keys=dataset,estimator,iw,alpha  \
+   --metrics=test:loss/L_k,train:loss/L_k,train:loss/kl_q_p,train:grads/snr  \
+   --detailed_metrics=test:loss/L_k,train:loss/L_k,train:loss/kl_q_p,train:loss/kl,train:loss/ess,train:active_units/au,train:grads/snr  \
+   --pivot_metrics=max:test:loss/L_k,max:train:loss/L_k,last:train:loss/kl_q_p,last:train:loss/ess,last:train:grads/snr \
+   --downsample 50 
+```
+
+![Training a Sigmoid Belief Network](.assets/gaussian-vae-all-pivot.png)
 
 
 ### Budget Analysis
