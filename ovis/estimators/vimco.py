@@ -19,7 +19,7 @@ class Vimco(Reinforce):
 
     @torch.no_grad()
     def compute_control_variate(self, x: Tensor, log_wk: Tensor, mc: int = 1, iw: int = 1, arithmetic=False,
-                                use_double: bool = False, **kwargs: Dict[str, Tensor]) -> Tensor:
+                                alpha: float = 0, use_double: bool = False, **kwargs: Dict[str, Tensor]) -> Tensor:
         """
         Compute the Vimco control variate `c_k = c_k(z_{-k}) = log 1/k \sum_{l \neq k} w_l + \hat{w}_{-k}`
           * arithmetic: \hat{w}_{-k} = 1/K-1 \sum_{l \neq k} w_l
@@ -29,6 +29,7 @@ class Vimco(Reinforce):
         :param mc: number of outer Monte-Carlo samples
         :param iw: number of Importance Weighted samples
         :param arithmetic: average type
+        :param alpha: Renyi Divergence parameter
         :param use_double: use double precision
         :param kwargs: additional data
         :return: control variate `c_k`
@@ -67,7 +68,7 @@ class Vimco(Reinforce):
         if use_double:
             c_k = c_k.to(_dtype)
 
-        return c_k
+        return c_k / (1 - alpha)
 
 
 class VimcoArithmetic(Vimco):

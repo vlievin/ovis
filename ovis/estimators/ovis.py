@@ -147,7 +147,8 @@ class OvisAsymptotic(Vimco):
         :return: control variate
         """
         # avoid overflow: [warning] using a large epsilon value is equivalent to "truncated importance sampling"
-        one_minus_v_k = (1 - v_k).clamp(min=torch.finfo(v_k.dtype).eps)
+        eps = torch.finfo(v_k.dtype).eps
+        one_minus_v_k = (1 - v_k).clamp(min=eps)
 
         # log (1 - 1/K)
         log_1_m_uniform = cast_tensor(1 - 1 / v_k.shape[2], v_k).log()
@@ -165,8 +166,9 @@ class OvisAsymptoticFromVimco(OvisAsymptotic):
     """
 
     @torch.no_grad()
-    def compute_control_variate(self, x: Tensor, alpha: float = 0, gamma: float = 1, arithmetic: bool = False,
+    def compute_control_variate(self, x: Tensor, gamma: float = 1, arithmetic: bool = True,
                                 **data: Dict[str, Tensor]) -> Tensor:
         v_k = data['v_k']
+        log_1_m_uniform = cast_tensor(1 - 1 / v_k.shape[2], v_k).log()
         log_Z_no_k = Vimco.compute_control_variate(self, x, arithmetic=arithmetic, **data)
-        return log_Z_no_k - gamma * v_k + (1 - gamma) * self.log_1_m_uniform
+        return log_Z_no_k - gamma * v_k + (1 - gamma) * log_1_m_uniform
