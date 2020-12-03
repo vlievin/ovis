@@ -7,7 +7,6 @@
     "--estimator ovis-S10-exclusive",
     "--estimator ovis-S1-exclusive",
     "--estimator pathwise-iwae",
-    "--estimator vimco-geometric",
     "--estimator vimco-arithmetic"
   ],
   "global": "--silent --deterministic",

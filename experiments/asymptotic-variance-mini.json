@@ -3,7 +3,7 @@
   "script": "asymptotic_variance.py",
   "args": [
     "--estimator pathwise-iwae",
-    "--estimator ovis-gamma0"
+    "--estimator vimco-arithmetic"
   ],
   "global": "--silent --deterministic",
   "parameters": {

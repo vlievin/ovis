@@ -2,6 +2,7 @@
   "description": "Training a 3 layers Sigmoid Belief Network with linear connections as in `The Thermodynamic Variational Objective`.",
   "args": [
     "--estimator ovis-gamma1",
+    "--estimator ovis-gamma0",
     "--estimator ovis-S0.1",
     "--estimator ovis-S0.2",
     "--estimator ovis-S0.3",
