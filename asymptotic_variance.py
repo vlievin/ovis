@@ -19,10 +19,10 @@ from ovis.utils.success import Success
 from ovis.utils.utils import notqdm, ManualSeed, print_info
 
 
-def init_estimator(estimator_id, iw):
+def init_estimator(estimator_id, iw, alpha=0):
     """initialize the gradient estimator based on the `estimator_id` and the number of particles `iw`"""
     Estimator, config = parse_estimator_id(estimator_id)
-    return Estimator(baseline=None, mc=1, iw=iw, **config)
+    return Estimator(baseline=None, mc=1, iw=iw, alpha=alpha, **config)
 
 
 parser = argparse.ArgumentParser()
@@ -34,6 +34,8 @@ parser.add_argument('--estimators', default='ovis-gamma0, pathwise-iwae',
                     help='accepts comma separated list')
 parser.add_argument('--epsilon', default='0.01', type=str,
                     help='scale of the noise added to the optimal parameters [accepts comma separated list]')
+parser.add_argument('--alpha', default=0, type=float,
+                    help='alpha parameter')
 parser.add_argument('--iw_valid', default=1000, type=int,
                     help='number of iw samples for testing')
 
@@ -66,7 +68,7 @@ if opt['silent']:
 
 # defining the run identifier
 deterministic_id = get_hash_from_opt(opt)
-run_id = f"asymptotic-{opt['estimators']}-iw{opt['iw_min']}-{opt['iw_max']}-{opt['iw_steps']}-seed{opt['seed']}-eps{opt['epsilon']}"
+run_id = f"asymptotic-{opt['estimators']}-iw{opt['iw_min']}-{opt['iw_max']}-{opt['iw_steps']}-seed{opt['seed']}-eps{opt['epsilon']}-alpha{opt['alpha']}"
 if opt['exp'] != "":
     run_id += f"-{opt['exp']}"
 run_id += f"{deterministic_id}"
@@ -142,6 +144,7 @@ with Success(logdir=logdir):
         meta = {
             'seed': opt['seed'],
             'noise': epsilon,
+            'alpha': opt['alpha'],
             'mc_samples': int(opt['mc_samples']),
             **{k: v.mean().item() for k, v in diagnostics['loss'].items()}
         }
@@ -157,7 +160,7 @@ with Success(logdir=logdir):
                 base_logger.info(f"{estimator_id} [K = {iw}]")
 
                 # create estimator
-                estimator = init_estimator(estimator_id, iw)
+                estimator = init_estimator(estimator_id, iw, alpha=opt['alpha'])
                 estimator.to(device)
                 parameters = {}
 
