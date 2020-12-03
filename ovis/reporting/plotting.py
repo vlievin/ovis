@@ -10,7 +10,7 @@ from matplotlib.lines import Line2D
 from tqdm import tqdm
 
 from ovis.reporting.style import ESTIMATOR_STYLE, PLOT_WIDTH, PLOT_HEIGHT, STEP_FORMAT, DPI, PLOT_TOTAL_WIDTH
-from ovis.reporting.style import MARKERS, DASH_STYLES, LINE_STYLES, DATASET_DISPLAY_NAME
+from ovis.reporting.style import MARKERS, LINE_STYLES, DATASET_DISPLAY_NAME
 from ovis.reporting.utils import plot_cis, set_log_scale, update_labels
 from .legend import Legend
 from .utils import get_outliers_boundaries, sort_estimator_keys
@@ -35,7 +35,7 @@ def basic_curves_plot(logs, path, metrics, main_key, style_key=None, ylims=dict(
     nrows = -(-N // ncols)  # ceiling division
     hue_order = list(logs[main_key].unique())
     sort_estimator_keys(hue_order)
-    fig, axes = plt.subplots(nrows, ncols, figsize=(PLOT_WIDTH * ncols, PLOT_HEIGHT * (nrows + 0.5)), dpi=DPI)
+    fig, axes = plt.subplots(nrows, ncols, figsize=(PLOT_WIDTH * ncols, PLOT_HEIGHT * (nrows + 0.5)), dpi=DPI, squeeze=False)
     legend = Legend(fig)
     for i, k in tqdm(list(enumerate(metrics)), desc="|    subplots"):
         u = i // ncols
@@ -54,7 +54,6 @@ def basic_curves_plot(logs, path, metrics, main_key, style_key=None, ylims=dict(
                      style=style_key,
                      data=logs[logs['_key'] == k],
                      ax=ax,
-                     dashes=DASH_STYLES,
                      palette=palette,
                      )
 
@@ -318,7 +317,10 @@ def pivot_plot(data, path, metrics, category_key, hue_key, x_key, style_key=None
 
     # update axis labels and draw the legend
     update_labels(axes, metric_dict, agg_fns=agg_fns)
-    legend.draw(group=style_order is not None and len(style_order) > 1)
+    try:
+        legend.draw(group=style_order is not None and len(style_order) > 1)
+    except:
+        print(f"### Failed to draw the legend in Pivot plot.")
 
     plt.savefig(path)
     plt.close()

@@ -4,9 +4,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 
-from ovis.reporting.plotting import PLOT_WIDTH, PLOT_HEIGHT, ESTIMATOR_STYLE
 from ovis.reporting.legend import Legend
-from ovis.reporting.style import DPI, MARKERS, set_matplotlib_style
+from ovis.reporting.plotting import PLOT_WIDTH, PLOT_HEIGHT, ESTIMATOR_STYLE
+from ovis.reporting.style import DPI, MARKERS, set_matplotlib_style, LINE_STYLES
 from ovis.reporting.utils import get_outliers_boundaries
 
 
@@ -15,9 +15,15 @@ def plot_statistics(df, opt, logdir):
 
     param_name = {'b': "\mathbf{b}", 'tensor:b': "b", 'tensor:qlogits': "\phi"}.get(opt['key_filter'], "\theta")
     if opt['draw_individual']:
-        metrics = ['individual-snr', 'grads-dsnr', 'individual-var', 'individual-magnitude']
+        metrics = ['individual-snr',
+                   # 'grads-dsnr',
+                   'individual-var',
+                   'individual-magnitude']
     else:
-        metrics = ['grads-snr', 'grads-dsnr', 'grads-variance', 'grads-magnitude']
+        metrics = ['grads-snr',
+                   # 'grads-dsnr',
+                   'grads-variance',
+                   'grads-magnitude']
 
     _snr = r"\operatorname{SNR}"
     _dsnr = r"\operatorname{DSNR}"
@@ -26,13 +32,14 @@ def plot_statistics(df, opt, logdir):
     _avg = r"\frac{1}{D} \sum_i"
     _ex = r"\mathbb{E}"
     metrics_formaters = [lambda p: f"${_avg} {_snr}_i\: (K)$",
-                         lambda p: f"${_avg} {_dsnr}_i\: (K)$",
+                         # lambda p: f"${_avg} {_dsnr}_i\: (K)$",
                          lambda p: f"${_avg} {_var}[ g_i ]\: (K)$",
                          lambda p: f"${_avg} | {_ex} [ g_i ]  |\: (K)$"
                          ]
 
     noises = sorted(df['noise'].unique())
     estimators = df['estimator'].unique()
+    alphas = df['alpha'].unique() if 'alpha' in df.keys() else [0]
     nrows = len(noises)
     ncols = len(metrics)
     fig, axes = plt.subplots(ncols=ncols, nrows=nrows, figsize=(PLOT_WIDTH * ncols, PLOT_HEIGHT * (0.5 + nrows)),
@@ -46,7 +53,7 @@ def plot_statistics(df, opt, logdir):
             ax = axes[n, k]
 
             # plot boundaries (gray lines)
-            if k < 2:
+            if k < 1:
                 iws = list(sorted(df['iw'].unique()))
                 _alpha = 0.3
                 expected_max = [1e1 / k ** 0.5 for k in iws]
@@ -60,37 +67,40 @@ def plot_statistics(df, opt, logdir):
                 ax.loglog(iws, expected_max, ":", color="#666666", basex=10, basey=10, alpha=_alpha)
 
             for e, estimator_id in enumerate(estimators):
-                sub_df = noise_df[noise_df['estimator'] == estimator_id]
-                iws = sub_df['iw'].values
+                for a, alpha in enumerate(alphas):
+                    sub_df = noise_df[(noise_df['estimator'] == estimator_id)]
+                    if len(alphas) > 1:
+                        sub_df = (sub_df['alpha'] == alpha)
+                    iws = sub_df['iw'].values
 
-                # color and marker
-                if estimator_id in ESTIMATOR_STYLE:
-                    color = ESTIMATOR_STYLE[estimator_id]['color']
-                    marker = ESTIMATOR_STYLE[estimator_id]['marker']
-                else:
-                    color = sns.color_palette()[e]
-                    marker = MARKERS[e]
+                    # color and marker
+                    if estimator_id in ESTIMATOR_STYLE:
+                        color = ESTIMATOR_STYLE[estimator_id]['color']
+                        marker = ESTIMATOR_STYLE[estimator_id]['marker']
+                    else:
+                        color = sns.color_palette()[e]
+                        marker = MARKERS[e]
 
-                # style
-                if "individual-" in metric:
-                    _metrics = [m for m in sub_df.keys() if metric in m]
-                    kwargs = {'alpha': 0.5, 'color': color}
-                else:
-                    _metrics = [metric]
-                    kwargs = {'alpha': 0.9, 'color': color, 'marker': marker}
+                    # style
+                    if "individual-" in metric:
+                        _metrics = [m for m in sub_df.keys() if metric in m]
+                        kwargs = {'alpha': 0.5, 'color': color, 'linestyle': LINE_STYLES[a]}
+                    else:
+                        _metrics = [metric]
+                        kwargs = {'alpha': 0.9, 'color': color, 'marker': marker, 'linestyle': LINE_STYLES[a]}
 
-                # plot
-                for i, _metric in enumerate(_metrics):
-                    values = sub_df[_metric].values
-                    _label = estimator_id if i == 0 else None
-                    ax.loglog(iws, values, label=_label, basex=10, basey=10, **kwargs)
-
+                    # plot
+                    for i, _metric in enumerate(_metrics):
+                        values = sub_df[_metric].values
+                        alpha_id = f"-alpha{alpha}" if len(alphas) else ""
+                        _label = f"{estimator_id}{alpha_id}" if i == 0 else None
+                        ax.loglog(iws, values, label=_label, basex=10, basey=10, **kwargs)
 
             # y axis scaling
             y_min, y_max = np.log10(noise_df[_metrics].values.min()), np.log10(noise_df[_metrics].values.max())
             height = y_max - y_min
             margin = 0.1
-            ax.set_ylim([10**(y_min - margin * height), 10**(y_max + margin * height)])
+            ax.set_ylim([10 ** (y_min - margin * height), 10 ** (y_max + margin * height)])
 
             if n == nrows - 1:
                 pass  # ax.set_xlabel("") #ax.set_xlabel("$K$")

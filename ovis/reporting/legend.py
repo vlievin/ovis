@@ -131,7 +131,7 @@ class Legend():
                                     bbox_to_anchor=(0, 1 - (legend_height) / height, 1, 1),
                                     fancybox=False,
                                     shadow=False,
-                                    fontsize=kwargs.pop('fontsize', 'medium' if ncol < 8 else 'x-small'),
+                                    fontsize=kwargs.pop('fontsize', 'medium' if ncol < 6 else 'x-small'),
                                     **kwargs)
 
         if alpha is not None:

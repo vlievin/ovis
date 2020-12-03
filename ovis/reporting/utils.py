@@ -118,7 +118,12 @@ def update_labels(axes, metric_dict, agg_fns=dict()):
     def _parse(label):
         return label.split(':')[-1]
 
-    for ax in axes.reshape(-1):
+    try:
+        _axes = axes.reshape(-1)
+    except:
+        _axes = [axes]
+
+    for ax in _axes:
 
         xlabel = _parse(ax.get_xlabel())
         ylabel = _parse(ax.get_ylabel())

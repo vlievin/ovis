@@ -51,7 +51,7 @@ filtered_data = filtered_data[filtered_data['_key'] == opt.metric]
 print(data)
 
 # plot the figure
-figure = plt.figure(figsize=(PLOT_WIDTH, PLOT_HEIGHT), dpi=DPI)
+figure = plt.figure(figsize=(PLOT_WIDTH, 1.3 * PLOT_HEIGHT), dpi=DPI)
 ax = plt.gca()
 
 # color
@@ -157,7 +157,7 @@ ax.set_position([box.x0, box.y0, box.width * 0.9, box.height])
 
 # Put a legend to the right of the current axis
 lines, labels = zip(*infos)
-ax.legend(lines, labels, loc='center left', bbox_to_anchor=(1, 0.5), fontsize='xx-small', fancybox=False, shadow=False)
+ax.legend(lines, labels, loc='center left', bbox_to_anchor=(1, 0.5), fontsize='x-small', fancybox=False, shadow=False)
 ax.xaxis.set_major_formatter(matplotlib.ticker.StrMethodFormatter(STEP_FORMAT))
 loc = matplotlib.ticker.MultipleLocator(base=1.0)
 ax.yaxis.set_major_locator(loc)
