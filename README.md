@@ -1,22 +1,157 @@
 ![Optimal Variance Control of the Score Function Gradient Estimator for Importance Weighted Bounds (a.k.a **OVIS**) credits: Thomas Jarrand](.assets/ovis-banner.png)
 
-Code for the *Optimal Variance Control of the Score Function Gradient Estimator for Importance Weighted Bounds* (a.k.a **OVIS** : Optimal Variance -- Importance Sampling). Arxiv Preprint: [2008.01998](https://arxiv.org/abs/2008.01998).
+Official code for the *Optimal Variance Control of the Score Function Gradient Estimator for Importance Weighted Bounds* (a.k.a **OVIS** : Optimal Variance -- Importance Sampling). Published at NeuriPS 2020.
 
-## Abstract 
+- [NeurIPS 2020 proceedings](https://proceedings.neurips.cc/paper/2020/hash/c15203a83f778ce8934d0efaf2d5c6f3-Abstract.html)
+- [Arxiv preprint](https://arxiv.org/abs/2008.01998)
 
-This paper introduces novel results for the score function gradient estimator of the importance weighted variational bound (IWAE). We prove that in the limit of large $K$ (number of importance samples) one can choose the control variate such that the Signal-to-Noise ratio (SNR) of the estimator grows as $\sqrt{K}$. This is in contrast to the standard pathwise gradient estimator where the SNR decreases as $1/\sqrt{K}$. Based on our theoretical findings we develop a novel control variate that extends on VIMCO. Empirically, for the training of both continuous and discrete generative models, the proposed method yields superior variance reduction, resulting in an SNR for IWAE that increases with $K$ without relying on the reparameterization trick. The novel estimator is competitive with state-of-the-art reparameterization-free gradient estimators such as Reweighted Wake-Sleep (RWS) and the thermodynamic variational objective (TVO) when training generative models.
+OVIS is a state-of-the-art gradient estimator for discrete VAEs. This repo provides a user-friendly interface to OVIS, and other gradient estimators. OVIS can easily be imported in your project to train and evaluate discrete VAEs. The implementation is compatible with a wide variety of VAE models, including hierarchical ones. This library allows reproducing all the experiments from the paper.
 
 ## Citation
 
 ```
-@misc{livin2020optimal,
-    title={Optimal Variance Control of the Score Function Gradient Estimator for Importance Weighted Bounds},
-    author={Valentin Liévin and Andrea Dittadi and Anders Christensen and Ole Winther},
-    year={2020},
-    eprint={2008.01998},
-    archivePrefix={arXiv},
-    primaryClass={stat.ML}
+@inproceedings{NEURIPS2020_c15203a8,
+ author = {Li\'{e}vin, Valentin and Dittadi, Andrea and Christensen, Anders and Winther, Ole},
+ booktitle = {Advances in Neural Information Processing Systems},
+ editor = {H. Larochelle and M. Ranzato and R. Hadsell and M. F. Balcan and H. Lin},
+ pages = {16591--16602},
+ publisher = {Curran Associates, Inc.},
+ title = {Optimal Variance Control of the Score-Function Gradient Estimator for Importance-Weighted Bounds},
+ url = {https://proceedings.neurips.cc/paper/2020/file/c15203a83f778ce8934d0efaf2d5c6f3-Paper.pdf},
+ volume = {33},
+ year = {2020}
 }
+
+```
+
+## Included in this library
+
+* Reparameterization-free:
+    * Reinforce
+    * Reinforce + Neural Baseline
+    * [Vimco](https://arxiv.org/abs/1602.06725)
+    * [RWS (Reweighted Wake-Sleep)](https://arxiv.org/abs/1805.10469)
+    * [TVO (Thermodynamic Variational Objective)](https://arxiv.org/abs/1907.00031)
+    * [OVIS](https://arxiv.org/abs/2008.0199)
+
+* Reparameterization-based:
+    * VAE
+    * [IWAE](https://arxiv.org/abs/1509.00519)
+    * [IWAE-STL (Sticking the Landing)](https://arxiv.org/abs/1703.09194)
+    * [IWAE-DReG (Doubly Reparameterized Gradient Estimators for Monte Carlo Objectives)](https://arxiv.org/abs/1810.04152)
+
+
+## Train your own models using OVIS
+
+OVIS can easily be imported in your own project to train your own discrete VAE/generative models. You simply need to define your model following the example bellow. The full example is available in `example.py`. 
+
+#### 0. installing as a package
+
+```bash
+# install the latest release
+pip install git+https://github.com/vlievin/ovis.git
+# OR install in dev. mode
+git clone https://github.com/vlievin/ovis.git && pip install -e ovis/
+```
+
+#### 1. Initialize a gradient estimator
+
+Gradient estimators can be initialized in 2 lines. Using the estimator, computing the loss for your model is a one liner.
+
+```python
+# init the estimator
+from ovis.estimators.config import parse_estimator_id
+Estimator, config = parse_estimator_id("ovis-gamma1")
+estimator = Estimator(mc=1, iw=16, **config)
+
+# use it to compute the differentiable loss
+loss, diagnostics, output = estimator(model, x)
+```
+
+#### 2. Implement your own `nn.Module` following the `TemplateModel` class (`ovis/models/template.py`):
+
+OVIS relies on `torch.distributions` to implement the variational distributions. The library has been tested with normal, bernoulli and categorical distributions, but this should work with other distributions as well as long as it comes with a `.log_prob()` method. 
+
+Every model should implement:
+* `forward(self, x:Tensor, reparam:bool=False, **kwargs) -> OUTPUT` 
+* `sample_from_prior(self, bs: int, **kwargs)-> OUTPUT`
+
+Where the output format is defined as `OUTPUT=Dict[str, Union[Distribution, List[Tensor], List[Distribution]]]`.
+
+The output is a dictionary with keys:
+* `px`: `Distribution` : distribution modelling `p(x|z)`
+* `z`: `List[Tensor]` : latent samples `z`, one item for each layer
+* `pz`: `List[Distribution]` : prior distribution `p(z)`, one item for each layer
+* `qz`: `List[Distribution]` : posterior distribution `q(z|x)`, one item for each layer
+
+
+```python
+from torch import nn, Tensor, zeros
+from torch.distributions import Bernoulli
+from ovis.models import TemplateModel
+
+class SimpleModel(TemplateModel):
+    def __init__(self, xdim, zdim):
+        super().__init__()
+        self.inference_network = nn.Linear(xdim, zdim)
+        self.generative_model = nn.Linear(zdim, xdim)
+        self.register_buffer('prior', zeros((1, zdim,)))
+
+    def forward(self, x:Tensor, reparam:bool=False, **kwargs):
+        # q(z|x)
+        qz = Bernoulli(logits=self.inference_network(x))
+        # z ~ q(z|x)
+        z = qz.rsample() if reparam else qz.sample()
+        # p(x)
+        pz = Bernoulli(logits=self.prior)
+        # p(x|z)
+        px = Bernoulli(logits=self.generative_model(z))
+        # store z, pz, qz as lists (useful for hierarchical models)
+        return {'px': px, 'z': [z], 'qz': [qz], 'pz': [pz]}
+
+    def sample_from_prior(self, bs: int, **kwargs):
+        pz = Bernoulli(logits=self.prior.expand(bs, *self.prior.shape[1:]))
+        z = pz.sample()
+        px = Bernoulli(logits=self.generative_model(z))
+        return {'px': px, 'z': [z], 'pz': [pz]}
+
+# generate x ~ Bernoulli(0.5), initialize a simple VAE, forward pass, prior sampling
+x = Bernoulli(logits=zeros((1, 10,))).sample()
+model = SimpleModel(10, 10)
+output = model(x)
+output = model.sample_from_prior(1)
+```
+
+#### 3. Train your model and analyse the gradients
+
+The code bellow shows a simple training loop for training a model.
+Notice how `parameters` can be used for various types of scheduling (i.e. $\beta$-annealing).
+The estimator also returns useful information regarding the computation of the gradients, such as the ELBO, KL or the effective sample size (ESS).
+
+```python
+from ovis.analysis.gradients import get_gradients_statistics
+from booster import Aggregator
+agg = Aggregator()
+parameters = {'alpha': 0.9, 'beta': 1}
+for x in loader:
+    global_step += 1
+    loss, diagnostics, output = estimator(model, x, backward=False, **parameters)
+    loss.mean().backward()
+    optimizer.step()
+    optimizer.zero_grad()
+    agg.update(diagnostics)
+    # update parameters
+    update_fn(parameters)
+    
+# epoch summary
+summary = agg.data.to('cpu')
+
+# analyse the gradients of the parameters of the inference network
+grad_stats, _ = get_gradients_statistics(estimator, model, x, mc_samples=10, key_filter='inference_network')
+summary.update(grad_stats)
+
+# log data
+summary.log(tensorboard_writer, global_step)
 ```
 
 ## Requirements
@@ -30,23 +165,11 @@ pip install -r requirements.txt
 # [Optional] Install Latex (used for the figures)
 ```
 
-## Available Gradient Estimators
+## Abstract 
 
-* Reparameterization-free:
-    * Reinforce
-    * Reinforce + Neural Baseline
-    * Vimco
-    * Reweighted Wake-Sleep
-    * TVO
-    * OVIS
+This paper introduces novel results for the score function gradient estimator of the importance weighted variational bound (IWAE). We prove that in the limit of large $K$ (number of importance samples) one can choose the control variate such that the Signal-to-Noise ratio (SNR) of the estimator grows as $\sqrt{K}$. This is in contrast to the standard pathwise gradient estimator where the SNR decreases as $1/\sqrt{K}$. Based on our theoretical findings we develop a novel control variate that extends on VIMCO. Empirically, for the training of both continuous and discrete generative models, the proposed method yields superior variance reduction, resulting in an SNR for IWAE that increases with $K$ without relying on the reparameterization trick. The novel estimator is competitive with state-of-the-art reparameterization-free gradient estimators such as Reweighted Wake-Sleep (RWS) and the thermodynamic variational objective (TVO) when training generative models.
 
-* Reparameterization-based:
-    * VAE
-    * IWAE
-    * IWAE-STL (Sticking the Landing)
-    * IWAE-DReG (Doubly Reparameterized Gradient Estimators for Monte Carlo Objectives)
-
-## Experiments
+## Reproducing the experiments
 
 All experiments are managed through the script `manager.py` which implement a mutli-threaded queue system based on
 `TinyDB` and a `filelock` protection. See `python manager.py --help` for more information about the number of 
@@ -163,95 +286,7 @@ python report.py --exp=gaussian-vae  \
     --pivot_metrics=max:train:loss/L_k,last:train:loss/kl_q_p,mean:train:loss/ess
 # access the results
 open reports/gaussian-vae
-```
-
-## Using and Extending OVIS
-
-```bash
-# install the latest release
-pip install git+https://github.com/vlievin/ovis.git
-# OR install in dev. mode
-git clone https://github.com/vlievin/ovis.git && pip install -e ovis/
-```
-
-The full example is available in `example.py`. 
-
-#### Initialize a gradient estimator
-
-```python
-from ovis.estimators.config import parse_estimator_id
-Estimator, config = parse_estimator_id("ovis-gamma1")
-estimator = Estimator(mc=1, iw=16, **config)
-loss, diagnostics, output = estimator(model, x)
-```
-
-#### Train your model and analyse the gradients
-
-```python
-from ovis.analysis.gradients import get_gradients_statistics
-from booster import Aggregator
-agg = Aggregator()
-parameters = {'alpha': 0.9, 'beta': 1}
-for x in loader:
-    global_step += 1
-    loss, diagnostics, output = estimator(model, x, backward=False, **parameters)
-    loss.mean().backward()
-    optimizer.step()
-    optimizer.zero_grad()
-    agg.update(diagnostics)
-    # update parameters
-    update_fn(parameters)
-    
-# epoch summary
-summary = agg.data.to('cpu')
-
-# analyse the gradients of the parameters of the inference network
-grad_stats, _ = get_gradients_statistics(estimator, model, x, mc_samples=10, key_filter='inference_network')
-summary.update(grad_stats)
-
-# log data
-summary.log(tensorboard_writer, global_step)
-```
-
-#### Implement your own `nn.Module` following the `TemplateModel` class (`ovis/models/template.py`):
-
-```python
-from torch import nn, Tensor, zeros
-from torch.distributions import Bernoulli
-from ovis.models import TemplateModel
-
-class SimpleModel(TemplateModel):
-    def __init__(self, xdim, zdim):
-        super().__init__()
-        self.inference_network = nn.Linear(xdim, zdim)
-        self.generative_model = nn.Linear(zdim, xdim)
-        self.register_buffer('prior', zeros((1, zdim,)))
-
-    def forward(self, x:Tensor, reparam:bool=False, **kwargs):
-        # q(z|x)
-        qz = Bernoulli(logits=self.inference_network(x))
-        # z ~ q(z|x)
-        z = qz.rsample() if reparam else qz.sample()
-        # p(x)
-        pz = Bernoulli(logits=self.prior)
-        # p(x|z)
-        px = Bernoulli(logits=self.generative_model(z))
-        # store z, pz, qz as lists (useful for hierarchical models)
-        return {'px': px, 'z': [z], 'qz': [qz], 'pz': [pz]}
-
-    def sample_from_prior(self, bs: int, **kwargs):
-        pz = Bernoulli(logits=self.prior.expand(bs, *self.prior.shape[1:]))
-        z = pz.sample()
-        px = Bernoulli(logits=self.generative_model(z))
-        return {'px': px, 'z': [z], 'pz': [pz]}
-
-# generate x ~ Bernoulli(0.5), initialize a simple VAE, forward pass, prior sampling
-x = Bernoulli(logits=zeros((1, 10,))).sample()
-model = SimpleModel(10, 10)
-output = model(x)
-output = model.sample_from_prior(1)
-```
-    
+``` 
     
 ## Additional Results
 
