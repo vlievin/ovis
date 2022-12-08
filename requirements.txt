@@ -1,7 +1,7 @@
 absl-py==0.9.0
 booster-pytorch==0.0.2
 cachetools==4.1.1
-certifi==2020.6.20
+certifi==2022.12.7
 chardet==3.0.4
 crc32c==2.0.1
 cycler==0.10.0
