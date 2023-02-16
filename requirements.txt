@@ -49,5 +49,5 @@ torch==1.5.1
 torchvision==0.6.0a0+35d732a
 tqdm==4.47.0
 urllib3==1.25.9
-Werkzeug==1.0.1
+Werkzeug==2.2.3
 zipp==3.1.0
